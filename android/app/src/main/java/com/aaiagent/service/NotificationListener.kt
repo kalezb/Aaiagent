@@ -15,6 +15,7 @@ class NotificationListener : NotificationListenerService() {
         private set
 
     override fun onCreate() {
+        android.util.Log.d("AIA", "NotificationListener onCreate")
         super.onCreate()
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
@@ -22,6 +23,7 @@ class NotificationListener : NotificationListenerService() {
     }
 
     override fun onListenerConnected() {
+        android.util.Log.d("AIA", "NotificationListener connected")
         super.onListenerConnected()
         isEnabled = true
     }
@@ -32,6 +34,7 @@ class NotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        android.util.Log.d("AIA", "Notification posted: pkg=${sbn?.packageName}")
         super.onNotificationPosted(sbn)
         if (sbn == null || !isEnabled) return
 

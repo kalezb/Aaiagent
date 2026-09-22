@@ -23,6 +23,9 @@ import com.aaiagent.ui.screens.RecordsScreen
 import com.aaiagent.ui.screens.SettingsScreen
 import com.aaiagent.ui.theme.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.lifecycle.lifecycleScope
 
 class MainActivity : ComponentActivity() {
 
@@ -47,14 +50,16 @@ class MainActivity : ComponentActivity() {
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
 
-        // 加载配置
-        val savedToken = repository.getActiveToken()
-        if (savedToken != null) {
-            token = savedToken.token
-        }
-        val savedApiBase = repository.getConfig("api_base_url")
-        if (savedApiBase != null) {
-            apiBase = savedApiBase
+        // 异步加载配置（Room 禁止主线程 IO）
+        lifecycleScope.launch {
+            val savedToken = withContext(Dispatchers.IO) { repository.getActiveToken() }
+            if (savedToken != null) {
+                token = savedToken.token
+            }
+            val savedApiBase = withContext(Dispatchers.IO) { repository.getConfig("api_base_url") }
+            if (savedApiBase != null) {
+                apiBase = savedApiBase
+            }
         }
 
         setContent {
@@ -119,13 +124,21 @@ class MainActivity : ComponentActivity() {
                                 apiBase = apiBase,
                                 onTokenChange = { newToken ->
                                     token = newToken
-                                    repository.saveToken(
-                                        com.aaiagent.data.db.entity.TokenEntity(token = newToken)
-                                    )
+                                    lifecycleScope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            repository.saveToken(
+                                                com.aaiagent.data.db.entity.TokenEntity(token = newToken)
+                                            )
+                                        }
+                                    }
                                 },
                                 onApiBaseChange = { newBase ->
                                     apiBase = newBase
-                                    repository.setConfig("api_base_url", newBase)
+                                    lifecycleScope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            repository.setConfig("api_base_url", newBase)
+                                        }
+                                    }
                                 },
                                 platforms = platforms,
                                 enabledPlatforms = enabledPlatforms,
@@ -189,7 +202,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 显示悬浮窗
+        // 显示悬浮窗（需悬浮窗权限；无权限时跳过，等授权后自动触发）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            return
+        }
         if (floatingWindow == null || floatingWindow?.isShowing() == false) {
             floatingWindow = FloatingWindow(this)
             floatingWindow?.show(

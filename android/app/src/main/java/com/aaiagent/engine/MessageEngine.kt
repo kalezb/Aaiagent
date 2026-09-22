@@ -9,6 +9,8 @@ import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.network.ApiService
 import com.aaiagent.network.ChatRequest
 import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 sealed class EngineState {
@@ -28,7 +30,7 @@ class MessageEngine(
     private val repository: AppRepository
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val adapterRegistry = AdapterRegistry(service!!)
+    private val adapterRegistry: AdapterRegistry? = service?.let { AdapterRegistry(it) }
 
     @Volatile var state: EngineState = EngineState.Idle
     @Volatile var currentPlatform: String = ""
@@ -71,7 +73,7 @@ class MessageEngine(
                 try {
                     val apiService = ApiService(repository.getApiBaseUrl())
                     val token = repository.getActiveToken()?.token ?: return@launch
-                    val adapter = adapterRegistry.getByPlatform(platform) ?: return@launch
+                    val adapter = adapterRegistry?.getByPlatform(platform) ?: return@launch
                     val root = service?.rootInActiveWindow ?: return@launch
                     val messages = adapter.readMessages(root).map {
                         mapOf("role" to it.sender, "content" to it.content)
@@ -144,7 +146,7 @@ class MessageEngine(
 
     private suspend fun processConversation(ctx: ConversationContext) {
         val platform = currentPlatform
-        val adapter = adapterRegistry.getByPlatform(platform)
+        val adapter = adapterRegistry?.getByPlatform(platform)
             ?: run { state = EngineState.Idle; return }
 
         state = EngineState.ReadingMessages
@@ -185,12 +187,13 @@ class MessageEngine(
 
             state = EngineState.WaitingLLM
 
-            val token = repository.getActiveToken()?.token ?: ""
-            val apiService = ApiService(repository.getApiBaseUrl())
+            val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token } ?: ""
+            val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
+            val apiService = ApiService(apiBaseUrl)
             val contactName = messages.firstOrNull()?.sender ?: "unknown"
             val contactId = contactName
 
-            val location = repository.getLocation()
+            val location = withContext(Dispatchers.IO) { repository.getLocation() }
 
             var recalcCount = 0
             var reply: String? = null
@@ -248,8 +251,9 @@ class MessageEngine(
             delay(randomDelay())
             try {
                 val root = service?.rootInActiveWindow
+                val adp = adapterRegistry?.getByPlatform(platform) ?: return
                 if (root != null) {
-                    adapter.navigateToMessageList(service!!, root)
+                    adp.navigateToMessageList(service!!, root)
                 }
             } catch (_: Exception) {}
         }
@@ -297,7 +301,7 @@ class MessageEngine(
     private fun clearInputField() {
         try {
             val root = service?.rootInActiveWindow ?: return
-            val adapter = adapterRegistry.getByPlatform(currentPlatform) ?: return
+            val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
             val inputNodes = root.findAccessibilityNodeInfosByViewId(
                 adapter.packageName + ":id/et_sendmessage"
             )

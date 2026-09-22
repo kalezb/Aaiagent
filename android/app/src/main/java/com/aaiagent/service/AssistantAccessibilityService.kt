@@ -21,6 +21,7 @@ class AssistantAccessibilityService : AccessibilityService() {
         private set
 
     override fun onCreate() {
+        android.util.Log.d("AIA", "AccessibilityService onCreate")
         super.onCreate()
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
@@ -29,11 +30,13 @@ class AssistantAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        android.util.Log.d("AIA", "AccessibilityService onServiceConnected")
         super.onServiceConnected()
         isEnabled = true
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        android.util.Log.d("AIA", "onAccessibilityEvent: type=${event?.eventType} pkg=${event?.packageName} cls=${event?.className}")
         if (event == null) return
         if (!isEnabled) return
 
@@ -113,6 +116,7 @@ class AssistantAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        android.util.Log.d("AIA", "AccessibilityService onInterrupt")
         isEnabled = false
     }
 
