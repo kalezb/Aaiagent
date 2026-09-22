@@ -1,0 +1,13 @@
+{
+  "name": "aaiagent-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "wrangler pages deploy src --project-name ai-agent-api"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}
