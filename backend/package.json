@@ -3,11 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "dev": "wrangler pages dev src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy": "wrangler pages deploy src --project-name ai-agent-api"
+    "deploy": "wrangler pages deploy src"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
   },
   "devDependencies": {
-    "vitest": "^1.6.0"
+    "@cloudflare/workers-types": "^4.20240903.0",
+    "vitest": "^1.6.0",
+    "wrangler": "^3.78.0"
   }
 }

@@ -15,3 +15,8 @@ id = "c73bee5142eb4eeda27ad8b4f4a89956"
 
 [vars]
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
+
+# Secrets 通过 wrangler secret put 命令设置：
+#   wrangler secret put DEEPSEEK_API_KEY
+#   wrangler secret put WEATHER_API_KEY
+#   wrangler secret put DASHBOARD_PASSWORD

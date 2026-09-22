@@ -7,19 +7,27 @@ import androidx.room.RoomDatabase
 import com.aaiagent.data.db.dao.ConfigDao
 import com.aaiagent.data.db.dao.MessageCacheDao
 import com.aaiagent.data.db.dao.TokenDao
+import com.aaiagent.data.db.dao.UserLocationDao
 import com.aaiagent.data.db.entity.ConfigEntity
 import com.aaiagent.data.db.entity.MessageCacheEntity
 import com.aaiagent.data.db.entity.TokenEntity
+import com.aaiagent.data.db.entity.UserLocationEntity
 
 @Database(
-    entities = [TokenEntity::class, ConfigEntity::class, MessageCacheEntity::class],
-    version = 1,
+    entities = [
+        TokenEntity::class,
+        ConfigEntity::class,
+        MessageCacheEntity::class,
+        UserLocationEntity::class
+    ],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun tokenDao(): TokenDao
     abstract fun configDao(): ConfigDao
     abstract fun messageCacheDao(): MessageCacheDao
+    abstract fun userLocationDao(): UserLocationDao
 
     companion object {
         @Volatile

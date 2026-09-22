@@ -15,30 +15,27 @@ data class ChatRequest(
     val platform: String,
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
-    val message: String,
-    @SerializedName("message_id") val messageId: String,
-    @SerializedName("persona_id") val personaId: String? = null
+    val messages: List<Map<String, String>>,
+    val location: Map<String, Map<String, String>>? = null
 )
 
 data class ChatResponse(
+    val action: String?,
     val reply: String?,
-    val skipped: Boolean?,
-    val reason: String?,
-    val safety: Boolean?,
-    val persona: String?,
     val error: String?
 )
 
 data class ConfigResponse(
-    val persona: PersonaInfo?,
-    val model: String?,
-    @SerializedName("api_base") val apiBase: String?,
-    @SerializedName("whitelist_count") val whitelistCount: Int?
+    @SerializedName("active_persona_id") val activePersonaId: String?,
+    @SerializedName("active_persona_name") val activePersonaName: String?,
+    @SerializedName("platform_style_hints") val platformStyleHints: Map<String, String>?
 )
 
-data class PersonaInfo(
-    val id: String,
-    val name: String
+data class SyncMessagesRequest(
+    val platform: String,
+    @SerializedName("contact_id") val contactId: String,
+    @SerializedName("contact_name") val contactName: String,
+    val messages: List<Map<String, String>>
 )
 
 class ApiService(private val baseUrl: String) {
@@ -55,7 +52,8 @@ class ApiService(private val baseUrl: String) {
         val json = gson.toJson(request)
         val body = json.toRequestBody(jsonMediaType)
         val req = Request.Builder()
-            .url("$baseUrl/api/chat")
+            .url(baseUrl + "/api/chat")
+            .header("Authorization", "Bearer " + request.token)
             .post(body)
             .build()
         val response = client.newCall(req).execute()
@@ -63,9 +61,33 @@ class ApiService(private val baseUrl: String) {
         gson.fromJson(responseBody, ChatResponse::class.java)
     }
 
+    suspend fun syncMessages(
+        token: String,
+        platform: String,
+        contactId: String,
+        contactName: String,
+        messages: List<Map<String, String>>
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val request = SyncMessagesRequest(platform, contactId, contactName, messages)
+            val json = gson.toJson(request)
+            val body = json.toRequestBody(jsonMediaType)
+            val req = Request.Builder()
+                .url(baseUrl + "/api/messages/sync")
+                .header("Authorization", "Bearer " + token)
+                .post(body)
+                .build()
+            val response = client.newCall(req).execute()
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun getConfig(token: String): ConfigResponse = withContext(Dispatchers.IO) {
         val req = Request.Builder()
-            .url("$baseUrl/api/config?token=$token")
+            .url(baseUrl + "/api/config")
+            .header("Authorization", "Bearer " + token)
             .get()
             .build()
         val response = client.newCall(req).execute()
@@ -77,7 +99,7 @@ class ApiService(private val baseUrl: String) {
         val json = gson.toJson(mapOf("token" to token, "name" to name))
         val body = json.toRequestBody(jsonMediaType)
         val req = Request.Builder()
-            .url("$baseUrl/api/token")
+            .url(baseUrl + "/api/token")
             .post(body)
             .build()
         val response = client.newCall(req).execute()
@@ -87,7 +109,7 @@ class ApiService(private val baseUrl: String) {
     suspend fun healthCheck(): Boolean = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
-                .url("$baseUrl/api/status")
+                .url(baseUrl + "/api/status")
                 .get()
                 .build()
             val response = client.newCall(req).execute()

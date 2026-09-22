@@ -1,0 +1,13 @@
+node_modules/
+.wrangler/
+dist/
+build/
+.gradle/
+*.class
+.idea/
+*.iml
+local.properties
+.env
+.env.local
+temp_*
+*.apk

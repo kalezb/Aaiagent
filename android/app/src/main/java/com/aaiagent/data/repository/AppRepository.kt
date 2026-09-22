@@ -4,6 +4,7 @@ import com.aaiagent.data.db.AppDatabase
 import com.aaiagent.data.db.entity.ConfigEntity
 import com.aaiagent.data.db.entity.MessageCacheEntity
 import com.aaiagent.data.db.entity.TokenEntity
+import com.aaiagent.data.db.entity.UserLocationEntity
 
 class AppRepository(private val db: AppDatabase) {
 
@@ -20,13 +21,29 @@ class AppRepository(private val db: AppDatabase) {
     fun getApiBaseUrl(): String = getConfig("api_base_url") ?: "https://ai-agent-api.pages.dev"
     fun getPersonaId(): String = getConfig("persona_id") ?: "male"
 
+    // Location
+    fun getLocation(): Map<String, Map<String, String>> {
+        val loc = db.userLocationDao().get() ?: UserLocationEntity()
+        return mapOf(
+            "home" to mapOf("city" to loc.homeCity, "district" to loc.homeDistrict),
+            "work" to mapOf("city" to loc.workCity, "district" to loc.workDistrict)
+        )
+    }
+
+    fun setLocation(homeCity: String, homeDistrict: String, workCity: String, workDistrict: String) {
+        db.userLocationDao().set(UserLocationEntity(
+            homeCity = homeCity, homeDistrict = homeDistrict,
+            workCity = workCity, workDistrict = workDistrict
+        ))
+    }
+
     // Message Cache (dedup)
     fun isDuplicate(messageId: String): Boolean = db.messageCacheDao().getByMessageId(messageId) != null
     fun cacheMessage(messageId: String, platform: String, contactId: String, contactName: String, content: String) {
         db.messageCacheDao().insert(MessageCacheEntity(messageId, platform, contactId, contactName, content))
     }
     fun cleanOldCache() {
-        val cutoff = System.currentTimeMillis() - 5 * 60 * 1000 // 5 minutes
+        val cutoff = System.currentTimeMillis() - 5 * 60 * 1000
         db.messageCacheDao().deleteOlderThan(cutoff)
     }
 }

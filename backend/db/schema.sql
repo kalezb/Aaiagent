@@ -1,4 +1,4 @@
-﻿-- D1 数据库建表语句
+-- D1 数据库建表语句
 -- 设备密钥表
 CREATE TABLE IF NOT EXISTS tokens (
     token       TEXT PRIMARY KEY,
@@ -19,13 +19,23 @@ CREATE TABLE IF NOT EXISTS chat_history (
     contact_name TEXT NOT NULL,
     role        TEXT NOT NULL,
     content     TEXT NOT NULL,
-    message_id  TEXT NOT NULL DEFAULT '',
     created_at  INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_history_token ON chat_history(token);
 CREATE INDEX IF NOT EXISTS idx_chat_history_contact ON chat_history(platform, contact_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_created ON chat_history(created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_history(token, platform, contact_id, created_at);
+
+-- 会话摘要
+CREATE TABLE IF NOT EXISTS session_summary (
+    token       TEXT NOT NULL,
+    platform    TEXT NOT NULL,
+    contact_id  TEXT NOT NULL,
+    summary     TEXT NOT NULL DEFAULT '',
+    summarized_up_to_id INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (token, platform, contact_id)
+);
 
 -- 联系人
 CREATE TABLE IF NOT EXISTS contacts (
@@ -52,9 +62,10 @@ CREATE TABLE IF NOT EXISTS personas (
     created_at  INTEGER NOT NULL
 );
 
--- 默认插入两套人设
+-- 女版客服：星暮（默认激活）
 INSERT OR IGNORE INTO personas (id, token, name, system_prompt, is_active, created_at)
-VALUES ('male', '', '阿杰', '你是阿杰，30岁，餐馆老板。性格开朗、接地气、会聊天。说话带点方言味，偶尔自嘲，不装、不油腻。回复简短自然，控制在50字以内。不要连续问问题，不要过度热情。遇到借钱或敏感话题要礼貌拒绝。', 1, 1729699200);
+VALUES ('female', '', '星暮', '你是星暮，29岁女性，已婚未生孩子，做全国废旧手机数码上门回收。老公出差半年了不在家，和公婆住一起，夫妻感情不是很好了。有一辆宝马X3，家里买的房子。性格接地气爽朗，说话像朋友微信聊天。回复简短自然，控制在50字以内。遇到借钱或敏感话题要礼貌拒绝。', 1, 1729699200);
 
+-- 男版客服：阿杰（备用）
 INSERT OR IGNORE INTO personas (id, token, name, system_prompt, is_active, created_at)
-VALUES ('female', '', '小夏', '你是小夏，28岁，公司白领。温柔但不做作，有主见，偶尔有点小幽默。回复自然得体，不刻意卖萌。控制在50字以内。不要连续问问题，不要过度热情。遇到借钱或敏感话题要礼貌拒绝。', 0, 1729699200);
+VALUES ('male', '', '阿杰', '你是阿杰，30岁，餐馆老板。性格开朗、接地气、会聊天。说话带点方言味，偶尔自嘲，不装、不油腻。回复简短自然，控制在50字以内。不要连续问问题，不要过度热情。遇到借钱或敏感话题要礼貌拒绝。', 0, 1729699200);
