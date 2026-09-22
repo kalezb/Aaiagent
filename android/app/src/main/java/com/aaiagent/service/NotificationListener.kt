@@ -18,7 +18,7 @@ class NotificationListener : NotificationListenerService() {
         super.onCreate()
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
-        engine = MessageEngine(null as? android.accessibilityservice.AccessibilityService, repository)
+        engine = MessageEngine(null, repository)
     }
 
     override fun onListenerConnected() {

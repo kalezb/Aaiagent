@@ -24,11 +24,11 @@ sealed class EngineState {
 }
 
 class MessageEngine(
-    private val service: AccessibilityService,
+    private val service: AccessibilityService?,
     private val repository: AppRepository
 ) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val adapterRegistry = AdapterRegistry(service)
+    private val adapterRegistry = AdapterRegistry(service!!)
 
     @Volatile var state: EngineState = EngineState.Idle
     @Volatile var currentPlatform: String = ""
@@ -72,7 +72,7 @@ class MessageEngine(
                     val apiService = ApiService(repository.getApiBaseUrl())
                     val token = repository.getActiveToken()?.token ?: return@launch
                     val adapter = adapterRegistry.getByPlatform(platform) ?: return@launch
-                    val root = service.rootInActiveWindow ?: return@launch
+                    val root = service?.rootInActiveWindow ?: return@launch
                     val messages = adapter.readMessages(root).map {
                         mapOf("role" to it.sender, "content" to it.content)
                     }
@@ -150,12 +150,12 @@ class MessageEngine(
         state = EngineState.ReadingMessages
 
         try {
-            val root = service.rootInActiveWindow
+            val root = service?.rootInActiveWindow
                 ?: run { state = EngineState.Idle; return }
 
             if (!adapter.isInChat(root)) {
                 if (!adapter.isInMessageList(root)) {
-                    adapter.navigateToMessageList(service, root)
+                    adapter.navigateToMessageList(service!!, root)
                     delay(500)
                 }
                 val root2 = service.rootInActiveWindow ?: run { state = EngineState.Idle; return }
@@ -247,9 +247,9 @@ class MessageEngine(
             if (state != EngineState.Error) state = EngineState.Idle
             delay(randomDelay())
             try {
-                val root = service.rootInActiveWindow
+                val root = service?.rootInActiveWindow
                 if (root != null) {
-                    adapter.navigateToMessageList(service, root)
+                    adapter.navigateToMessageList(service!!, root)
                 }
             } catch (_: Exception) {}
         }
@@ -268,8 +268,8 @@ class MessageEngine(
 
             state = EngineState.Sending
 
-            val root = service.rootInActiveWindow ?: return
-            val result = adapter.fillAndSend(service, root, sentence)
+            val root = service?.rootInActiveWindow ?: return
+            val result = adapter.fillAndSend(service!!, root, sentence)
 
             if (result == PlatformAdapter.SendResult.BANNED) {
                 state = EngineState.Idle
@@ -296,7 +296,7 @@ class MessageEngine(
 
     private fun clearInputField() {
         try {
-            val root = service.rootInActiveWindow ?: return
+            val root = service?.rootInActiveWindow ?: return
             val adapter = adapterRegistry.getByPlatform(currentPlatform) ?: return
             val inputNodes = root.findAccessibilityNodeInfosByViewId(
                 adapter.packageName + ":id/et_sendmessage"
@@ -310,6 +310,12 @@ class MessageEngine(
 
     private fun randomDelay(): Long = DELAY_MIN_MS + Random.nextLong(DELAY_MAX_MS - DELAY_MIN_MS)
 
-    fun getState(): EngineState = state
+    fun currentState(): EngineState = state
     fun shutdown() { scope.cancel() }
 }
+
+
+
+
+
+

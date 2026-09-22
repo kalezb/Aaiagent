@@ -7,10 +7,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.ImageView
-import androidx.core.content.ContextCompat
-import com.aaiagent.ui.theme.Green
-import com.aaiagent.ui.theme.Gray
 
 class FloatingWindow(private val context: Context) {
 
@@ -21,6 +17,12 @@ class FloatingWindow(private val context: Context) {
     private var onToggle: ((Boolean) -> Unit)? = null
     private var onLongClick: (() -> Unit)? = null
 
+    companion object {
+        private val GREEN = android.graphics.Color.parseColor("#22C55E")
+        private val GRAY = android.graphics.Color.parseColor("#9CA3AF")
+        private val RED = android.graphics.Color.parseColor("#EF4444")
+    }
+
     fun show(hosting: Boolean, toggleListener: (Boolean) -> Unit, longClickListener: () -> Unit) {
         if (isVisible) return
         isHosting = hosting
@@ -30,10 +32,10 @@ class FloatingWindow(private val context: Context) {
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         val floatingDot = View(context).apply {
-            setBackgroundColor(if (isHosting) Green.toArgb() else Gray.toArgb())
+            setBackgroundColor(if (isHosting) GREEN else GRAY)
             layoutParams = WindowManager.LayoutParams(
-                24,
-                24,
+                48,
+                48,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 else WindowManager.LayoutParams.TYPE_PHONE,
@@ -48,7 +50,7 @@ class FloatingWindow(private val context: Context) {
 
             setOnClickListener {
                 isHosting = !isHosting
-                setBackgroundColor(if (isHosting) Green.toArgb() else Gray.toArgb())
+                setBackgroundColor(if (isHosting) GREEN else GRAY)
                 onToggle?.invoke(isHosting)
             }
 
@@ -57,7 +59,6 @@ class FloatingWindow(private val context: Context) {
                 true
             }
 
-            // 拖动支持
             var initialX = 0
             var initialY = 0
             var initialTouchX = 0f
@@ -92,7 +93,7 @@ class FloatingWindow(private val context: Context) {
 
     fun updateHostingState(hosting: Boolean) {
         isHosting = hosting
-        floatingView?.setBackgroundColor(if (hosting) Green.toArgb() else Gray.toArgb())
+        floatingView?.setBackgroundColor(if (hosting) GREEN else GRAY)
     }
 
     fun hide() {
