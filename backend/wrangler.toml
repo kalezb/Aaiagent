@@ -1,5 +1,5 @@
 # wrangler.toml - Cloudflare Pages configuration
-name = "aaiagent"
+name = "ai-agent-api"
 compatibility_date = "2026-09-22"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "src"

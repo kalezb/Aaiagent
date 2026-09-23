@@ -128,6 +128,31 @@ export const onRequest = async (context) => {
       return json({ success: true });
     }
 
+    // PUT /api/contacts ? update contact (whitelist toggle, notes)
+    if (path === "/api/contacts" && method === "PUT") {
+      const body = await request.json();
+      const { token, platform, contact_id } = body;
+      if (!token || !platform || !contact_id) return json({ error: "缺少必要参数" }, 400);
+      const updates = [], params = [];
+      if (body.contact_name !== undefined) { updates.push("contact_name = ?"); params.push(body.contact_name); }
+      if (body.is_whitelisted !== undefined) { updates.push("is_whitelisted = ?"); params.push(body.is_whitelisted); }
+      if (body.notes !== undefined) { updates.push("notes = ?"); params.push(body.notes); }
+      if (updates.length === 0) return json({ error: "没有要更新的字段" }, 400);
+      params.push(token, platform, contact_id);
+      await env.DB.prepare("UPDATE contacts SET " + updates.join(", ") + " WHERE token = ? AND platform = ? AND contact_id = ?").bind(...params).run();
+      return json({ success: true });
+    }
+
+    // DELETE /api/contacts ? delete contact
+    if (path === "/api/contacts" && method === "DELETE") {
+      const body = await request.json();
+      const { token, platform, contact_id } = body;
+      if (!token || !platform || !contact_id) return json({ error: "缺少必要参数" }, 400);
+      await env.DB.prepare("DELETE FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?").bind(token, platform, contact_id).run();
+      return json({ success: true });
+    }
+
+
     // GET /api/persona
     if (path === "/api/persona" && method === "GET") {
       const { results } = await env.DB.prepare("SELECT id, name, system_prompt, is_active, created_at FROM personas ORDER BY created_at").all();
