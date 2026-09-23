@@ -198,15 +198,71 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     // Soul \u5BFC\u822A\u5230\u6D88\u606F\u5217\u8868\uFF1A\u6309\u8FD4\u56DE\u952E\u76F4\u5230\u627E\u5230 conversation_list
+    // Soul 导航到消息列表
+    // Soul 默认进入广场页，需要点底部“消息”栏目
     override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
-        if (isInMessageList(root)) return
+        if (isInMessageList(root)) {
+            android.util.Log.d("AIA", "Soul navigateToMessageList: already in message list")
+            return
+        }
 
-        // \u5C1D\u8BD5\u591A\u6B21\u8FD4\u56DE\uFF08\u6700\u591A 5 \u6B21\uFF09
-        repeat(5) {
+        // 方法1：找底部导航栏中的“消息”或“聊天”标签
+        android.util.Log.d("AIA", "Soul navigateToMessageList: searching for message tab...")
+        val keywords = listOf("消息", "聊天", "message", "chat", "IM")
+        
+        // 递归搜索所有可点击的 TextView 或 ImageView
+        val clickableNodes = mutableListOf<AccessibilityNodeInfo>()
+        findClickableTextNodes(root, clickableNodes, keywords)
+        
+        android.util.Log.d("AIA", "Soul navigateToMessageList: found ${clickableNodes.size} candidate nodes")
+        for (node in clickableNodes) {
+            val text = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
+            android.util.Log.d("AIA", "Soul navigateToMessageList: trying '$text'")
+            try {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                kotlinx.coroutines.delay(800)
+                val newRoot = service.rootInActiveWindow
+                if (newRoot != null && isInMessageList(newRoot)) {
+                    android.util.Log.d("AIA", "Soul navigateToMessageList: success via '$text'")
+                    return
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 方法2：如果还找不到，先返回X次回到主页，再找
+        android.util.Log.d("AIA", "Soul navigateToMessageList: fallback - pressing back then retrying")
+        repeat(2) {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            kotlinx.coroutines.delay(400)
-            val newRoot = service.rootInActiveWindow ?: return
-            if (isInMessageList(newRoot)) return
+            kotlinx.coroutines.delay(500)
+        }
+        val freshRoot = service.rootInActiveWindow ?: return
+        // 重新搜索
+        findClickableTextNodes(freshRoot, clickableNodes, keywords)
+        for (node in clickableNodes) {
+            try {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                kotlinx.coroutines.delay(800)
+                val newRoot = service.rootInActiveWindow
+                if (newRoot != null && isInMessageList(newRoot)) {
+                    android.util.Log.d("AIA", "Soul navigateToMessageList: success via fallback")
+                    return
+                }
+            } catch (_: Exception) {}
+        }
+        
+        android.util.Log.w("AIA", "Soul navigateToMessageList: FAILED - could not find message list")
+    }
+
+    // 递归找包含关键词的可点击节点
+    private fun findClickableTextNodes(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>, keywords: List<String>) {
+        if (!node.isVisibleToUser) return
+        
+        val text = (node.text?.toString() ?: "") + (node.contentDescription?.toString() ?: "")
+        if (node.isClickable && keywords.any { text.contains(it, ignoreCase = true) }) {
+            results.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { findClickableTextNodes(it, results, keywords) }
         }
     }
 
