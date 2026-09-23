@@ -1,4 +1,4 @@
-﻿package com.aaiagent.engine
+package com.aaiagent.engine
 
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
@@ -25,6 +25,12 @@ sealed class EngineState {
     object Error : EngineState()
 }
 
+enum class HostingMode {
+    FULL_AUTO,
+    SEMI_AUTO,
+    MONITOR_ONLY
+}
+
 class MessageEngine(
     private val service: AccessibilityService?,
     private val repository: AppRepository
@@ -43,7 +49,7 @@ class MessageEngine(
 
     @Volatile var state: EngineState = EngineState.Idle
     @Volatile var currentPlatform: String = ""
-    @Volatile var monitorMode: Boolean = false
+    @Volatile var hostingMode: HostingMode = HostingMode.FULL_AUTO
     @Volatile var hostingEnabled: Boolean = false
 
     private val contexts = mutableMapOf<String, ConversationContext>()
@@ -188,7 +194,7 @@ class MessageEngine(
         Deduplicator.markSeen(fp)
 
         // 监控模式：只同步记录
-        if (monitorMode) {
+        if (hostingMode == HostingMode.MONITOR_ONLY) {
             scope.launch(Dispatchers.IO) {
                 try {
                     val apiService = ApiService(repository.getApiBaseUrl())
@@ -319,6 +325,21 @@ class MessageEngine(
                 return
             }
 
+            // ── 仅记录模式：同步到后端就返回，不调AI ──
+            if (hostingMode == HostingMode.MONITOR_ONLY) {
+                android.util.Log.d("AIA", "processConversation: MONITOR_ONLY - syncing only")
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val api = ApiService(repository.getApiBaseUrl())
+                        val tk = repository.getActiveToken()?.token ?: return@launch
+                        val list = messages.map { mapOf("role" to it.sender, "content" to it.content) }
+                        api.syncMessages(tk, platform, ctx.contactId, ctx.contactName, list)
+                    } catch (_: Exception) {}
+                }
+                state = EngineState.Idle
+                return
+            }
+
             state = EngineState.WaitingLLM
 
             val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token } ?: ""
@@ -376,8 +397,21 @@ class MessageEngine(
             if (reply == null) reply = "\u6069\u6069\uff0c\u597d\u7684\u3002"
 
             RuntimeJournal.llmCalled("platform=$platform contact=$contactName", reply!!)
-            state = EngineState.AboutToSend
-            sendSplitReply(adapter, reply)
+
+            when (hostingMode) {
+                HostingMode.FULL_AUTO -> {
+                    state = EngineState.AboutToSend
+                    sendSplitReply(adapter, reply)
+                }
+                HostingMode.SEMI_AUTO -> {
+                    android.util.Log.d("AIA", "processConversation: SEMI_AUTO - fill only")
+                    if (adapter is com.aaiagent.adapter.SoulAdapter) {
+                        (adapter as com.aaiagent.adapter.SoulAdapter).fillInputOnly(reply)
+                    }
+                    state = EngineState.Idle
+                }
+                else -> { state = EngineState.Idle }
+            }
 
         } catch (e: Exception) {
             RuntimeJournal.stateChange(state.toString(), "Error")

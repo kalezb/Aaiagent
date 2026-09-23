@@ -135,6 +135,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return SendResult.SUCCESS
     }
 
+    // 半自动模式：只填输入框不发送
+    suspend fun fillInputOnly(text: String): Boolean {
+        val root = service.rootInActiveWindow ?: return false
+        val inputNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
+        val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser }
+            ?: return false
+        val args = Bundle()
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        return inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
     private fun detectBanned(root: AccessibilityNodeInfo): Boolean {
         val errorKeywords = listOf("\u53D1\u9001\u5931\u8D25", "\u5DF2\u88AB\u7981\u8A00", "\u53D1\u8A00\u592A\u5FEB", "\u5185\u5BB9\u8FDD\u89C4")
         val queue = ArrayDeque<AccessibilityNodeInfo>()
