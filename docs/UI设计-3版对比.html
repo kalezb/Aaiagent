@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -60,10 +60,14 @@
         .send-method { display: flex; gap: 10px; margin-top: 8px; }
         .send-btn { flex: 1; padding: 12px; border-radius: 10px; border: 2px solid #e5e5e5; background: #fff; font-size: 14px; cursor: pointer; text-align: center; }
         .send-btn.active { border-color: #22c55e; background: #f0fdf4; color: #22c55e; }
+        .float-demo { margin-top: 30px; padding: 20px; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 1200px; margin: 30px auto; }
+        .float-demo h3 { margin-bottom: 15px; color: #333; }
+        .float-btn-demo { width: 50px; height: 50px; background: #4CAF50; border-radius: 50%; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; }
+        .float-status { display: inline-block; margin-left: 20px; padding: 8px 16px; border-radius: 20px; background: #4CAF50; color: #fff; font-size: 14px; }
     </style>
 </head>
 <body>
-    <h1>AI托管助手 - UI设计3版对比（已去重）</h1>
+    <h1>AI托管助手 - UI设计3版对比（完整版）</h1>
     <div class="versions">
         <div class="version v1">
             <div class="version-title">版1：简洁白色版</div>
@@ -76,7 +80,7 @@
             <div class="card">
                 <div class="card-title">🧠 平台与人设</div>
                 <div class="platform-group"><button class="platform-btn active">Soul</button><button class="platform-btn">QQ</button><button class="platform-btn">连信</button><button class="platform-btn">陌陌</button></div>
-                <div class="item"><div class="item-label">客服人设</div><div style="color:#999;font-size:14px;">星暮 ▼</div></div>
+                <div class="item"><div class="item-label">客服人设</div><div style="display:flex;align-items:center;gap:8px;"><div style="color:#999;font-size:14px;">星暮 ▼</div><button style="background:#2196F3;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;">验证</button></div></div>
                 <div class="location-label">🏠 家庭地址</div>
                 <input class="location-input" placeholder="城市：重庆">
                 <input class="location-input" placeholder="区域：渝北区">
@@ -90,6 +94,16 @@
                 <div class="card-title">⚡ AI 托管控制</div>
                 <div class="item"><div><div class="item-label">AI 托管</div><div class="item-desc">开启后自动回复消息</div></div><div class="switch on"></div></div>
                 <div class="item"><div><div class="item-label">监控模式</div><div class="item-desc">实时同步聊天记录</div></div><div class="switch"></div></div>
+                <div style="margin-top:12px;display:flex;gap:8px;">
+                    <button style="flex:1;background:#fff;border:1px solid #2196F3;color:#2196F3;padding:10px;border-radius:8px;font-size:14px;cursor:pointer;">白名单管理</button>
+                    <button style="flex:1;background:#fff;border:1px solid #f44336;color:#f44336;padding:10px;border-radius:8px;font-size:14px;cursor:pointer;">黑名单管理</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">⚙️ 设置</div>
+                <div class="item"><div class="item-label">设备钥匙</div><div style="display:flex;align-items:center;gap:8px;"><div style="color:#999;font-size:12px;">mykey_2026_xY7k9mP3qR</div><button style="background:#2196F3;color:#fff;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;">验证</button></div></div>
+                <div class="item"><div><div class="item-label">天气感知</div><div class="item-desc">开启后大模型自动知道今天天气</div></div><div class="switch on"></div></div>
+                <div class="item"><div><div class="item-label">时间感知</div><div class="item-desc">开启后大模型自动知道现在几点</div></div><div class="switch on"></div></div>
             </div>
         </div>
         <div class="version v2">
@@ -103,7 +117,7 @@
             <div class="card">
                 <div class="card-title">🧠 平台与人设</div>
                 <div class="platform-group"><button class="platform-btn active">Soul</button><button class="platform-btn">QQ</button><button class="platform-btn">连信</button><button class="platform-btn">陌陌</button></div>
-                <div class="item"><div class="item-label">客服人设</div><div style="color:#888;font-size:14px;">星暮 ▼</div></div>
+                <div class="item"><div class="item-label">客服人设</div><div style="display:flex;align-items:center;gap:8px;"><div style="color:#888;font-size:14px;">星暮 ▼</div><button style="background:#00d4ff;color:#1a1a2e;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:600;">验证</button></div></div>
                 <div class="location-label">🏠 家庭地址</div>
                 <input class="location-input" placeholder="城市：重庆">
                 <input class="location-input" placeholder="区域：渝北区">
@@ -117,6 +131,16 @@
                 <div class="card-title">⚡ AI 托管控制</div>
                 <div class="item"><div><div class="item-label">AI 托管</div><div class="item-desc">开启后自动回复消息</div></div><div class="switch on"></div></div>
                 <div class="item"><div><div class="item-label">监控模式</div><div class="item-desc">实时同步聊天记录</div></div><div class="switch"></div></div>
+                <div style="margin-top:12px;display:flex;gap:8px;">
+                    <button style="flex:1;background:transparent;border:1px solid #00d4ff;color:#00d4ff;padding:10px;border-radius:8px;font-size:14px;cursor:pointer;">白名单管理</button>
+                    <button style="flex:1;background:transparent;border:1px solid #ff4444;color:#ff4444;padding:10px;border-radius:8px;font-size:14px;cursor:pointer;">黑名单管理</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">⚙️ 设置</div>
+                <div class="item"><div class="item-label">设备钥匙</div><div style="display:flex;align-items:center;gap:8px;"><div style="color:#888;font-size:12px;">mykey_2026_xY7k9mP3qR</div><button style="background:#00d4ff;color:#1a1a2e;border:none;padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;font-weight:600;">验证</button></div></div>
+                <div class="item"><div><div class="item-label">天气感知</div><div class="item-desc">开启后大模型自动知道今天天气</div></div><div class="switch on"></div></div>
+                <div class="item"><div><div class="item-label">时间感知</div><div class="item-desc">开启后大模型自动知道现在几点</div></div><div class="switch on"></div></div>
             </div>
         </div>
         <div class="version v3">
@@ -130,7 +154,7 @@
             <div class="card">
                 <div class="card-title">🧠 平台与人设</div>
                 <div class="platform-group"><button class="platform-btn active">Soul</button><button class="platform-btn">QQ</button><button class="platform-btn">连信</button><button class="platform-btn">陌陌</button></div>
-                <div class="item"><div class="item-label">客服人设</div><div style="color:#999;font-size:15px;">星暮 ▼</div></div>
+                <div class="item"><div class="item-label">客服人设</div><div style="display:flex;align-items:center;gap:8px;"><div style="color:#999;font-size:15px;">星暮 ▼</div><button style="background:#22c55e;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">验证</button></div></div>
                 <div class="location-label">🏠 家庭地址</div>
                 <input class="location-input" placeholder="城市：重庆">
                 <input class="location-input" placeholder="区域：渝北区">
@@ -146,7 +170,30 @@
                 <div class="item"><div><div class="item-label">监控模式</div><div class="item-desc">实时同步聊天记录</div></div><div class="switch"></div></div>
                 <div class="item"><div class="item-label">发送方式</div></div>
                 <div class="send-method"><div class="send-btn active">🤖 自动发送</div><div class="send-btn">👆 手动确认</div></div>
+                <div style="margin-top:12px;display:flex;gap:8px;">
+                    <button style="flex:1;background:#fff;border:2px solid #22c55e;color:#22c55e;padding:12px;border-radius:10px;font-size:15px;cursor:pointer;font-weight:600;">白名单管理</button>
+                    <button style="flex:1;background:#fff;border:2px solid #ef4444;color:#ef4444;padding:12px;border-radius:10px;font-size:15px;cursor:pointer;font-weight:600;">黑名单管理</button>
+                </div>
             </div>
+            <div class="card">
+                <div class="card-title">⚙️ 设置</div>
+                <div class="item"><div class="item-label">设备钥匙</div><div style="display:flex;align-items:center;gap:8px;"><div style="color:#999;font-size:13px;">mykey_2026_xY7k9mP3qR</div><button style="background:#22c55e;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">验证</button></div></div>
+                <div class="item"><div><div class="item-label">天气感知</div><div class="item-desc">开启后大模型自动知道今天天气</div></div><div class="switch on"></div></div>
+                <div class="item"><div><div class="item-label">时间感知</div><div class="item-desc">开启后大模型自动知道现在几点</div></div><div class="switch on"></div></div>
+            </div>
+        </div>
+    </div>
+    <div class="float-demo">
+        <h3>🔘 悬浮按钮（屏幕上的小圆点）</h3>
+        <div style="display:flex;align-items:center;">
+            <div class="float-btn-demo">🤖</div>
+            <div class="float-status">托管中</div>
+        </div>
+        <div style="margin-top:15px;color:#666;font-size:14px;line-height:1.8;">
+            <p>• 位置：屏幕右边缘中间，可拖动</p>
+            <p>• 单击：开/关托管（短震动）</p>
+            <p>• 长按：打开App主界面</p>
+            <p>• 颜色：绿色=托管中 / 灰色=暂停 / 红闪=异常</p>
         </div>
     </div>
 </body>

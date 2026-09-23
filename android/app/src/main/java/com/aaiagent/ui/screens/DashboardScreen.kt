@@ -6,9 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,19 +22,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.engine.HostingMode
 import com.aaiagent.ui.theme.*
+
+// ── Types ──
 
 data class PermissionStatus(
     val accessibility: Boolean = false,
@@ -53,9 +54,8 @@ fun checkPermissionStatus(context: Context): PermissionStatus {
 }
 
 fun platformDisplayName(p: String) = when (p) { "soul" -> "Soul"; "qq" -> "QQ"; "immomo" -> "陌陌"; "lianxin" -> "连信"; else -> p }
-fun platformIcon(p: String) = when (p) { "soul" -> "🟣"; "qq" -> "🐧"; "immomo" -> "📱"; "lianxin" -> "💬"; else -> "📌" }
 
-// ═══════════════ DASHBOARD ═══════════════
+// ══════════════════════ DASHBOARD ══════════════════════
 
 @Composable
 fun DashboardScreen(
@@ -74,245 +74,436 @@ fun DashboardScreen(
     onApiBaseChange: (String) -> Unit,
     location: UserLocationEntity,
     onLocationSave: (String, String, String, String) -> Unit,
-    monitorMode: Boolean,
-    onMonitorModeChange: (Boolean) -> Unit,
     hostingMode: HostingMode,
     onHostingModeChange: (HostingMode) -> Unit,
+    onToggleHosting: (Boolean) -> Unit,
+    // 验证状态
+    personaVerifyStatus: String,
+    onVerifyPersona: () -> Unit,
+    locationSaveStatus: String,
+    onSaveLocation: () -> Unit,
+    tokenVerifyStatus: String,
     onVerifyToken: () -> Unit,
-    tokenStatus: String,
-    onToggleHosting: (Boolean) -> Unit
+    platformSyncStatus: String,
+    onSyncPlatform: (String) -> Unit,
+    // 天气/时间感知
+    weatherEnabled: Boolean,
+    onWeatherToggle: (Boolean) -> Unit,
+    timeEnabled: Boolean,
+    onTimeToggle: (Boolean) -> Unit,
+    // 白黑名单
+    onOpenWhitelist: () -> Unit,
+    onOpenBlacklist: () -> Unit,
+    // 发送方式
+    sendMode: String,
+    onSendModeChange: (String) -> Unit
 ) {
     val ctx = LocalContext.current
     var perms by remember { mutableStateOf(checkPermissionStatus(ctx)) }
     LaunchedEffect(Unit) { perms = checkPermissionStatus(ctx) }
 
-    Column(Modifier.fillMaxSize().background(Bg).verticalScroll(rememberScrollState())) {
-        HeaderSection()
-        StatusStrip(isHosting, engineState, enabledPlatforms.firstOrNull() ?: "soul")
-        HeroToggleCard(isHosting, engineState, onToggleHosting)
-        SectionLabel("平台选择")
-        PlatformChips(enabledPlatforms, onTogglePlatform)
-        SectionLabel("客服人设")
-        PersonaCard(personas, activePersonaId, onPersonaChange, location, enabledPlatforms.firstOrNull() ?: "soul")
-        SectionLabel("地址信息")
-        LocationEditBlock(location, onLocationSave)
-        SectionLabel("设备权限")
-        PermissionCards(perms, ctx)
-        SectionLabel("后端连接")
-        BackendCard(token, apiBase, onTokenChange, onApiBaseChange, onVerifyToken, tokenStatus)
-        SectionLabel("托管模式")
-        HostingMode3Selector(hostingMode, onHostingModeChange)
-        SectionLabel("运行日志")
-        TerminalLog(lastReply, engineState, isHosting)
-        Spacer(Modifier.height(32.dp))
+    Column(
+        Modifier.fillMaxSize().background(Bg).verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 32.dp)
+    ) {
+        // 标题栏
+        Text(text = "AI 托管助手", modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text(text = "v3.0 · 4平台 · DeepSeek", modifier = Modifier.padding(horizontal = 20.dp),
+            fontSize = 11.sp, color = TextSecondary)
+
+        Spacer(Modifier.height(12.dp))
+
+        // ═══ 卡片1: 设备权限 ═══
+        Card1Permissions(perms, ctx)
+
+        Spacer(Modifier.height(12.dp))
+
+        // ═══ 卡片2: 平台与人设 ═══
+        Card2PlatformPersona(
+            enabledPlatforms, onTogglePlatform, platformSyncStatus, onSyncPlatform,
+            personas, activePersonaId, onPersonaChange, personaVerifyStatus, onVerifyPersona,
+            location, onLocationSave, locationSaveStatus, onSaveLocation
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // ═══ 卡片3: AI 托管控制 ═══
+        Card3HostingControl(
+            isHosting, engineState, hostingMode, onHostingModeChange, onToggleHosting,
+            sendMode, onSendModeChange, onOpenWhitelist, onOpenBlacklist
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // ═══ 卡片4: 设置 ═══
+        Card4Settings(
+            token, onTokenChange, tokenVerifyStatus, onVerifyToken,
+            weatherEnabled, onWeatherToggle, timeEnabled, onTimeToggle
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Text(text = "AI 托管助手 v3.0 · 基于 DeepSeek Chat", modifier = Modifier.padding(horizontal = 20.dp), fontSize = 11.sp, color = TextHint)
     }
 }
 
-// ═══════════════ SECTIONS ═══════════════
+// ══════════════════════ 卡片1: 设备权限 ══════════════════════
 
 @Composable
-private fun HeaderSection() {
-    Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF1A1040), Color(0xFF0F1A30)), Offset(0f, 0f), Offset(Float.POSITIVE_INFINITY, 0f))).padding(20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(Purple, Blue))), contentAlignment = Alignment.Center) { Text("🔮", fontSize = 20.sp) }
-            Spacer(Modifier.width(12.dp))
-            Column { Text("AI 托管助手", color = TextHigh, fontSize = 19.sp, fontWeight = FontWeight.Bold); Text("v2.0 · 4平台 · DeepSeek", color = Color(0xFF8B8BCC), fontSize = 10.sp) }
-        }
-    }
-}
-
-@Composable
-private fun StatusStrip(isHosting: Boolean, engineState: String, platform: String) {
-    val bg = animateColorAsState(if (isHosting) Green.copy(alpha = 0.12f) else CardBg).value
-    val dot = animateColorAsState(if (isHosting) Green else TextLow).value
-    val pulse = rememberInfiniteTransition(label = "p").animateFloat(0.3f, 1f, infiniteRepeatable(tween(1200), RepeatMode.Reverse), label = "pa").value
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), RoundedCornerShape(10.dp), color = bg, border = BorderStroke(1.dp, if (isHosting) Green.copy(alpha = 0.3f) else CardBorder)) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(dot.copy(alpha = if (isHosting) pulse else 1f)))
-            Spacer(Modifier.width(8.dp))
-            Text(if (isHosting) "托管运行中" else "托管已暂停", color = if (isHosting) Green else TextLow, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.weight(1f))
-            Text(platformIcon(platform), fontSize = 12.sp); Spacer(Modifier.width(4.dp))
-            Text(platformDisplayName(platform), color = TextMid, fontSize = 12.sp)
-            Spacer(Modifier.width(12.dp)); Text("·", color = Divider, fontSize = 12.sp); Spacer(Modifier.width(12.dp))
-            Text(engineState, color = TextLow, fontSize = 11.sp)
-        }
-    }
-}
-
-@Composable
-private fun HeroToggleCard(isHosting: Boolean, engineState: String, onToggle: (Boolean) -> Unit) {
-    val bg = animateColorAsState(if (isHosting) Color(0xFF1A1040) else CardBg).value
-    val border = animateColorAsState(if (isHosting) Purple.copy(alpha = 0.5f) else CardBorder).value
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(14.dp), color = bg, border = BorderStroke(1.5.dp, border), shadowElevation = if (isHosting) 8.dp else 0.dp) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text("🔮 AI 托管", color = TextHigh, fontSize = 17.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(4.dp)); Text(if (isHosting) "自动回复中 · $engineState" else "点击开启自动回复", color = if (isHosting) Green else TextLow, fontSize = 12.sp) }
-            NeonSwitch(checked = isHosting, onCheckedChange = onToggle)
-        }
-    }
-}
-
-@Composable
-private fun NeonSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    val bg = animateColorAsState(if (checked) Purple else Color(0xFF2A2A40)).value
-    val off = animateFloatAsState(if (checked) 1f else 0f, tween(250)).value
-    Box(Modifier.width(56.dp).height(32.dp).clip(RoundedCornerShape(16.dp)).background(bg).then(if (checked) Modifier.shadow(12.dp, RoundedCornerShape(16.dp), ambientColor = Purple, spotColor = Purple) else Modifier).clickable { onCheckedChange(!checked) }) {
-        Box(Modifier.offset(x = (2 + 22 * off).dp, y = 2.dp).size(28.dp).clip(CircleShape).background(if (checked) Color.White else Color(0xFF555570)))
-    }
-}
-
-@Composable
-private fun PlatformChips(enabled: Set<String>, onToggle: (String, Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("soul", "qq", "immomo", "lianxin").forEach { p ->
-            val sel = enabled.contains(p)
-            Surface(Modifier.weight(1f).clickable { onToggle(p, !sel) }, RoundedCornerShape(20.dp), color = animateColorAsState(if (sel) Purple.copy(alpha = 0.25f) else CardBg).value, border = BorderStroke(1.dp, animateColorAsState(if (sel) Purple.copy(alpha = 0.5f) else CardBorder).value)) {
-                Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(platformIcon(p), fontSize = 18.sp); Text(platformDisplayName(p), color = animateColorAsState(if (sel) Color.White else TextMid).value, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
+private fun Card1Permissions(perms: PermissionStatus, ctx: Context) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(text = "🔒 设备权限", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(14.dp))
+            PermItem("无障碍读取与操作", perms.accessibility) { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            PermItem("通知读取", perms.notification) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+            PermItem("电池优化白名单", perms.batteryOptimization) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    i.data = Uri.parse("package:" + ctx.packageName)
+                    ctx.startActivity(i)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PersonaCard(personas: List<PersonaItem>, activeId: String, onChange: (String) -> Unit, location: UserLocationEntity, platform: String) {
-    val active = personas.find { it.id == activeId }
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(12.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder)) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Purple.copy(alpha = 0.4f), Blue.copy(alpha = 0.4f)))), contentAlignment = Alignment.Center) { Text(if (activeId == "female") "👩" else "👨", fontSize = 18.sp) }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) { Text(active?.name ?: "未选择", color = TextHigh, fontSize = 14.sp, fontWeight = FontWeight.Medium); Text("${if (activeId == "female") "女·29岁" else "男·30岁"} · ${location.homeCity}${location.homeDistrict}", color = TextLow, fontSize = 11.sp) }
-            if (personas.size > 1) { var exp by remember { mutableStateOf(false) }; Box { IconButton(onClick = { exp = true }) { Icon(Icons.Default.ChevronRight, null, tint = TextLow, modifier = Modifier.size(20.dp)) }; DropdownMenu(expanded = exp, onDismissRequest = { exp = false }) { personas.forEach { p -> DropdownMenuItem(text = { Text(p.name + if (p.id == activeId) " ✓" else "", fontSize = 13.sp) }, onClick = { onChange(p.id); exp = false }) } } } }
+private fun PermItem(title: String, granted: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable(enabled = !granted, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, Modifier.weight(1f), fontSize = 15.sp, color = TextPrimary)
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = if (granted) GreenLight else Color.Transparent,
+            border = if (granted) null else BorderStroke(1.5.dp, Green)
+        ) {
+            Text(
+                if (granted) "已授权 ✓" else "去设置 →",
+                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                color = if (granted) Green else Green
+            )
         }
     }
 }
 
-@Composable
-private fun LocationEditBlock(location: UserLocationEntity, onSave: (String, String, String, String) -> Unit) {
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(12.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder)) {
-        Column(Modifier.padding(14.dp)) {
-            Text("家庭地址", color = TextLow, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MiniField(location.homeCity, { onSave(it, location.homeDistrict, location.workCity, location.workDistrict) }, "城市", Modifier.weight(1f))
-                MiniField(location.homeDistrict, { onSave(location.homeCity, it, location.workCity, location.workDistrict) }, "区域", Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(10.dp))
-            Text("工作地址", color = TextLow, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MiniField(location.workCity, { onSave(location.homeCity, location.homeDistrict, it, location.workDistrict) }, "城市", Modifier.weight(1f))
-                MiniField(location.workDistrict, { onSave(location.homeCity, location.homeDistrict, location.workCity, it) }, "区域", Modifier.weight(1f))
-            }
-        }
-    }
-}
+// ══════════════════════ 卡片2: 平台与人设 ══════════════════════
 
 @Composable
-private fun MiniField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier) {
-    Surface(modifier, RoundedCornerShape(7.dp), color = Color(0xFF0D0D18), border = BorderStroke(1.dp, if (value.isNotEmpty()) Purple.copy(alpha = 0.3f) else CardBorder)) {
-        Box(Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            if (value.isEmpty()) Text(placeholder, color = TextLow, fontSize = 12.sp)
-            BasicTextField(value = value, onValueChange = onChange, textStyle = TextStyle(color = TextHigh, fontSize = 13.sp), singleLine = true, modifier = Modifier.fillMaxWidth(), cursorBrush = Brush.horizontalGradient(listOf(Purple, Blue)))
-        }
-    }
-}
-
-@Composable
-private fun PermissionCards(perms: PermissionStatus, ctx: Context) {
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        PermRow("无障碍读取", "读屏+自动操作", perms.accessibility) { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        PermRow("通知监听", "新消息提醒", perms.notification) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-        PermRow("电池优化白名单", "防止被杀后台", perms.batteryOptimization) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS); i.data = Uri.parse("package:" + ctx.packageName); ctx.startActivity(i) } }
-        PermRow("悬浮窗权限", "边缘控制球", perms.overlay) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))) }
-    }
-}
-
-@Composable
-private fun PermRow(label: String, desc: String, granted: Boolean, onClick: () -> Unit) {
-    Surface(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { if (!granted) onClick() }, RoundedCornerShape(10.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder)) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(label, color = TextHigh, fontSize = 13.sp, fontWeight = FontWeight.Medium); Text(desc, color = TextLow, fontSize = 10.sp) }
-            Spacer(Modifier.width(8.dp))
-            Box(Modifier.size(7.dp).clip(CircleShape).background(if (granted) Green else Amber))
-            Spacer(Modifier.width(6.dp))
-            Text(if (granted) "已授权" else "去设置", color = if (granted) Green else Amber, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
-@Composable
-private fun BackendCard(
-    token: String, apiBase: String,
-    onTokenChange: (String) -> Unit, onApiBaseChange: (String) -> Unit,
-    onVerifyToken: () -> Unit, tokenStatus: String
+private fun Card2PlatformPersona(
+    enabledPlatforms: Set<String>, onTogglePlatform: (String, Boolean) -> Unit,
+    platformSyncStatus: String, onSyncPlatform: (String) -> Unit,
+    personas: List<PersonaItem>, activePersonaId: String, onPersonaChange: (String) -> Unit,
+    personaVerifyStatus: String, onVerifyPersona: () -> Unit,
+    location: UserLocationEntity, onLocationSave: (String, String, String, String) -> Unit,
+    locationSaveStatus: String, onSaveLocation: () -> Unit
 ) {
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(12.dp), color = CardBg, border = BorderStroke(1.dp, CardBorder)) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(7.dp).clip(CircleShape).background(when { tokenStatus.startsWith("✅") -> Green; tokenStatus.startsWith("❌") -> Red; tokenStatus == "验证中..." -> Amber; token.isNotEmpty() -> Green; else -> TextLow }))
-                Spacer(Modifier.width(8.dp))
-                Text(if (tokenStatus.isNotEmpty()) tokenStatus else if (token.isNotEmpty()) "已配置密钥" else "未配置密钥", color = when { tokenStatus.startsWith("✅") -> Green; tokenStatus.startsWith("❌") -> Red; else -> TextLow }, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    val active = personas.find { it.id == activePersonaId }
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(text = "🧠 平台与人设", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(14.dp))
+
+            // 平台选择
+            Text(text = "平台选择", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("soul", "qq", "immomo", "lianxin").forEach { p ->
+                    val sel = enabledPlatforms.contains(p)
+                    val label = platformDisplayName(p)
+                    Surface(
+                        Modifier.weight(1f).clickable {
+                            onTogglePlatform(p, !sel)
+                            onSyncPlatform(p)
+                        },
+                        RoundedCornerShape(20.dp),
+                        color = if (sel) Green else GrayBg,
+                        border = if (sel) null else BorderStroke(1.dp, Gray)
+                    ) {
+                        Text(text = label, modifier = Modifier.padding(vertical = 10.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                            color = if (sel) White else TextSecondary)
+                    }
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            if (platformSyncStatus.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(platformSyncStatus, fontSize = 11.sp, color = if (platformSyncStatus.startsWith("✓")) Green else Red)
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // 客服人设
+            Text(text = "客服人设", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), color = Color(0xFF0D0D18), border = BorderStroke(1.dp, if (token.isNotEmpty()) Purple.copy(alpha = 0.4f) else CardBorder)) {
-                    Box(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                        if (token.isEmpty()) Text("设备密钥 (Token)", color = TextLow, fontSize = 13.sp)
-                        BasicTextField(value = token, onValueChange = onTokenChange, textStyle = TextStyle(color = TextHigh, fontSize = 13.sp, fontFamily = FontFamily.Monospace), singleLine = true, modifier = Modifier.fillMaxWidth(), cursorBrush = Brush.horizontalGradient(listOf(Purple, Blue)))
+                // Persona dropdown
+                var exp by remember { mutableStateOf(false) }
+                Box(Modifier.weight(1f)) {
+                    Surface(
+                        Modifier.fillMaxWidth().clickable { exp = true },
+                        RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Divider)
+                    ) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(active?.name ?: "未选择", Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
+                            Text(text = "▼", fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                    DropdownMenu(expanded = exp, onDismissRequest = { exp = false }) {
+                        personas.forEach { p ->
+                            DropdownMenuItem(
+                                text = { Text(p.name, fontSize = 14.sp) },
+                                onClick = { onPersonaChange(p.id); exp = false }
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                Surface(Modifier.clickable { onVerifyToken() }, RoundedCornerShape(8.dp), color = Purple) {
-                    Text("验证", Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
+                VerifyButton(
+                    label = "验证",
+                    status = personaVerifyStatus,
+                    onClick = onVerifyPersona
+                )
             }
-        }
-    }
-}
 
-private data class ModeOpt(val mode: HostingMode, val label: String, val desc: String)
+            Spacer(Modifier.height(16.dp))
 
-@Composable
-private fun HostingMode3Selector(mode: HostingMode, onSelect: (HostingMode) -> Unit) {
-    val opts = listOf(
-        ModeOpt(HostingMode.FULL_AUTO, "🤖 全自动", "读取→AI回复→自动发送"),
-        ModeOpt(HostingMode.SEMI_AUTO, "✋ 半自动", "读取→AI回复→填入输入框（不发送）"),
-        ModeOpt(HostingMode.MONITOR_ONLY, "👀 仅记录", "只记录聊天数据，不调AI")
-    )
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), RoundedCornerShape(14.dp), color = Color(0xFF1E1E30)) {
-        Column(Modifier.padding(4.dp)) {
-            for (opt in opts) {
-                val sel = mode == opt.mode
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(if (sel) Purple.copy(alpha = 0.2f) else Color.Transparent).clickable { onSelect(opt.mode) }.padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(18.dp).clip(CircleShape).background(if (sel) Purple else Color.Transparent), contentAlignment = Alignment.Center) { if (sel) Box(Modifier.size(8.dp).clip(CircleShape).background(Color.White)) }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) { Text(opt.label, color = if (sel) Color.White else TextMid, fontSize = 14.sp, fontWeight = FontWeight.Medium); Text(opt.desc, color = TextLow, fontSize = 10.sp) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TerminalLog(lastReply: String?, engineState: String, isHosting: Boolean) {
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 140.dp), RoundedCornerShape(10.dp), color = TerminalBg, border = BorderStroke(1.dp, Color(0xFF1A1A30))) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(Red)); Spacer(Modifier.width(6.dp))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(Amber)); Spacer(Modifier.width(6.dp))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(Green)); Spacer(Modifier.width(12.dp))
-                Text("ai-agent ~ log", color = TextLow, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            // 位置设置
+            Text(text = "位置设置", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Text(text = "🏠 家庭地址", fontSize = 14.sp, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocField(location.homeCity, { onLocationSave(it, location.homeDistrict, location.workCity, location.workDistrict) }, "城市", Modifier.weight(1f))
+                LocField(location.homeDistrict, { onLocationSave(location.homeCity, it, location.workCity, location.workDistrict) }, "区域", Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
-            Text("$ [${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}] 引擎状态: $engineState", color = TerminalText, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-            if (isHosting) Text("$ [--:--:--] 轮询扫描中", color = TerminalText.copy(alpha = 0.7f), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-            if (lastReply != null) { Spacer(Modifier.height(4.dp)); Text("$ [--:--:--] 最近回复: ${lastReply.take(50)}...", color = TerminalText.copy(alpha = 0.5f), fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            if (!isHosting && lastReply == null) Text("$ [--:--:--] 等待托管启动...", color = TextLow, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            Text(text = "💼 工作地址", fontSize = 14.sp, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocField(location.workCity, { onLocationSave(location.homeCity, location.homeDistrict, it, location.workDistrict) }, "城市", Modifier.weight(1f))
+                LocField(location.workDistrict, { onLocationSave(location.homeCity, location.homeDistrict, location.workCity, it) }, "区域", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SaveButton("保存位置", locationSaveStatus, onSaveLocation, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            // Current status
+            Surface(Modifier.fillMaxWidth(), RoundedCornerShape(8.dp), color = GreenLight) {
+                Text(
+                    "当前：${platformDisplayName(enabledPlatforms.firstOrNull() ?: "soul")} | ${active?.name ?: "未选"}·${if (activePersonaId == "female") "女·29岁" else "男·30岁"}\n家：${location.homeCity}${location.homeDistrict} | 班：${location.workCity}${location.workDistrict}",
+                    Modifier.padding(10.dp), fontSize = 12.sp, color = TextPrimary, lineHeight = 18.sp
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SectionLabel(text: String) {
-    Text(text, Modifier.padding(start = 20.dp, top = 20.dp, bottom = 10.dp), color = TextLow, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+private fun LocField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier) {
+    Surface(modifier, RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
+        Box(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+            if (value.isEmpty()) Text(placeholder, color = TextHint, fontSize = 13.sp)
+            BasicTextField(value = value, onValueChange = onChange, textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp), singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun VerifyButton(label: String, status: String, onClick: () -> Unit) {
+    val isSuccess = status.startsWith("✓")
+    val isFail = status.startsWith("✗")
+    val bg = when { isSuccess -> GreenLight; isFail -> RedLight; else -> Color.Transparent }
+    val border = when { isSuccess -> Green; isFail -> Red; else -> Green }
+    val txt = when { isSuccess -> "✓ ${label.removeSuffix("验证")}已同步"; isFail -> "✗ 同步失败"; else -> label }
+    val txtColor = when { isSuccess -> Green; isFail -> Red; else -> Green }
+    Surface(
+        Modifier.clickable(enabled = !isSuccess) { onClick() },
+        RoundedCornerShape(8.dp), color = bg,
+        border = BorderStroke(1.5.dp, border)
+    ) {
+        Text(txt, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            fontSize = 13.sp, fontWeight = FontWeight.Medium, color = txtColor)
+    }
+}
+
+@Composable
+private fun SaveButton(label: String, status: String, onClick: () -> Unit, modifier: Modifier) {
+    val isSuccess = status.startsWith("✓")
+    val txt = when { isSuccess -> "✓ ${label.removePrefix("保存")}已保存"; status.isNotEmpty() && !isSuccess -> "✗ 保存失败"; else -> label }
+    Button(
+        onClick = onClick, modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = if (isSuccess) GreenLight else Green),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+    ) {
+        Text(txt, color = if (isSuccess) Green else White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+// ══════════════════════ 卡片3: AI 托管控制 ══════════════════════
+
+@Composable
+private fun Card3HostingControl(
+    isHosting: Boolean, engineState: String,
+    hostingMode: HostingMode, onHostingModeChange: (HostingMode) -> Unit,
+    onToggleHosting: (Boolean) -> Unit,
+    sendMode: String, onSendModeChange: (String) -> Unit,
+    onOpenWhitelist: () -> Unit, onOpenBlacklist: () -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(text = "⚡ AI 托管控制", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(14.dp))
+
+            // AI托管开关
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(text = "AI 托管", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    Text(if (isHosting) "开启后自动回复消息 · $engineState" else "开启后自动回复消息", fontSize = 12.sp, color = TextSecondary)
+                }
+                GreenSwitch(checked = isHosting, onCheckedChange = onToggleHosting)
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Divider(color = Divider, thickness = 1.dp)
+            Spacer(Modifier.height(14.dp))
+
+            // 发送方式
+            Text(text = "发送方式", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("auto" to "🤖 自动发送", "manual" to "👆 手动确认").forEach { (mode, label) ->
+                    val sel = sendMode == mode
+                    Surface(
+                        Modifier.weight(1f).clickable { onSendModeChange(mode) },
+                        RoundedCornerShape(10.dp),
+                        color = if (sel) GreenLight else White,
+                        border = BorderStroke(1.5.dp, if (sel) Green else Gray)
+                    ) {
+                        Text(text = label, modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            color = if (sel) Green else TextSecondary)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Divider(color = Divider, thickness = 1.dp)
+            Spacer(Modifier.height(14.dp))
+
+            // 白名单/黑名单
+            Text(text = "联系人管理", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    Modifier.weight(1f).clickable { onOpenWhitelist() },
+                    RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.5.dp, Green)
+                ) {
+                    Text(text = "白名单管理", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Green)
+                }
+                Surface(
+                    Modifier.weight(1f).clickable { onOpenBlacklist() },
+                    RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.5.dp, Red)
+                ) {
+                    Text(text = "黑名单管理", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Red)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GreenSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val bg by animateColorAsState(if (checked) Green else Gray, tween(200))
+    val offset by animateFloatAsState(if (checked) 1f else 0f, tween(200))
+    Box(
+        Modifier.width(44.dp).height(24.dp).clip(RoundedCornerShape(12.dp)).background(bg).clickable(
+            interactionSource = remember { MutableInteractionSource() }, indication = null
+        ) { onCheckedChange(!checked) }
+    ) {
+        Box(
+            Modifier.offset(x = (2 + 20 * offset).dp, y = 2.dp).size(20.dp).clip(CircleShape)
+                .background(White).shadow(2.dp, CircleShape)
+        )
+    }
+}
+
+// ══════════════════════ 卡片4: 设置 ══════════════════════
+
+@Composable
+private fun Card4Settings(
+    token: String, onTokenChange: (String) -> Unit,
+    tokenVerifyStatus: String, onVerifyToken: () -> Unit,
+    weatherEnabled: Boolean, onWeatherToggle: (Boolean) -> Unit,
+    timeEnabled: Boolean, onTimeToggle: (Boolean) -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(text = "⚙️ 设置", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Spacer(Modifier.height(14.dp))
+
+            // 设备钥匙
+            Text(text = "设备钥匙", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
+                    Box(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+                        if (token.isEmpty()) Text(text = "mykey_2026_...", color = TextHint, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        BasicTextField(value = token, onValueChange = onTokenChange,
+                            textStyle = TextStyle(color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                            singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                VerifyButton("验证", tokenVerifyStatus, onVerifyToken)
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // 天气感知
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(text = "天气感知", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    Text(text = "开启后大模型自动知道今天天气", fontSize = 12.sp, color = TextSecondary)
+                }
+                GreenSwitch(checked = weatherEnabled, onCheckedChange = onWeatherToggle)
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // 时间感知
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(text = "时间感知", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+                    Text(text = "开启后大模型自动知道现在几点", fontSize = 12.sp, color = TextSecondary)
+                }
+                GreenSwitch(checked = timeEnabled, onCheckedChange = onTimeToggle)
+            }
+        }
+    }
 }

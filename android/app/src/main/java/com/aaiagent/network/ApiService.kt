@@ -38,6 +38,8 @@ data class SyncMessagesRequest(
     val messages: List<Map<String, String>>
 )
 
+data class ConfigSaveResult(val success: Boolean, val message: String, val error: String?)
+
 class ApiService(private val baseUrl: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -104,6 +106,27 @@ class ApiService(private val baseUrl: String) {
             .build()
         val response = client.newCall(req).execute()
         response.isSuccessful
+    }
+
+    // 统一配置保存接口 POST /api/config/save
+    suspend fun saveConfig(deviceKey: String, params: Map<String, String>): ConfigSaveResult = withContext(Dispatchers.IO) {
+        try {
+            val map = mutableMapOf("device_key" to deviceKey)
+            map.putAll(params)
+            val json = gson.toJson(map)
+            val body = json.toRequestBody(jsonMediaType)
+            val req = Request.Builder().url(baseUrl + "/api/config/save").post(body).build()
+            val resp = client.newCall(req).execute()
+            val respBody = resp.body?.string() ?: "{}"
+            val result = gson.fromJson(respBody, Map::class.java)
+            ConfigSaveResult(
+                success = result?.get("success") as? Boolean ?: false,
+                message = result?.get("message") as? String ?: "",
+                error = result?.get("error") as? String
+            )
+        } catch (e: Exception) {
+            ConfigSaveResult(success = false, message = "", error = e.message)
+        }
     }
 
     suspend fun healthCheck(): Boolean = withContext(Dispatchers.IO) {
