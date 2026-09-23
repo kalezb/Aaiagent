@@ -59,12 +59,19 @@ class AssistantAccessibilityService : AccessibilityService() {
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
-        val className = event.className?.toString() ?: ""
+        @Suppress("UNUSED_VARIABLE") val className = event.className?.toString() ?: ""
         val adapter = adapterRegistry.get(packageName) ?: return
         val root = rootInActiveWindow ?: return
 
-        // 检测是否在聊天页
-        val isInChatRoom = adapter.isInChat(root)
+        // 第一层: View ID 快速判断 (补充页 §一)
+        var isInChatRoom = adapter.isInChat(root)
+
+        // 第二层: View ID 失效 → 启发式规则兜底
+        if (!isInChatRoom && !adapter.isInMessageList(root)) {
+            val page = com.aaiagent.engine.ErrorRecovery.detectPagePublic(adapter, root)
+            isInChatRoom = (page == com.aaiagent.engine.PageType.CHAT)
+        }
+
         engine.onPageChanged(isInChatRoom)
 
         if (!isInChatRoom) return

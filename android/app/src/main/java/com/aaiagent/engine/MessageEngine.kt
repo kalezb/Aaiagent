@@ -32,6 +32,14 @@ class MessageEngine(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val adapterRegistry: AdapterRegistry? = service?.let { AdapterRegistry(it) }
 
+    init {
+        // 初始化运行日志 (补充页 §三)
+        service?.let {
+            val logDir = java.io.File(it.filesDir, "journal")
+            RuntimeJournal.init(logDir)
+        }
+    }
+
     @Volatile var state: EngineState = EngineState.Idle
     @Volatile var currentPlatform: String = ""
     @Volatile var monitorMode: Boolean = false
@@ -62,6 +70,8 @@ class MessageEngine(
     fun onNewMessage(platform: String, msg: PlatformAdapter.MessageInfo) {
         if (state == EngineState.UserInChatRoom || state == EngineState.Paused) return
         if (state == EngineState.Error) return
+
+        RuntimeJournal.notifyReceived(platform, msg.sender, msg.content)
 
         val fp = Deduplicator.fingerprint(platform, msg.sender + msg.content, "")
         if (Deduplicator.isSeenRecent(fp, DEDUP_WINDOW_MS)) return
@@ -149,10 +159,11 @@ class MessageEngine(
         val adapter = adapterRegistry?.getByPlatform(platform)
             ?: run { state = EngineState.Idle; return }
 
+        RuntimeJournal.stateChange("Idle", "ReadingMessages")
         state = EngineState.ReadingMessages
 
         try {
-            val root = service?.rootInActiveWindow
+            var root = service?.rootInActiveWindow
                 ?: run { state = EngineState.Idle; return }
 
             if (!adapter.isInChat(root)) {
@@ -161,22 +172,32 @@ class MessageEngine(
                     delay(500)
                 }
                 val root2 = service.rootInActiveWindow ?: run { state = EngineState.Idle; return }
-                val info = adapter.clickFirstUnreadConversation(root2, shouldClick = true)
+                var info = adapter.clickFirstUnreadConversation(root2, shouldClick = true)
                 if (info == null) {
+                    // 补充页 §五: 点会话失败 → 错误恢复
+                    info = ErrorRecovery.retryClickConversation(adapter, service!!, root2)
+                }
+                if (info == null) {
+                    RuntimeJournal.clickConversation("unknown", false)
                     state = EngineState.Idle
                     return
                 }
+                RuntimeJournal.clickConversation(info.contactName, true)
                 delay(1000)
             }
 
-            val root3 = service.rootInActiveWindow
+            // 补充页 §五: 读消息前检测页面, 不对就恢复
+            root = ErrorRecovery.recoverReadMessages(adapter, service!!)
+                ?: service.rootInActiveWindow
                 ?: run { state = EngineState.Idle; return }
 
-            val messages = adapter.readMessages(root3)
+            val messages = adapter.readMessages(root)
             if (messages.isEmpty()) {
+                RuntimeJournal.readMessages(0, "")
                 state = EngineState.Idle
                 return
             }
+            RuntimeJournal.readMessages(messages.size, messages.lastOrNull()?.content ?: "")
 
             // 敏感词检查
             val lastUserMsg = messages.lastOrNull { it.sender != "self" }
@@ -240,11 +261,17 @@ class MessageEngine(
 
             if (reply == null) reply = "\u6069\u6069\uff0c\u597d\u7684\u3002"
 
+            RuntimeJournal.llmCalled("platform=$platform contact=$contactName", reply!!)
             state = EngineState.AboutToSend
             sendSplitReply(adapter, reply)
 
         } catch (e: Exception) {
+            RuntimeJournal.stateChange(state.toString(), "Error")
             state = EngineState.Error
+            // 补充页 §五: 发送异常 → 错误恢复
+            try {
+                ErrorRecovery.recoverSend(adapter, service!!)
+            } catch (_: Exception) {}
             e.printStackTrace()
         } finally {
             if (state != EngineState.Error) state = EngineState.Idle
@@ -276,6 +303,7 @@ class MessageEngine(
             val result = adapter.fillAndSend(service!!, root, sentence)
 
             if (result == PlatformAdapter.SendResult.BANNED) {
+                RuntimeJournal.messageSent(false, "被禁言")
                 state = EngineState.Idle
                 return
             }
@@ -284,6 +312,7 @@ class MessageEngine(
                 delay(SPLIT_MIN_MS + Random.nextLong(SPLIT_MAX_MS - SPLIT_MIN_MS))
             }
         }
+        RuntimeJournal.messageSent(true)
     }
 
     private fun splitSentences(text: String): List<String> {
