@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,7 +91,7 @@ fun RecordsScreen(token: String, apiBaseUrl: String) {
 
         if (isLoading) {
             Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Green)
+                LinearProgressIndicator(color = Green, modifier = Modifier.fillMaxWidth())
             }
         } else if (error != null) {
             Text(error!!, color = Danger, fontSize = 14.sp)

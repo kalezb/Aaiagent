@@ -65,7 +65,24 @@ class AssistantAccessibilityService : AccessibilityService() {
         // \u6D88\u606F\u8BFB\u53D6\u7531 MessageEngine \u5728\u5904\u7406\u6D41\u7A0B\u4E2D\u8C03\u7528 adapter.readMessages()
         val isInChatRoom = adapter.isInChat(root)
         engine.onPageChanged(isInChatRoom)
-        android.util.Log.d("AIA", "WindowStateChanged: pkg=$packageName isInChat=$isInChatRoom")
+
+        val platform = when (packageName) {
+            "cn.soulapp.android" -> "soul"
+            "com.tencent.mobileqq" -> "qq"
+            "com.immomo.momo" -> "immomo"
+            "com.lianxin.app", "com.lianxin.lxchat" -> "lianxin"
+            else -> return
+        }
+
+        android.util.Log.d("AIA", "WindowStateChanged: pkg=$packageName plat=$platform isInChat=$isInChatRoom hosting=${engine.hostingEnabled}")
+
+        if (engine.hostingEnabled && !isInChatRoom && engine.currentState() == EngineState.Idle) {
+            val isInMsgList = adapter.isInMessageList(root)
+            if (isInMsgList) {
+                android.util.Log.d("AIA", "Auto-triggering scan for $platform")
+                engine.startHosting(platform)
+            }
+        }
     }
 
     private fun handleContentChanged(event: AccessibilityEvent) {

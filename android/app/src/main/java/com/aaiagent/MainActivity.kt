@@ -255,6 +255,16 @@ class MainActivity : ComponentActivity() {
                     } catch (_: Exception) {}
                 }
             }
+            // Trigger the engine to start scanning
+            val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+            if (engine != null) {
+                val platform = enabledPlatforms.firstOrNull() ?: "soul"
+                engine.startHosting(platform)
+                android.util.Log.d("AIA", "Hosting started for platform=$platform")
+            }
+        } else {
+            val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+            engine?.stopHosting()
         }
     }
 

@@ -43,9 +43,75 @@ class MessageEngine(
     @Volatile var state: EngineState = EngineState.Idle
     @Volatile var currentPlatform: String = ""
     @Volatile var monitorMode: Boolean = false
+    @Volatile var hostingEnabled: Boolean = false
 
     private val contexts = mutableMapOf<String, ConversationContext>()
     private var llmJob: Job? = null
+
+    fun startHosting(platform: String) {
+        hostingEnabled = true
+        currentPlatform = platform
+        state = EngineState.Idle
+        // 触发扫描会话列表
+        scope.launch {
+            delay(1000)
+            if (hostingEnabled && state == EngineState.Idle) {
+                scanAndProcess()
+            }
+        }
+    }
+
+    fun stopHosting() {
+        hostingEnabled = false
+        state = EngineState.Idle
+        llmJob?.cancel()
+    }
+
+    // 主动扫描会话列表
+    private suspend fun scanAndProcess() {
+        val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
+        var root = service?.rootInActiveWindow ?: return
+
+        if (!adapter.isInMessageList(root)) {
+            // 尝试导航到消息列表
+            adapter.navigateToMessageList(service!!, root)
+            delay(500)
+            root = service?.rootInActiveWindow ?: return
+            if (!adapter.isInMessageList(root)) {
+                // 还没到，尝试拉起 Soul
+                adapter.bringToForeground(service!!)
+                delay(1500)
+                root = service?.rootInActiveWindow ?: return
+            }
+        }
+
+        RuntimeJournal.stateChange(state.toString(), "ScanningConversations")
+        state = EngineState.ScanningConversations
+
+        // 扫描未读会话
+        for (attempt in 1..3) {
+            val info = adapter.clickFirstUnreadConversation(root, shouldClick = true)
+            if (info != null) {
+                // 更新上下文
+                val key = currentPlatform + ":" + info.contactId
+                val ctx = getOrCreateContext(currentPlatform, info.contactId)
+                ctx.contactName = info.contactName
+                ctx.contactId = info.contactId
+                ctx.llmRequestId++
+                if (ctx.firstMessageAt == 0L) ctx.firstMessageAt = System.currentTimeMillis()
+                
+                RuntimeJournal.clickConversation(info.contactName, true)
+                delay(1000)
+                processConversation(ctx)
+                return
+            }
+            delay(2000) // wait then retry
+            root = service?.rootInActiveWindow ?: return
+        }
+
+        // 没有未读，等待下次触发
+        state = EngineState.Idle
+    }
 
     companion object {
         const val SHORT_WINDOW_MS = 500L
