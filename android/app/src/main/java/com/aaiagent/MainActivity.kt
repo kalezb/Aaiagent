@@ -207,6 +207,10 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // 同步引擎状态：Activity 启动时确保引擎不会残留上次的托管状态
+        val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+        engine?.stopHosting()
+
         requestPermissions()
     }
 
