@@ -29,10 +29,11 @@ class MessageEngine(
     private val service: AccessibilityService?,
     private val repository: AppRepository
 ) {
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val adapterRegistry: AdapterRegistry? = service?.let { AdapterRegistry(it) }
+   private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+   private val adapterRegistry: AdapterRegistry? = service?.let { AdapterRegistry(it) }
+   private var pollingJob: Job? = null
 
-    init {
+   init {
         // 初始化运行日志 (补充页 §三)
         service?.let {
             val logDir = java.io.File(it.filesDir, "journal")
@@ -48,40 +49,81 @@ class MessageEngine(
     private val contexts = mutableMapOf<String, ConversationContext>()
     private var llmJob: Job? = null
 
-    fun startHosting(platform: String) {
-        hostingEnabled = true
-        currentPlatform = platform
-        state = EngineState.Idle
-        // 触发扫描会话列表
-        scope.launch {
-            delay(1000)
-            if (hostingEnabled && state == EngineState.Idle) {
-                scanAndProcess()
-            }
-        }
-    }
+   fun startHosting(platform: String) {
+       val wasHosting = hostingEnabled
+       hostingEnabled = true
+       currentPlatform = platform
+       
+       if (!wasHosting) {
+           state = EngineState.Idle
+           pollingJob?.cancel()
+           pollingJob = scope.launch {
+               delay(500)
+               while (hostingEnabled && isActive) {
+                   if (state == EngineState.Idle || state == EngineState.Error) {
+                       if (state == EngineState.Error) state = EngineState.Idle
+                       scanAndProcess()
+                   }
+                   delay(2000)
+               }
+           }
+       } else {
+           if (state == EngineState.Idle) {
+               scope.launch { scanAndProcess() }
+           }
+       }
+   }
 
-    fun stopHosting() {
-        hostingEnabled = false
-        state = EngineState.Idle
-        llmJob?.cancel()
-    }
+   fun stopHosting() {
+       hostingEnabled = false
+       pollingJob?.cancel()
+       pollingJob = null
+       state = EngineState.Idle
+       llmJob?.cancel()
+   }
 
     // 主动扫描会话列表
     private suspend fun scanAndProcess() {
-        val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
-        var root = service?.rootInActiveWindow ?: return
+        android.util.Log.d("AIA", "scanAndProcess: start, platform=$currentPlatform")
+        val adapter = adapterRegistry?.getByPlatform(currentPlatform)
+        if (adapter == null) {
+            android.util.Log.w("AIA", "scanAndProcess: no adapter for $currentPlatform")
+            return
+        }
+        var root = service?.rootInActiveWindow
+        if (root == null) {
+            android.util.Log.w("AIA", "scanAndProcess: rootInActiveWindow is null")
+            return
+        }
 
-        if (!adapter.isInMessageList(root)) {
-            // 尝试导航到消息列表
+        val inMsgList = adapter.isInMessageList(root)
+        android.util.Log.d("AIA", "scanAndProcess: root available, isInMessageList=$inMsgList")
+
+        if (!inMsgList) {
+            android.util.Log.d("AIA", "scanAndProcess: not in msg list, navigating...")
             adapter.navigateToMessageList(service!!, root)
             delay(500)
-            root = service?.rootInActiveWindow ?: return
-            if (!adapter.isInMessageList(root)) {
+            root = service?.rootInActiveWindow
+            if (root == null) {
+                android.util.Log.w("AIA", "scanAndProcess: root null after navigate")
+                state = EngineState.Idle
+                return
+            }
+            val inList2 = adapter.isInMessageList(root)
+            android.util.Log.d("AIA", "scanAndProcess: after navigate, isInMessageList=$inList2")
+            if (!inList2) {
                 // 还没到，尝试拉起 Soul
+                android.util.Log.d("AIA", "scanAndProcess: bringing Soul to foreground")
                 adapter.bringToForeground(service!!)
-                delay(1500)
-                root = service?.rootInActiveWindow ?: return
+                delay(2000)
+                root = service?.rootInActiveWindow
+                if (root == null) {
+                    android.util.Log.w("AIA", "scanAndProcess: root null after bringToForeground")
+                    state = EngineState.Idle
+                    return
+                }
+                val inList3 = adapter.isInMessageList(root)
+                android.util.Log.d("AIA", "scanAndProcess: after bringToForeground, isInMessageList=$inList3")
             }
         }
 
@@ -90,10 +132,10 @@ class MessageEngine(
 
         // 扫描未读会话
         for (attempt in 1..3) {
-            val info = adapter.clickFirstUnreadConversation(root, shouldClick = true)
+            android.util.Log.d("AIA", "scanAndProcess: scanning attempt $attempt/3")
+            val info = adapter.clickFirstUnreadConversation(root!!, shouldClick = true)
             if (info != null) {
-                // 更新上下文
-                val key = currentPlatform + ":" + info.contactId
+                android.util.Log.d("AIA", "scanAndProcess: found unread: ${info.contactName}")
                 val ctx = getOrCreateContext(currentPlatform, info.contactId)
                 ctx.contactName = info.contactName
                 ctx.contactId = info.contactId
@@ -105,11 +147,13 @@ class MessageEngine(
                 processConversation(ctx)
                 return
             }
-            delay(2000) // wait then retry
-            root = service?.rootInActiveWindow ?: return
+            android.util.Log.d("AIA", "scanAndProcess: no unread found, waiting 2s")
+            delay(2000)
+            val r = service?.rootInActiveWindow ?: return
+            root = r
         }
 
-        // 没有未读，等待下次触发
+        android.util.Log.d("AIA", "scanAndProcess: no unread after 3 attempts, going idle")
         state = EngineState.Idle
     }
 
