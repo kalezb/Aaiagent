@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI托管助手 - UI设计3版对比</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { background: #f5f5f5; padding: 20px; }
+        h1 { text-align: center; margin-bottom: 30px; color: #333; }
+        .versions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 1200px; margin: 0 auto; }
+        .version { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .version-title { text-align: center; font-size: 18px; font-weight: 600; margin-bottom: 20px; color: #333; }
+        .card { border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+        .card-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #333; }
+        .item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .item:last-child { border-bottom: none; }
+        .item-label { font-size: 14px; color: #333; }
+        .item-desc { font-size: 12px; color: #999; margin-top: 2px; }
+        .status-ok { color: #4CAF50; font-size: 14px; font-weight: 500; }
+        .btn-go { background: #2196F3; color: #fff; border: none; padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+        .switch { width: 44px; height: 24px; background: #ccc; border-radius: 12px; position: relative; cursor: pointer; transition: background 0.2s; }
+        .switch.on { background: #4CAF50; }
+        .switch::after { content: ''; width: 20px; height: 20px; background: #fff; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: left 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+        .switch.on::after { left: 22px; }
+        .platform-group { display: flex; gap: 8px; margin-bottom: 12px; }
+        .platform-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid #ddd; background: #fff; font-size: 14px; cursor: pointer; }
+        .platform-btn.active { background: #2196F3; color: #fff; border-color: #2196F3; }
+        .location-input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 8px; }
+        .location-label { font-size: 13px; color: #666; margin-bottom: 4px; margin-top: 8px; }
+        .save-location-btn { width: 100%; padding: 10px; background: #2196F3; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px; }
+        .current-status { margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; font-size: 13px; color: #666; }
+        .v2 { background: #1a1a2e; }
+        .v2 .version-title { color: #fff; }
+        .v2 .card { background: #16213e; }
+        .v2 .card-title { color: #fff; }
+        .v2 .item { border-bottom: 1px solid #2a2a4a; }
+        .v2 .item-label { color: #eee; }
+        .v2 .item-desc { color: #888; }
+        .v2 .status-ok { color: #00d4ff; }
+        .v2 .btn-go { background: #00d4ff; color: #1a1a2e; font-weight: 600; }
+        .v2 .platform-btn { border: 1px solid #333; background: transparent; color: #888; }
+        .v2 .platform-btn.active { background: #00d4ff; color: #1a1a2e; border-color: #00d4ff; }
+        .v2 .location-input { background: #0f3460; border: 1px solid #2a2a4a; color: #eee; }
+        .v2 .location-label { color: #888; }
+        .v2 .save-location-btn { background: #00d4ff; color: #1a1a2e; font-weight: 600; }
+        .v2 .current-status { background: #0f3460; color: #888; }
+        .v3 .card { background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #f0f0f0; }
+        .v3 .card-title { font-size: 18px; font-weight: 700; color: #1a1a1a; }
+        .v3 .item { padding: 14px 0; border-bottom: 1px solid #f5f5f5; }
+        .v3 .item-label { font-size: 15px; color: #1a1a1a; font-weight: 500; }
+        .v3 .item-desc { font-size: 13px; color: #999; margin-top: 4px; }
+        .v3 .status-ok { color: #22c55e; font-size: 15px; font-weight: 600; }
+        .v3 .btn-go { background: #fff; color: #22c55e; border: 1.5px solid #22c55e; padding: 8px 20px; border-radius: 8px; font-weight: 600; }
+        .v3 .platform-btn { padding: 10px 20px; border-radius: 24px; border: 2px solid #e5e5e5; background: #fff; font-size: 15px; font-weight: 500; }
+        .v3 .platform-btn.active { background: #22c55e; color: #fff; border-color: #22c55e; }
+        .v3 .location-input { padding: 10px 14px; border: 2px solid #e5e5e5; border-radius: 10px; font-size: 15px; }
+        .v3 .location-label { font-size: 14px; color: #333; font-weight: 500; }
+        .v3 .save-location-btn { padding: 12px; background: #22c55e; color: #fff; border-radius: 10px; font-size: 15px; font-weight: 600; }
+        .send-method { display: flex; gap: 10px; margin-top: 8px; }
+        .send-btn { flex: 1; padding: 12px; border-radius: 10px; border: 2px solid #e5e5e5; background: #fff; font-size: 14px; cursor: pointer; text-align: center; }
+        .send-btn.active { border-color: #22c55e; background: #f0fdf4; color: #22c55e; }
+    </style>
+</head>
+<body>
+    <h1>AI托管助手 - UI设计3版对比（已去重）</h1>
+    <div class="versions">
+        <div class="version v1">
+            <div class="version-title">版1：简洁白色版</div>
+            <div class="card">
+                <div class="card-title">🔒 设备权限</div>
+                <div class="item"><div><div class="item-label">无障碍读取与操作</div><div class="item-desc">读取消息 + 自动操作</div></div><div class="status-ok">已授权 ✓</div></div>
+                <div class="item"><div><div class="item-label">通知读取</div><div class="item-desc">监听新消息通知</div></div><div class="status-ok">已授权 ✓</div></div>
+                <div class="item"><div><div class="item-label">电池优化白名单</div><div class="item-desc">防止后台被杀</div></div><button class="btn-go">去设置 →</button></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧠 平台与人设</div>
+                <div class="platform-group"><button class="platform-btn active">Soul</button><button class="platform-btn">QQ</button><button class="platform-btn">连信</button><button class="platform-btn">陌陌</button></div>
+                <div class="item"><div class="item-label">客服人设</div><div style="color:#999;font-size:14px;">星暮 ▼</div></div>
+                <div class="location-label">🏠 家庭地址</div>
+                <input class="location-input" placeholder="城市：重庆">
+                <input class="location-input" placeholder="区域：渝北区">
+                <div class="location-label">💼 工作地址</div>
+                <input class="location-input" placeholder="城市：重庆">
+                <input class="location-input" placeholder="区域：两江新区">
+                <button class="save-location-btn">保存位置</button>
+                <div class="current-status">当前：Soul | 星暮·女·29岁<br>家：重庆渝北 | 班：重庆两江新区</div>
+            </div>
+            <div class="card">
+                <div class="card-title">⚡ AI 托管控制</div>
+                <div class="item"><div><div class="item-label">AI 托管</div><div class="item-desc">开启后自动回复消息</div></div><div class="switch on"></div></div>
+                <div class="item"><div><div class="item-label">监控模式</div><div class="item-desc">实时同步聊天记录</div></div><div class="switch"></div></div>
+            </div>
+        </div>
+        <div class="version v2">
+            <div class="version-title">版2：深色科技版</div>
+            <div class="card">
+                <div class="card-title">🔒 设备权限</div>
+                <div class="item"><div><div class="item-label">无障碍读取与操作</div><div class="item-desc">读取消息 + 自动操作</div></div><div class="status-ok">已授权 ✓</div></div>
+                <div class="item"><div><div class="item-label">通知读取</div><div class="item-desc">监听新消息通知</div></div><div class="status-ok">已授权 ✓</div></div>
+                <div class="item"><div><div class="item-label">电池优化白名单</div><div class="item-desc">防止后台被杀</div></div><button class="btn-go">去设置 →</button></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧠 平台与人设</div>
+                <div class="platform-group"><button class="platform-btn active">Soul</button><button class="platform-btn">QQ</button><button class="platform-btn">连信</button><button class="platform-btn">陌陌</button></div>
+                <div class="item"><div class="item-label">客服人设</div><div style="color:#888;font-size:14px;">星暮 ▼</div></div>
+                <div class="location-label">🏠 家庭地址</div>
+                <input class="location-input" placeholder="城市：重庆">
+                <input class="location-input" placeholder="区域：渝北区">
+                <div class="location-label">💼 工作地址</div>
+                <input class="location-input" placeholder="城市：重庆">
+                <input class="location-input" placeholder="区域：两江新区">
+                <button class="save-location-btn">保存位置</button>
+                <div class="current-status">当前：Soul | 星暮·女·29岁<br>家：重庆渝北 | 班：重庆两江新区</div>
+            </div>
+            <div class="card">
+                <div class="card-title">⚡ AI 托管控制</div>
+                <div class="item"><div><div class="item-label">AI 托管</div><div class="item-desc">开启后自动回复消息</div></div><div class="switch on"></div></div>
+                <div class="item"><div><div class="item-label">监控模式</div><div class="item-desc">实时同步聊天记录</div></div><div class="switch"></div></div>
+            </div>
+        </div>
+        <div class="version v3">
+            <div class="version-title">版3：大卡片现代版</div>
+            <div class="card">
+                <div class="card-title">🔒 设备权限</div>
+                <div class="item"><div><div class="item-label">无障碍读取与操作</div><div class="item-desc">读取消息 + 自动操作</div></div><div class="status-ok">已授权 ✓</div></div>
+                <div class="item"><div><div class="item-label">通知读取</div><div class="item-desc">监听新消息通知</div></div><div class="status-ok">已授权 ✓</div></div>
+                <div class="item"><div><div class="item-label">电池优化白名单</div><div class="item-desc">防止后台被杀</div></div><button class="btn-go">去设置 →</button></div>
+            </div>
+            <div class="card">
+                <div class="card-title">🧠 平台与人设</div>
+                <div class="platform-group"><button class="platform-btn active">Soul</button><button class="platform-btn">QQ</button><button class="platform-btn">连信</button><button class="platform-btn">陌陌</button></div>
+                <div class="item"><div class="item-label">客服人设</div><div style="color:#999;font-size:15px;">星暮 ▼</div></div>
+                <div class="location-label">🏠 家庭地址</div>
+                <input class="location-input" placeholder="城市：重庆">
+                <input class="location-input" placeholder="区域：渝北区">
+                <div class="location-label">💼 工作地址</div>
+                <input class="location-input" placeholder="城市：重庆">
+                <input class="location-input" placeholder="区域：两江新区">
+                <button class="save-location-btn">保存位置</button>
+                <div class="current-status">当前：Soul | 星暮·女·29岁<br>家：重庆渝北 | 班：重庆两江新区</div>
+            </div>
+            <div class="card">
+                <div class="card-title">⚡ AI 托管控制</div>
+                <div class="item"><div><div class="item-label">AI 托管</div><div class="item-desc">开启后自动回复消息</div></div><div class="switch on"></div></div>
+                <div class="item"><div><div class="item-label">监控模式</div><div class="item-desc">实时同步聊天记录</div></div><div class="switch"></div></div>
+                <div class="item"><div class="item-label">发送方式</div></div>
+                <div class="send-method"><div class="send-btn active">🤖 自动发送</div><div class="send-btn">👆 手动确认</div></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

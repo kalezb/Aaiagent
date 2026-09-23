@@ -1,4 +1,4 @@
-﻿package com.aaiagent
+package com.aaiagent
 
 import android.content.Intent
 import android.net.Uri
@@ -88,6 +88,10 @@ class MainActivity : ComponentActivity() {
                     onLocationSave = { hc, hd, wc, wd -> homeCity = hc; homeDistrict = hd; workCity = wc; workDistrict = wd; lifecycleScope.launch { withContext(Dispatchers.IO) { repository.setLocation(hc, hd, wc, wd) } } },
                     monitorMode = monitorMode,
                     onMonitorModeChange = { monitorMode = it },
+                    hostingMode = hostingMode,
+                    onHostingModeChange = { hostingMode = it },
+                    onVerifyToken = { verifyToken() },
+                    tokenStatus = tokenStatus,
                     onToggleHosting = { toggleHosting(it) }
                 )
             }
