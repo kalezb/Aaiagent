@@ -358,6 +358,7 @@ private fun SaveButton(label: String, status: String, onClick: () -> Unit, modif
 
 // ══════════════════════ 卡片3: AI 托管控制 ══════════════════════
 
+
 @Composable
 private fun Card3HostingControl(
     isHosting: Boolean, engineState: String,
@@ -366,6 +367,13 @@ private fun Card3HostingControl(
     sendMode: String, onSendModeChange: (String) -> Unit,
     onOpenWhitelist: () -> Unit, onOpenBlacklist: () -> Unit
 ) {
+    // 白名单管理弹窗
+    var showWhitelist by remember { mutableStateOf(false) }
+    var showBlacklist by remember { mutableStateOf(false) }
+    var newContact by remember { mutableStateOf("") }
+    var whitelist by remember { mutableStateOf(listOf<String>()) }
+    var blacklist by remember { mutableStateOf(listOf<String>()) }
+
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
@@ -376,11 +384,44 @@ private fun Card3HostingControl(
             Text(text = "⚡ AI 托管控制", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(Modifier.height(14.dp))
 
+            // 托管模式选择（始终可见，开启托管前先选模式）
+            Text(text = "托管模式", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    HostingMode.FULL_AUTO to "🤖 全自动",
+                    HostingMode.SEMI_AUTO to "✍️ 半自动",
+                    HostingMode.MONITOR_ONLY to "📋 仅记录"
+                ).forEach { (mode, label) ->
+                    val sel = hostingMode == mode
+                    Surface(
+                        Modifier.weight(1f).clickable { onHostingModeChange(mode) },
+                        RoundedCornerShape(10.dp),
+                        color = if (sel) GreenLight else White,
+                        border = BorderStroke(1.5.dp, if (sel) Green else Gray)
+                    ) {
+                        Column(Modifier.padding(vertical = 8.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                color = if (sel) Green else TextSecondary)
+                            Text(text = when (mode) {
+                                HostingMode.FULL_AUTO -> "自动读+回+发"
+                                HostingMode.SEMI_AUTO -> "生成回复填框"
+                                HostingMode.MONITOR_ONLY -> "仅同步聊天记录"
+                            }, fontSize = 9.sp, color = TextHint)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Divider(color = Divider, thickness = 1.dp)
+            Spacer(Modifier.height(14.dp))
+
             // AI托管开关
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(text = "AI 托管", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                    Text(if (isHosting) "开启后自动回复消息 · $engineState" else "开启后自动回复消息", fontSize = 12.sp, color = TextSecondary)
+                    Text(if (isHosting) "已开启 · 模式：${when(hostingMode) { HostingMode.FULL_AUTO -> "全自动"; HostingMode.SEMI_AUTO -> "半自动"; HostingMode.MONITOR_ONLY -> "仅记录" }} · $engineState" else "开启后按所选模式自动处理消息", fontSize = 12.sp, color = TextSecondary)
                 }
                 GreenSwitch(checked = isHosting, onCheckedChange = onToggleHosting)
             }
@@ -389,86 +430,106 @@ private fun Card3HostingControl(
             Divider(color = Divider, thickness = 1.dp)
             Spacer(Modifier.height(14.dp))
 
-            // 托管模式选择（AI托管开启后才显示）
-            AnimatedVisibility(visible = isHosting) {
-                Column {
-                    Text(text = "托管模式", fontSize = 13.sp, color = TextSecondary)
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            HostingMode.FULL_AUTO to "🤖 全自动",
-                            HostingMode.SEMI_AUTO to "✍️ 半自动",
-                            HostingMode.MONITOR_ONLY to "📋 仅记录"
-                        ).forEach { (mode, label) ->
-                            val sel = hostingMode == mode
-                            Surface(
-                                Modifier.weight(1f).clickable { onHostingModeChange(mode) },
-                                RoundedCornerShape(10.dp),
-                                color = if (sel) GreenLight else White,
-                                border = BorderStroke(1.5.dp, if (sel) Green else Gray)
-                            ) {
-                                Column(Modifier.padding(vertical = 8.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                        color = if (sel) Green else TextSecondary)
-                                    Text(text = when (mode) {
-                                        HostingMode.FULL_AUTO -> "自动读+回"
-                                        HostingMode.SEMI_AUTO -> "填框不发送"
-                                        HostingMode.MONITOR_ONLY -> "仅同步记录"
-                                    }, fontSize = 9.sp, color = TextHint)
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Divider(color = Divider, thickness = 1.dp)
-                }
-            }
-
-            // 发送方式 - 托管关闭或非仅记录模式时显示
-            if (!isHosting || hostingMode != HostingMode.MONITOR_ONLY) {
-                Spacer(Modifier.height(if (isHosting) 14.dp else 14.dp))
-                Text(text = "发送方式", fontSize = 13.sp, color = TextSecondary)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("auto" to "🤖 自动发送", "manual" to "👆 手动确认").forEach { (mode, label) ->
-                        val sel = sendMode == mode
-                        Surface(
-                            Modifier.weight(1f).clickable { onSendModeChange(mode) },
-                            RoundedCornerShape(10.dp),
-                            color = if (sel) GreenLight else White,
-                            border = BorderStroke(1.5.dp, if (sel) Green else Gray)
-                        ) {
-                            Text(text = label, modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                                color = if (sel) Green else TextSecondary)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-            }
-
-            Divider(color = Divider, thickness = 1.dp)
-            Spacer(Modifier.height(14.dp))
-
-            // 白名单/黑名单
+            // 联系人管理
             Text(text = "联系人管理", fontSize = 13.sp, color = TextSecondary)
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
-                    Modifier.weight(1f).clickable { onOpenWhitelist() },
+                    Modifier.weight(1f).clickable { showWhitelist = true },
                     RoundedCornerShape(10.dp),
                     border = BorderStroke(1.5.dp, Green)
                 ) {
-                    Text(text = "白名单管理", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Green)
+                    Text(text = "白名单 (${whitelist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Green)
                 }
                 Surface(
-                    Modifier.weight(1f).clickable { onOpenBlacklist() },
+                    Modifier.weight(1f).clickable { showBlacklist = true },
                     RoundedCornerShape(10.dp),
                     border = BorderStroke(1.5.dp, Red)
                 ) {
-                    Text(text = "黑名单管理", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Red)
+                    Text(text = "黑名单 (${blacklist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Red)
                 }
             }
         }
+    }
+
+    // 白名单弹窗
+    if (showWhitelist) {
+        AlertDialog(
+            onDismissRequest = { showWhitelist = false },
+            title = { Text("白名单管理", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
+                            BasicTextField(
+                                value = newContact,
+                                onValueChange = { newContact = it },
+                                textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp),
+                                singleLine = true,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp).fillMaxWidth(),
+                                decorationBox = { if (newContact.isEmpty()) Text("输入联系人或关键词", color = TextHint, fontSize = 14.sp) }
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = {
+                            if (newContact.isNotBlank()) { whitelist = whitelist + newContact.trim(); newContact = "" }
+                        }) { Text("添加", color = Green) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    if (whitelist.isEmpty()) {
+                        Text("暂无白名单联系人", color = TextHint, fontSize = 13.sp)
+                    } else {
+                        whitelist.forEach { name ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(name, Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
+                                TextButton(onClick = { whitelist = whitelist - name }) { Text("删除", color = Red, fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showWhitelist = false }) { Text("完成", color = Green) } }
+        )
+    }
+
+    // 黑名单弹窗
+    if (showBlacklist) {
+        AlertDialog(
+            onDismissRequest = { showBlacklist = false },
+            title = { Text("黑名单管理", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
+                            BasicTextField(
+                                value = newContact,
+                                onValueChange = { newContact = it },
+                                textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp),
+                                singleLine = true,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp).fillMaxWidth(),
+                                decorationBox = { if (newContact.isEmpty()) Text("输入联系人或关键词", color = TextHint, fontSize = 14.sp) }
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = {
+                            if (newContact.isNotBlank()) { blacklist = blacklist + newContact.trim(); newContact = "" }
+                        }) { Text("添加", color = Red) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    if (blacklist.isEmpty()) {
+                        Text("暂无黑名单联系人", color = TextHint, fontSize = 13.sp)
+                    } else {
+                        blacklist.forEach { name ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(name, Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
+                                TextButton(onClick = { blacklist = blacklist - name }) { Text("删除", color = Red, fontSize = 12.sp) }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showBlacklist = false }) { Text("完成", color = Green) } }
+        )
     }
 }
 

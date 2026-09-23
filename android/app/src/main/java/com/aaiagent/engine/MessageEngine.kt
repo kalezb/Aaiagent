@@ -68,7 +68,7 @@ class MessageEngine(
                while (hostingEnabled && isActive) {
                    if (state == EngineState.Idle || state == EngineState.Error) {
                        if (state == EngineState.Error) state = EngineState.Idle
-                       scanAndProcess()
+                       try { scanAndProcess() } catch (e: Exception) { android.util.Log.e("AIA", "scanAndProcess crashed", e); state = EngineState.Error }
                    }
                    delay(2000)
                }
@@ -89,9 +89,15 @@ class MessageEngine(
    }
 
     // 主动扫描会话列表
-    // 主动扫描会话列表
     private suspend fun scanAndProcess() {
         android.util.Log.d("AIA", "scanAndProcess: start, platform=$currentPlatform")
+        val svc = service
+        if (svc == null) {
+            android.util.Log.e("AIA", "scanAndProcess: service is null! AccessibilityService not running?")
+            state = EngineState.Error
+            return
+        }
+        
         val adapter = adapterRegistry?.getByPlatform(currentPlatform)
         if (adapter == null) {
             android.util.Log.w("AIA", "scanAndProcess: no adapter for $currentPlatform")
@@ -99,12 +105,12 @@ class MessageEngine(
         }
 
         // 检查当前前台App是否是目标平台
-        var root = service?.rootInActiveWindow
+        var root = svc.rootInActiveWindow
         if (root == null) {
             android.util.Log.w("AIA", "scanAndProcess: rootInActiveWindow is null, trying bringToForeground")
-            adapter.bringToForeground(service!!)
-            delay(2000)
-            root = service?.rootInActiveWindow
+            try { adapter.bringToForeground(svc) } catch (_: Exception) {}
+            delay(2500)
+            root = svc.rootInActiveWindow
             if (root == null) {
                 android.util.Log.w("AIA", "scanAndProcess: root still null after bringToForeground")
                 state = EngineState.Idle
@@ -112,62 +118,66 @@ class MessageEngine(
             }
         }
 
-        val currentPkg = root!!.packageName?.toString() ?: ""
+        val currentPkg = root.packageName?.toString() ?: ""
         android.util.Log.d("AIA", "scanAndProcess: current foreground pkg=$currentPkg, target=${adapter.packageName}")
 
         // 如果当前窗口不是目标App，直接拉起目标App
         if (currentPkg != adapter.packageName) {
             android.util.Log.d("AIA", "scanAndProcess: not in target app, bringing to foreground")
-            adapter.bringToForeground(service!!)
-            delay(2000)
-            root = service?.rootInActiveWindow
+            try { adapter.bringToForeground(svc) } catch (_: Exception) {}
+            delay(2500)
+            root = svc.rootInActiveWindow
             if (root == null) {
-                android.util.Log.w("AIA", "scanAndProcess: root null after bringToForeground")
+                android.util.Log.w("AIA", "scanAndProcess: root null after bringToForeground (2)")
                 state = EngineState.Idle
                 return
             }
         }
 
         // 导航到消息列表
-        val inMsgList = adapter.isInMessageList(root!!)
+        val inMsgList = adapter.isInMessageList(root)
         android.util.Log.d("AIA", "scanAndProcess: isInMessageList=$inMsgList")
         if (!inMsgList) {
             android.util.Log.d("AIA", "scanAndProcess: navigating to message list...")
-            adapter.navigateToMessageList(service!!, root!!)
-            delay(800)
-            root = service?.rootInActiveWindow
+            try { adapter.navigateToMessageList(svc, root) } catch (_: Exception) {}
+            delay(1000)
+            root = svc.rootInActiveWindow
             if (root == null) {
                 android.util.Log.w("AIA", "scanAndProcess: root null after navigate")
                 state = EngineState.Idle
                 return
             }
-            val inList2 = adapter.isInMessageList(root!!)
+            val inList2 = adapter.isInMessageList(root)
             android.util.Log.d("AIA", "scanAndProcess: after navigate, isInMessageList=$inList2")
         }
 
         RuntimeJournal.stateChange(state.toString(), "ScanningConversations")
         state = EngineState.ScanningConversations
 
-        // 扫描未读会话（最多尝试5次，每次可带滚动）
+        // 扫描未读会话（最多尝试5次）
         for (attempt in 1..5) {
             android.util.Log.d("AIA", "scanAndProcess: scanning attempt $attempt/5")
-            val info = adapter.clickFirstUnreadConversation(root!!, shouldClick = true)
-            if (info != null) {
-                android.util.Log.d("AIA", "scanAndProcess: found unread: ${info.contactName}, clicking...")
-                val ctx = getOrCreateContext(currentPlatform, info.contactId)
-                ctx.contactName = info.contactName
-                ctx.contactId = info.contactId
-                ctx.llmRequestId++
-                if (ctx.firstMessageAt == 0L) ctx.firstMessageAt = System.currentTimeMillis()
-                
-                RuntimeJournal.clickConversation(info.contactName, true)
-                delay(1000)
-                processConversation(ctx)
-                return
+            try {
+                val info = adapter.clickFirstUnreadConversation(root, shouldClick = true)
+                if (info != null) {
+                    android.util.Log.d("AIA", "scanAndProcess: found unread: ${info.contactName}, clicking...")
+                    val ctx = getOrCreateContext(currentPlatform, info.contactId)
+                    ctx.contactName = info.contactName
+                    ctx.contactId = info.contactId
+                    ctx.llmRequestId++
+                    if (ctx.firstMessageAt == 0L) ctx.firstMessageAt = System.currentTimeMillis()
+                    
+                    RuntimeJournal.clickConversation(info.contactName, true)
+                    delay(1000)
+                    processConversation(ctx)
+                    return
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("AIA", "scanAndProcess: error on attempt $attempt", e)
             }
             android.util.Log.d("AIA", "scanAndProcess: no unread found on attempt $attempt")
             delay(1500)
-            val r = service?.rootInActiveWindow
+            val r = svc.rootInActiveWindow
             if (r != null) root = r
         }
 

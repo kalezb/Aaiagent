@@ -170,11 +170,36 @@ class MainActivity : ComponentActivity() {
 
     // ═══ 托管 ═══
 
+    // ═══ 托管 ═══
     private fun toggleHosting(enable: Boolean) {
         isHosting = enable; floatingWindow?.updateHostingState(enable)
         if (enable) {
             startForegroundService(); val platform = enabledPlatforms.firstOrNull() ?: "soul"; platformsStatus[platform] = true
             lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "true")) } catch (_: Exception) {} } }
+            val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+            if (engine != null) {
+                engine.hostingMode = hostingMode
+                engine.startHosting(platform)
+                // 启动状态轮询
+                statePollJob?.cancel()
+                statePollJob = lifecycleScope.launch {
+                    while (isHosting) {
+                        engineState = com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.currentState().toString()
+                        kotlinx.coroutines.delay(500)
+                    }
+                }
+            } else {
+                // 无障碍服务未启动，提示用户
+                android.util.Log.e("AIA", "toggleHosting: sharedEngine is null! AccessibilityService not running.")
+                engineState = "无障碍服务未启动"
+                // 回滚状态
+                isHosting = false
+                platformsStatus.keys.forEach { platformsStatus[it] = false }
+            }
+        } else {
+            com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.stopHosting()
+            platformsStatus.keys.forEach { platformsStatus[it] = false }; statePollJob?.cancel(); engineState = "IDLE"
+            lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "false")) } catch (_: Exception) {} } }
         }
     }
 
