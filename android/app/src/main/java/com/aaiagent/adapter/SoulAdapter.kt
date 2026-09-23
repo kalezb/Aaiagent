@@ -14,15 +14,18 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         var hits = 0
         val indicators = listOf("chat_avatar", "chat_follow_btn", "et_sendmessage")
         for (id in indicators) {
-            val nodes = root.findAccessibilityNodeInfosByViewId("/")
+            val nodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/" + id)
             if (nodes.isNotEmpty()) hits++
         }
         return hits >= 2
     }
 
     override fun isInMessageList(root: AccessibilityNodeInfo): Boolean {
-        val nodes = root.findAccessibilityNodeInfosByViewId("/item_content_root")
-        return nodes.isNotEmpty()
+        val nodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/conversation_list")
+        if (nodes.isNotEmpty()) return true
+        // fallback: check for conversation items
+        val items = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/item_content_root")
+        return items.isNotEmpty()
     }
 
     override fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage> {
@@ -34,7 +37,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private fun crawlMessages(node: AccessibilityNodeInfo, messages: MutableList<ChatMessage>) {
         // 检查消息容器
-        val containers = node.findAccessibilityNodeInfosByViewId("/item_content_root")
+        val containers = node.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/item_content_root")
         for (container in containers) {
             extractMessage(container, messages)
         }
@@ -91,7 +94,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         text: String
     ): SendResult {
         // 找输入框
-        val inputNodes = root.findAccessibilityNodeInfosByViewId("/et_sendmessage")
+        val inputNodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/et_sendmessage")
         val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser }
             ?: return SendResult.TIMEOUT
 
@@ -102,7 +105,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
         // 等发送按钮出现
         kotlinx.coroutines.delay(300)
-        val sendNodes = root.findAccessibilityNodeInfosByViewId("/btn_send")
+        val sendNodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/btn_send")
         val sendButton = sendNodes.firstOrNull { it.isClickable && it.isVisibleToUser }
             ?: return SendResult.TIMEOUT
 

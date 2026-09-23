@@ -68,6 +68,12 @@ export const onRequest = async (context) => {
       return json({ status: "ok", time: Math.floor(Date.now() / 1000) });
     }
 
+    // GET /api/token — list all tokens (Dashboard)
+    if (path === "/api/token" && method === "GET") {
+      const { results } = await env.DB.prepare("SELECT token, name, monthly_limit, spent, is_active, created_at, last_used_at FROM tokens ORDER BY created_at DESC").all();
+      return json({ tokens: results || [] });
+    }
+
     // GET /api/config — App startup config
     if (path === "/api/config" && method === "GET") {
       const persona = await env.DB.prepare("SELECT id, name FROM personas WHERE is_active = 1 LIMIT 1").first();
@@ -126,6 +132,15 @@ export const onRequest = async (context) => {
     if (path === "/api/persona" && method === "GET") {
       const { results } = await env.DB.prepare("SELECT id, name, system_prompt, is_active, created_at FROM personas ORDER BY created_at").all();
       return json({ personas: results || [] });
+    }
+
+    // DELETE /api/persona ? delete a persona (Dashboard)
+    if (path === "/api/persona" && method === "DELETE") {
+      const body = await request.json();
+      const { id } = body;
+      if (!id) return json({ error: "缺少 id" }, 400);
+      await env.DB.prepare("DELETE FROM personas WHERE id = ?").bind(id).run();
+      return json({ success: true });
     }
 
     // PUT /api/persona

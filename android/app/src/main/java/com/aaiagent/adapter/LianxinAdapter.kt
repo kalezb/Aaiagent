@@ -11,18 +11,18 @@ class LianxinAdapter(private val service: AccessibilityService) : PlatformAdapte
     override val packageName = "com.lianxin.app"
 
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
-        val nodes = root.findAccessibilityNodeInfosByViewId("/edit_content")
+        val nodes = root.findAccessibilityNodeInfosByViewId("com.lianxin.app:id/edit_content")
         return nodes.any { it.isVisibleToUser }
     }
 
     override fun isInMessageList(root: AccessibilityNodeInfo): Boolean {
-        val nodes = root.findAccessibilityNodeInfosByViewId("/conversation_list")
+        val nodes = root.findAccessibilityNodeInfosByViewId("com.lianxin.app:id/conversation_list")
         return nodes.isNotEmpty()
     }
 
     override fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
-        val containers = root.findAccessibilityNodeInfosByViewId("/message_item")
+        val containers = root.findAccessibilityNodeInfosByViewId("com.lianxin.app:id/message_item")
         for (container in containers) {
             val text = collectText(container)
             if (text.isNotEmpty()) {
@@ -48,13 +48,13 @@ class LianxinAdapter(private val service: AccessibilityService) : PlatformAdapte
     }
 
     override suspend fun fillAndSend(service: AccessibilityService, root: AccessibilityNodeInfo, text: String): SendResult {
-        val inputNodes = root.findAccessibilityNodeInfosByViewId("/edit_content")
+        val inputNodes = root.findAccessibilityNodeInfosByViewId("com.lianxin.app:id/edit_content")
         val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser } ?: return SendResult.TIMEOUT
         val args = Bundle()
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         kotlinx.coroutines.delay(300)
-        val sendNodes = root.findAccessibilityNodeInfosByViewId("/btn_send")
+        val sendNodes = root.findAccessibilityNodeInfosByViewId("com.lianxin.app:id/btn_send")
         val sendButton = sendNodes.firstOrNull { it.isClickable && it.isVisibleToUser } ?: return SendResult.TIMEOUT
         sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         return SendResult.SUCCESS

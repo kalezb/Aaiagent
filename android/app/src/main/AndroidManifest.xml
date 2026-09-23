@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
 
     <queries>
-        <package android:name="com.soulapp.cn" />
+        <package android:name="cn.soulapp.android" />
         <package android:name="com.tencent.mobileqq" />
         <package android:name="com.immomo.momo" />
         <package android:name="com.lianxin.app" />
