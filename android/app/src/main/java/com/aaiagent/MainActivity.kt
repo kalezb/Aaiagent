@@ -14,30 +14,47 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.aaiagent.data.db.AppDatabase
+import com.aaiagent.data.db.entity.TokenEntity
+import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.network.ApiService
 import com.aaiagent.service.ForegroundService
 import com.aaiagent.ui.components.FloatingWindow
 import com.aaiagent.ui.screens.ConsoleScreen
+import com.aaiagent.ui.screens.PersonaItem
 import com.aaiagent.ui.screens.RecordsScreen
 import com.aaiagent.ui.screens.SettingsScreen
 import com.aaiagent.ui.theme.*
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var repository: AppRepository
     private var floatingWindow: FloatingWindow? = null
+
     private var isHosting by mutableStateOf(false)
+    private var monitorMode by mutableStateOf(false)
     private var engineState by mutableStateOf("IDLE")
     private var lastReply by mutableStateOf<String?>(null)
     private var token by mutableStateOf("")
     private var apiBase by mutableStateOf("https://ai-agent-api.pages.dev")
     private var selectedTab by mutableIntStateOf(0)
-    private var enabledPlatforms by mutableStateOf(setOf("soul", "qq", "immomo", "lianxin"))
+    private var enabledPlatforms by mutableStateOf(setOf("soul"))
+
+    // ???
+    private var personas by mutableStateOf<List<PersonaItem>>(emptyList())
+    private var activePersonaId by mutableStateOf("female")
+
+    // ???
+    private var homeCity by mutableStateOf("???")
+    private var homeDistrict by mutableStateOf("??????")
+    private var workCity by mutableStateOf("???")
+    private var workDistrict by mutableStateOf("??????")
 
     private val platforms = listOf("soul", "qq", "immomo", "lianxin")
     private val platformsStatus = mutableStateMapOf(
@@ -50,16 +67,27 @@ class MainActivity : ComponentActivity() {
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
 
-        // 异步加载配置（Room 禁止主线程 IO）
+        // ?????????
         lifecycleScope.launch {
             val savedToken = withContext(Dispatchers.IO) { repository.getActiveToken() }
-            if (savedToken != null) {
-                token = savedToken.token
-            }
+            if (savedToken != null) token = savedToken.token
+
             val savedApiBase = withContext(Dispatchers.IO) { repository.getConfig("api_base_url") }
-            if (savedApiBase != null) {
-                apiBase = savedApiBase
-            }
+            if (savedApiBase != null) apiBase = savedApiBase
+
+            // ???
+            val loc = withContext(Dispatchers.IO) { repository.getLocation() }
+            homeCity = loc["home"]?.get("city") ?: "???"
+            homeDistrict = loc["home"]?.get("district") ?: "??????"
+            workCity = loc["work"]?.get("city") ?: "???"
+            workDistrict = loc["work"]?.get("district") ?: "??????"
+
+            // ???
+            try {
+                val api = ApiService(apiBase)
+                val config = api.getConfig(token)
+                loadPersonas(api)
+            } catch (_: Exception) {}
         }
 
         setContent {
@@ -73,35 +101,23 @@ class MainActivity : ComponentActivity() {
                             NavigationBarItem(
                                 selected = selectedTab == 0,
                                 onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                                label = { Text("控制台") },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Green,
-                                    selectedTextColor = Green,
-                                    indicatorColor = Green.copy(alpha = 0.15f)
-                                )
+                                icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                                label = { Text("???") },
+                                colors = navColors()
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 1,
                                 onClick = { selectedTab = 1 },
                                 icon = { Icon(Icons.Default.List, contentDescription = null) },
-                                label = { Text("记录") },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Green,
-                                    selectedTextColor = Green,
-                                    indicatorColor = Green.copy(alpha = 0.15f)
-                                )
+                                label = { Text("???") },
+                                colors = navColors()
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 2,
                                 onClick = { selectedTab = 2 },
                                 icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                                label = { Text("设置") },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Green,
-                                    selectedTextColor = Green,
-                                    indicatorColor = Green.copy(alpha = 0.15f)
-                                )
+                                label = { Text("???") },
+                                colors = navColors()
                             )
                         }
                     }
@@ -126,9 +142,7 @@ class MainActivity : ComponentActivity() {
                                     token = newToken
                                     lifecycleScope.launch {
                                         withContext(Dispatchers.IO) {
-                                            repository.saveToken(
-                                                com.aaiagent.data.db.entity.TokenEntity(token = newToken)
-                                            )
+                                            repository.saveToken(TokenEntity(token = newToken))
                                         }
                                     }
                                 },
@@ -143,12 +157,49 @@ class MainActivity : ComponentActivity() {
                                 platforms = platforms,
                                 enabledPlatforms = enabledPlatforms,
                                 onTogglePlatform = { platform, enabled ->
-                                    enabledPlatforms = if (enabled) {
-                                        enabledPlatforms + platform
-                                    } else {
-                                        enabledPlatforms - platform
+                                    enabledPlatforms = if (enabled) setOf(platform) else enabledPlatforms
+                                },
+                                personas = personas,
+                                activePersonaId = activePersonaId,
+                                onPersonaChange = { id ->
+                                    activePersonaId = id
+                                    lifecycleScope.launch {
+                                        try {
+                                            val api = ApiService(apiBase)
+                                            // ????????????
+                                            withContext(Dispatchers.IO) {
+                                                // ??? token ??????
+                                                kotlinx.coroutines.withContext(Dispatchers.IO) {
+                                                    val json = com.google.gson.Gson().toJson(
+                                                        mapOf("id" to id, "name" to "", "system_prompt" to "", "is_active" to 1)
+                                                    )
+                                                    val body = json.toByteArray()
+                                                    // removed broken import
+                                                    // ???????? repository ???
+                                                    repository.setConfig("persona_id", id)
+                                                }
+                                            }
+                                            loadPersonas(api)
+                                        } catch (_: Exception) {}
                                     }
-                                }
+                                },
+                                location = UserLocationEntity(
+                                    homeCity = homeCity, homeDistrict = homeDistrict,
+                                    workCity = workCity, workDistrict = workDistrict
+                                ),
+                                onLocationSave = { hc, hd, wc, wd ->
+                                    homeCity = hc; homeDistrict = hd
+                                    workCity = wc; workDistrict = wd
+                                    lifecycleScope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            repository.setLocation(hc, hd, wc, wd)
+                                        }
+                                    }
+                                },
+                                monitorMode = monitorMode,
+                                onMonitorModeChange = { monitorMode = it },
+                                isHosting = isHosting,
+                                onToggleHosting = { toggleHosting(it) }
                             )
                         }
                     }
@@ -156,8 +207,38 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 请求权限
         requestPermissions()
+    }
+
+    private suspend fun loadPersonas(api: ApiService) {
+        try {
+            val data = withContext(Dispatchers.IO) {
+                val req = okhttp3.Request.Builder()
+                    .url(apiBase + "/api/persona")
+                    .get()
+                    .build()
+                val client = okhttp3.OkHttpClient()
+                val resp = client.newCall(req).execute()
+                resp.body?.string() ?: "{}"
+            }
+            val gson = com.google.gson.Gson()
+            val json = gson.fromJson(data, Map::class.java) as? Map<*, *>
+            val list = json?.get("personas") as? List<*>
+            if (list != null) {
+                personas = list.mapNotNull { item ->
+                    val obj = item as? Map<*, *> ?: return@mapNotNull null
+                    PersonaItem(
+                        id = obj["id"] as? String ?: "",
+                        name = obj["name"] as? String ?: "",
+                        systemPrompt = obj["system_prompt"] as? String ?: ""
+                    )
+                }
+                val active = personas.find { it.id == activePersonaId }
+                if (active == null && personas.isNotEmpty()) {
+                    activePersonaId = personas.first().id
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     private fun toggleHosting(enable: Boolean) {
@@ -166,11 +247,12 @@ class MainActivity : ComponentActivity() {
 
         if (enable) {
             startForegroundService()
-            // 注册 token
-            kotlinx.coroutines.MainScope().launch {
+            lifecycleScope.launch {
                 if (token.isNotEmpty()) {
-                    val api = ApiService(apiBase)
-                    api.registerToken(token, android.os.Build.MODEL)
+                    try {
+                        val api = ApiService(apiBase)
+                        api.registerToken(token, Build.MODEL)
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -186,11 +268,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestPermissions() {
-        // 通知权限 (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
-        // 悬浮窗权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -202,17 +282,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 显示悬浮窗（需悬浮窗权限；无权限时跳过，等授权后自动触发）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            return
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
         if (floatingWindow == null || floatingWindow?.isShowing() == false) {
             floatingWindow = FloatingWindow(this)
             floatingWindow?.show(
                 hosting = isHosting,
                 toggleListener = { toggleHosting(it) },
                 longClickListener = {
-                    // 长按打开主界面
                     val intent = Intent(this, MainActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                     startActivity(intent)
@@ -220,6 +296,13 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
+    @Composable
+    private fun navColors() = NavigationBarItemDefaults.colors(
+        selectedIconColor = Green,
+        selectedTextColor = Green,
+        indicatorColor = Green.copy(alpha = 0.15f)
+    )
 
     override fun onDestroy() {
         floatingWindow?.hide()
