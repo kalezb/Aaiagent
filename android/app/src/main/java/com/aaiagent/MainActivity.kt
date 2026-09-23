@@ -1,4 +1,4 @@
-package com.aaiagent
+﻿package com.aaiagent
 
 import android.content.Intent
 import android.net.Uri
@@ -26,6 +26,7 @@ import com.aaiagent.ui.screens.RecordsScreen
 import com.aaiagent.ui.screens.SettingsScreen
 import com.aaiagent.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
@@ -36,6 +37,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var repository: AppRepository
     private var floatingWindow: FloatingWindow? = null
+    private var statePollJob: Job? = null
 
     private var isHosting by mutableStateOf(false)
     private var monitorMode by mutableStateOf(false)

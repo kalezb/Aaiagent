@@ -1,4 +1,4 @@
-package com.aaiagent.ui.screens
+﻿package com.aaiagent.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -208,7 +208,6 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(12.dp))
                 Surface(modifier = Modifier.fillMaxWidth(), color = if (isHosting) Green.copy(alpha = 0.1f) else SurfaceDark, shape = RoundedCornerShape(8.dp)) {
-                    Text(if (isHosting) "\u2705 AI\u6258\u7BA1\u5DF2\u542F\u52A8" else "\u23F8 AI\u6258\u7BA1\u5DF2\u6682\u505C", Modifier.padding(12.dp), fontSize = 13.sp, color = if (isHosting) Green else TextSecondary)
                 }
             }
         }
