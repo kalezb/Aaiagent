@@ -7,7 +7,6 @@ import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.engine.MessageEngine
 import com.aaiagent.engine.EngineState
 import com.aaiagent.adapter.AdapterRegistry
-import com.aaiagent.adapter.PlatformAdapter
 
 class AssistantAccessibilityService : AccessibilityService() {
 
@@ -26,6 +25,7 @@ class AssistantAccessibilityService : AccessibilityService() {
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
         engine = MessageEngine(this, repository)
+        setSharedEngine(engine)
         adapterRegistry = AdapterRegistry(this)
     }
 
@@ -36,7 +36,6 @@ class AssistantAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        android.util.Log.d("AIA", "onAccessibilityEvent: type=${event?.eventType} pkg=${event?.packageName} cls=${event?.className}")
         if (event == null) return
         if (!isEnabled) return
 
@@ -59,67 +58,21 @@ class AssistantAccessibilityService : AccessibilityService() {
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
-        @Suppress("UNUSED_VARIABLE") val className = event.className?.toString() ?: ""
         val adapter = adapterRegistry.get(packageName) ?: return
         val root = rootInActiveWindow ?: return
 
-        // 第一层: View ID 快速判断 (补充页 §一)
-        var isInChatRoom = adapter.isInChat(root)
-
-        // 第二层: View ID 失效 → 启发式规则兜底
-        if (!isInChatRoom && !adapter.isInMessageList(root)) {
-            val page = com.aaiagent.engine.ErrorRecovery.detectPagePublic(adapter, root)
-            isInChatRoom = (page == com.aaiagent.engine.PageType.CHAT)
-        }
-
+        // \u53EA\u68C0\u6D4B\u9875\u9762\u53D8\u5316\uFF0C\u4E0D\u4E3B\u52A8\u8BFB\u6D88\u606F
+        // \u6D88\u606F\u8BFB\u53D6\u7531 MessageEngine \u5728\u5904\u7406\u6D41\u7A0B\u4E2D\u8C03\u7528 adapter.readMessages()
+        val isInChatRoom = adapter.isInChat(root)
         engine.onPageChanged(isInChatRoom)
-
-        if (!isInChatRoom) return
-
-        // 在聊天页中，检查是否有新消息
-        val messages = adapter.readMessages(root)
-        for (msg in messages) {
-            val msgInfo = PlatformAdapter.MessageInfo(
-                id = packageName + "_" + msg.hashCode(),
-                content = msg.content,
-                sender = msg.sender
-            )
-            engine.onNewMessage(
-                when (packageName) {
-                    "cn.soulapp.android" -> "soul"
-                    "com.tencent.mobileqq" -> "qq"
-                    "com.immomo.momo" -> "immomo"
-                    "com.lianxin.app", "com.lianxin.lxchat" -> "lianxin"
-                    else -> return
-                },
-                msgInfo
-            )
-        }
+        android.util.Log.d("AIA", "WindowStateChanged: pkg=$packageName isInChat=$isInChatRoom")
     }
 
     private fun handleContentChanged(event: AccessibilityEvent) {
-        val packageName = event.packageName?.toString() ?: return
-        val adapter = adapterRegistry.get(packageName) ?: return
-        val root = rootInActiveWindow ?: return
-
-        if (!adapter.isInChat(root)) return
-
-        val messages = adapter.readMessages(root)
-        for (msg in messages) {
-            val platform = when (packageName) {
-                "cn.soulapp.android" -> "soul"
-                "com.tencent.mobileqq" -> "qq"
-                "com.immomo.momo" -> "immomo"
-                "com.lianxin.app", "com.lianxin.lxchat" -> "lianxin"
-                else -> return
-            }
-            val msgInfo = PlatformAdapter.MessageInfo(
-                id = packageName + "_" + msg.hashCode() + "_" + System.currentTimeMillis(),
-                content = msg.content,
-                sender = msg.sender
-            )
-            engine.onNewMessage(platform, msgInfo)
-        }
+        // \u5185\u5BB9\u53D8\u5316\u53EF\u80FD\u662F\u65B0\u6D88\u606F\u5230\u6765
+        // \u4F46\u4E3B\u8981\u89E6\u53D1\u5E94\u7531 NotificationListener \u8D1F\u8D23
+        // \u8FD9\u91CC\u4EC5\u68C0\u6D4B\u7528\u6237\u4EA4\u4E92\uFF08\u89E6\u6478\u5C4F\u5E55\uFF09
+        engine.onUserInteraction()
     }
 
     override fun onInterrupt() {
@@ -130,5 +83,14 @@ class AssistantAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         engine.shutdown()
         super.onDestroy()
+    }
+
+    companion object {
+        var sharedEngine: MessageEngine? = null
+            private set
+
+        fun setSharedEngine(engine: MessageEngine) {
+            sharedEngine = engine
+        }
     }
 }

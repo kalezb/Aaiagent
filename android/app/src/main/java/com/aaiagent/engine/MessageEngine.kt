@@ -182,6 +182,9 @@ class MessageEngine(
                     state = EngineState.Idle
                     return
                 }
+                // 更新上下文中的联系人信息
+                ctx.contactName = info.contactName
+                ctx.contactId = info.contactId
                 RuntimeJournal.clickConversation(info.contactName, true)
                 delay(1000)
             }
@@ -211,8 +214,9 @@ class MessageEngine(
             val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token } ?: ""
             val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
             val apiService = ApiService(apiBaseUrl)
-            val contactName = messages.firstOrNull()?.sender ?: "unknown"
-            val contactId = contactName
+            // contactName/contactId from the conversation info (set during clickFirstUnreadConversation)
+            val contactName = ctx.contactName.ifEmpty { "unknown" }
+            val contactId = ctx.contactId.ifEmpty { contactName }
 
             val location = withContext(Dispatchers.IO) { repository.getLocation() }
 

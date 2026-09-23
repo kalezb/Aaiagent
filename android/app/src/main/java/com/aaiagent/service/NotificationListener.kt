@@ -3,27 +3,20 @@ package com.aaiagent.service
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import com.aaiagent.data.db.AppDatabase
-import com.aaiagent.data.repository.AppRepository
-import com.aaiagent.engine.MessageEngine
+import android.util.Log
 
 class NotificationListener : NotificationListenerService() {
 
-    private lateinit var engine: MessageEngine
-    private lateinit var repository: AppRepository
     var isEnabled = false
         private set
 
     override fun onCreate() {
-        android.util.Log.d("AIA", "NotificationListener onCreate")
+        Log.d("AIA", "NotificationListener onCreate")
         super.onCreate()
-        val db = AppDatabase.getInstance(this)
-        repository = AppRepository(db)
-        engine = MessageEngine(null, repository)
     }
 
     override fun onListenerConnected() {
-        android.util.Log.d("AIA", "NotificationListener connected")
+        Log.d("AIA", "NotificationListener connected")
         super.onListenerConnected()
         isEnabled = true
     }
@@ -34,7 +27,6 @@ class NotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        android.util.Log.d("AIA", "Notification posted: pkg=${sbn?.packageName}")
         super.onNotificationPosted(sbn)
         if (sbn == null || !isEnabled) return
 
@@ -44,20 +36,28 @@ class NotificationListener : NotificationListenerService() {
         val text = extras.getString(Notification.EXTRA_TEXT) ?: ""
 
         val platform = when (packageName) {
-            "com.soulapp.cn" -> "soul"
+            "cn.soulapp.android" -> "soul"
             "com.tencent.mobileqq" -> "qq"
             "com.immomo.momo" -> "immomo"
             "com.lianxin.app", "com.lianxin.lxchat" -> "lianxin"
             else -> return
         }
 
-        if (text.isNotEmpty()) {
+        Log.d("AIA", "Notification: platform=$platform title=$title text=${text.take(50)}")
+
+        if (text.isEmpty()) return
+
+        // Forward to the shared engine via the AccessibilityService
+        val engine = AssistantAccessibilityService.sharedEngine
+        if (engine != null) {
             val msg = com.aaiagent.adapter.PlatformAdapter.MessageInfo(
                 id = "notif_${text.hashCode()}_${System.currentTimeMillis()}",
                 content = text,
-                sender = title
+                sender = title.ifEmpty { "unknown" }
             )
             engine.onNewMessage(platform, msg)
+        } else {
+            Log.d("AIA", "NotificationListener: engine not available, skipping")
         }
     }
 }

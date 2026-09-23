@@ -10,81 +10,84 @@ import com.aaiagent.adapter.PlatformAdapter.SendResult
 class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     override val packageName = "cn.soulapp.android"
 
+    private val PREFIX = "cn.soulapp.android:id/"
+
+    // Soul \u804A\u5929\u9875\u7279\u5F81\uFF1A\u6709\u8F93\u5165\u6846 et_sendmessage + \u6D88\u606F\u9879 item_root
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
-        var hits = 0
-        val indicators = listOf("chat_avatar", "chat_follow_btn", "et_sendmessage")
-        for (id in indicators) {
-            val nodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/" + id)
-            if (nodes.isNotEmpty()) hits++
-        }
-        return hits >= 2
+        val hasInput = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage").isNotEmpty()
+        val hasMessages = root.findAccessibilityNodeInfosByViewId(PREFIX + "item_root").isNotEmpty()
+        // \u6392\u9664 AI \u5EFA\u8BAE\u5361\u7247\u5E72\u6270\uFF1A\u5982\u679C\u53EA\u6709 aigcRootView \u6CA1\u6709 item_root\uFF0C\u4E0D\u662F\u804A\u5929\u9875
+        return hasInput && hasMessages
     }
 
+    // Soul \u6D88\u606F\u5217\u8868\u7279\u5F81\uFF1A\u6709 conversation_list \u6216 item_content_root
     override fun isInMessageList(root: AccessibilityNodeInfo): Boolean {
-        val nodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/conversation_list")
-        if (nodes.isNotEmpty()) return true
-        // fallback: check for conversation items
-        val items = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/item_content_root")
-        return items.isNotEmpty()
+        val hasConvList = root.findAccessibilityNodeInfosByViewId(PREFIX + "conversation_list").isNotEmpty()
+        if (hasConvList) return true
+        val items = root.findAccessibilityNodeInfosByViewId(PREFIX + "item_content_root")
+        return items.size >= 2
     }
 
+    // \u8BFB\u53D6\u804A\u5929\u9875\u4E2D\u7684\u6D88\u606F\uFF0C\u53EA\u8FD4\u56DE\u5BF9\u65B9\u53D1\u7684\u6587\u5B57\u6D88\u606F
     override fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
-        // 用方向爬取遍历消息节点
-        crawlMessages(root, messages)
+
+        // \u627E\u6240\u6709\u6D88\u606F\u9879 item_root
+        val messageItems = root.findAccessibilityNodeInfosByViewId(PREFIX + "item_root")
+        for (item in messageItems) {
+            // \u8DF3\u8FC7\u4E0D\u53EF\u89C1\u7684\u6D88\u606F
+            if (!item.isVisibleToUser) continue
+
+            // \u8FC7\u6EE4 AI \u5EFA\u8BAE\u5361\u7247
+            val aigcNodes = item.findAccessibilityNodeInfosByViewId(PREFIX + "aigcRootView")
+            if (aigcNodes.isNotEmpty()) continue
+
+            // \u8FC7\u6EE4\u9690\u79C1\u4FDD\u62A4\u56FE / \u95EA\u56FE
+            val privacyNodes = item.findAccessibilityNodeInfosByViewId(PREFIX + "tv_privacy_protect_tag")
+            if (privacyNodes.isNotEmpty()) continue
+
+            // \u5224\u65AD\u662F\u6211\u53D1\u7684\u8FD8\u662F\u5BF9\u65B9\u53D1\u7684\uFF1A\u770B\u5934\u50CF
+            val hasMeAvatar = item.findAccessibilityNodeInfosByViewId(PREFIX + "meAvatar").isNotEmpty()
+            val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(PREFIX + "otherAvatar").isNotEmpty()
+
+            if (hasMeAvatar && !hasOtherAvatar) continue // \u81EA\u5DF1\u53D1\u7684\uFF0C\u8DF3\u8FC7
+
+            // \u8BFB\u53D6\u6587\u5B57\u5185\u5BB9
+            val textNodes = item.findAccessibilityNodeInfosByViewId(PREFIX + "content_text")
+            val content = textNodes.mapNotNull { it.text?.toString()?.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString("")
+
+            if (content.isNotEmpty()) {
+                messages.add(ChatMessage(sender = "other", content = content))
+            }
+        }
+
+        // Fallback: \u5982\u679C\u6CA1\u627E\u5230\u4EFB\u4F55\u6D88\u606F\uFF0C\u5C1D\u8BD5\u901A\u8FC7 TextView \u722C\u53D6
+        if (messages.isEmpty()) {
+            fallbackReadTextViews(root, messages)
+        }
+
         return messages
     }
 
-    private fun crawlMessages(node: AccessibilityNodeInfo, messages: MutableList<ChatMessage>) {
-        // 检查消息容器
-        val containers = node.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/item_content_root")
-        for (container in containers) {
-            extractMessage(container, messages)
-        }
-
-        // Fallback: 递归检查 TextView
-        if (messages.isEmpty()) {
-            extractTextMessages(node, messages)
-        }
-    }
-
-    private fun extractMessage(node: AccessibilityNodeInfo, messages: MutableList<ChatMessage>) {
-        val texts = mutableListOf<String>()
-        collectTexts(node, texts)
-        val content = texts.joinToString("").trim()
-        if (content.isNotEmpty() && content.length > 1) {
-            // 左右侧判断：检查节点在屏幕中的位置
-            val rect = android.graphics.Rect()
-            node.getBoundsInScreen(rect)
-            val sender = if (rect.left > 540) "self" else "other"
-            messages.add(ChatMessage(sender = sender, content = content))
-        }
-    }
-
-    private fun collectTexts(node: AccessibilityNodeInfo, texts: MutableList<String>) {
-        if (node.className?.toString()?.contains("TextView") == true) {
-            val text = node.text?.toString()?.trim() ?: ""
-            if (text.isNotEmpty()) texts.add(text)
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            collectTexts(child, texts)
-        }
-    }
-
-    private fun extractTextMessages(node: AccessibilityNodeInfo, messages: MutableList<ChatMessage>) {
+    // Fallback: \u9012\u5F52\u904D\u5386\u6240\u6709 TextView\uFF0C\u6309\u4F4D\u7F6E\u5224\u65AD\u53D1\u9001\u8005
+    private fun fallbackReadTextViews(node: AccessibilityNodeInfo, messages: MutableList<ChatMessage>) {
         if (node.className?.toString()?.contains("TextView") == true) {
             val text = node.text?.toString()?.trim() ?: ""
             if (text.isNotEmpty() && text.length > 1) {
                 val rect = android.graphics.Rect()
                 node.getBoundsInScreen(rect)
-                val sender = if (rect.left > 540) "self" else "other"
-                messages.add(ChatMessage(sender = sender, content = text))
+                // \u5C4F\u5E55\u5BBD\u5EA6\u5047\u8BBE 1080px\uFF0C\u53F3\u4FA7\u4E3A\u81EA\u5DF1\u53D1\u7684
+                val isSelf = rect.left > 600
+                if (!isSelf) {
+                    messages.add(ChatMessage(sender = "other", content = text))
+                }
             }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            extractTextMessages(child, messages)
+            fallbackReadTextViews(child, messages)
         }
     }
 
@@ -93,127 +96,126 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         root: AccessibilityNodeInfo,
         text: String
     ): SendResult {
-        // 找输入框
-        val inputNodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/et_sendmessage")
+        // 1. \u627E\u8F93\u5165\u6846
+        val inputNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
         val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser }
-            ?: return SendResult.TIMEOUT
+            ?: run {
+                // \u5C1D\u8BD5\u91CD\u65B0\u83B7\u53D6 root
+                val retry = service.rootInActiveWindow
+                    ?.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
+                    ?.firstOrNull { it.isEditable && it.isVisibleToUser }
+                retry ?: return SendResult.TIMEOUT
+            }
 
-        // 填入文本
+        // 2. \u8BBE\u7F6E\u6587\u672C
         val args = Bundle()
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
 
-        // 等发送按钮出现
-        kotlinx.coroutines.delay(300)
-        val sendNodes = root.findAccessibilityNodeInfosByViewId("cn.soulapp.android:id/btn_send")
+        // 3. \u7B49\u5F85\u53D1\u9001\u6309\u94AE\u53EF\u7528
+        kotlinx.coroutines.delay(500)
+        val retryRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
+        val sendNodes = retryRoot.findAccessibilityNodeInfosByViewId(PREFIX + "btn_send")
         val sendButton = sendNodes.firstOrNull { it.isClickable && it.isVisibleToUser }
-            ?: return SendResult.TIMEOUT
-
+        if (sendButton == null) {
+            // Soul \u53EF\u80FD\u6CA1\u6709 btn_send\uFF0C\u5C1D\u8BD5\u6309\u786C\u4EF6\u56DE\u8F66\u952E
+            inputField.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            kotlinx.coroutines.delay(200)
+            // \u5C1D\u8BD5\u4F7F\u7528\u5168\u5C40\u56DE\u8F66\u952E
+            // \u6CE8\u610F\uFF1A\u8FD9\u4E2A\u65B9\u6CD5\u5728\u67D0\u4E9B\u65E0\u969C\u788D\u670D\u52A1\u4E2D\u53EF\u80FD\u4E0D\u53EF\u7528
+            return SendResult.TIMEOUT
+        }
         sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
 
-        // 检测是否发送失败或被禁言
-        kotlinx.coroutines.delay(500)
-        val root2 = service.rootInActiveWindow ?: return SendResult.SUCCESS
-        val errorTexts = listOf("发送失败", "已被禁言", "发言太快")
-        for (err in errorTexts) {
-            for (i in 0 until root2.childCount) {
-                val child = root2.getChild(i)
-                if (child?.text?.toString()?.contains(err) == true) {
-                    return SendResult.BANNED
-                }
-            }
-        }
+        // 4. \u68C0\u6D4B\u7ED3\u679C
+        kotlinx.coroutines.delay(800)
+        val checkRoot = service.rootInActiveWindow ?: return SendResult.SUCCESS
+        if (detectBanned(checkRoot)) return SendResult.BANNED
 
         return SendResult.SUCCESS
+    }
+
+    private fun detectBanned(root: AccessibilityNodeInfo): Boolean {
+        val errorKeywords = listOf("\u53D1\u9001\u5931\u8D25", "\u5DF2\u88AB\u7981\u8A00", "\u53D1\u8A00\u592A\u5FEB", "\u5185\u5BB9\u8FDD\u89C4")
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString() ?: ""
+            if (errorKeywords.any { text.contains(it) }) return true
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return false
     }
 
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean
     ): ConversationInfo? {
-        // 递归遍历找未读标记
-        val unreadNodes = mutableListOf<AccessibilityNodeInfo>()
-        findUnreadBadges(root, unreadNodes)
+        // \u4F18\u5148\u7528 Soul \u7279\u5B9A View ID \u627E\u672A\u8BFB\u6570\u5B57
+        val unreadBadges = root.findAccessibilityNodeInfosByViewId(PREFIX + "unread_msg_number")
+            .filter { it.isVisibleToUser && it.text?.toString()?.toIntOrNull() != null }
 
-        if (unreadNodes.isEmpty()) return null
+        if (unreadBadges.isEmpty()) return null
 
-        // 取第一个未读，读昵称和预览
-        val parent = findConversationParent(unreadNodes.first()) ?: return null
-        val name = extractConversationName(parent)
-        val preview = extractConversationPreview(parent)
-        val contactId = name ?: "unknown"
+        // \u627E\u5230\u7B2C\u4E00\u4E2A\u672A\u8BFB\u5BF9\u5E94\u7684\u4F1A\u8BDD\u9879 item_content_root
+        val badge = unreadBadges.first()
+        val conversationItem = findAncestorByViewId(badge, "item_content_root") ?: return null
 
-        if (shouldClick && parent.isClickable) {
-            parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        // \u8BFB\u53D6\u8054\u7CFB\u4EBA\u4FE1\u606F
+        val name = readChildText(conversationItem, "name")
+        val preview = readChildText(conversationItem, "message")
+        val contactName = name ?: preview ?: "unknown"
+
+        if (shouldClick && conversationItem.isClickable) {
+            conversationItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
 
         return ConversationInfo(
-            contactId = contactId,
-            contactName = name ?: contactId,
+            contactId = contactName,
+            contactName = contactName,
             preview = preview ?: ""
         )
     }
 
-    private fun findUnreadBadges(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>) {
-        val text = node.text?.toString()?.trim() ?: ""
-        // 纯数字未读标记
-        if (text.isNotEmpty() && text.all { it.isDigit() } && node.isVisibleToUser) {
-            results.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            findUnreadBadges(child, results)
-        }
-    }
-
-    private fun findConversationParent(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    // \u5411\u4E0A\u67E5\u627E\u5305\u542B\u6307\u5B9A View ID \u7684\u7956\u5148\u8282\u70B9
+    private fun findAncestorByViewId(node: AccessibilityNodeInfo, targetId: String): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node.parent
         while (current != null) {
-            if (current.isClickable) return current
+            val found = current.findAccessibilityNodeInfosByViewId(PREFIX + targetId)
+            if (found.isNotEmpty()) return found.first()
             current = current.parent
         }
         return null
     }
 
-    private fun extractConversationName(node: AccessibilityNodeInfo): String? {
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val text = child.text?.toString()?.trim()
-            if (!text.isNullOrEmpty() && text.length in 1..20) return text
-        }
-        return null
+    // \u8BFB\u53D6\u5B50\u8282\u70B9\u4E2D\u6307\u5B9A View ID \u7684\u6587\u672C
+    private fun readChildText(parent: AccessibilityNodeInfo, viewId: String): String? {
+        val nodes = parent.findAccessibilityNodeInfosByViewId(PREFIX + viewId)
+        return nodes.firstOrNull()?.text?.toString()?.trim()
     }
 
-    private fun extractConversationPreview(node: AccessibilityNodeInfo): String? {
-        val texts = mutableListOf<String>()
-        fun collect(node: AccessibilityNodeInfo) {
-            val text = node.text?.toString()?.trim() ?: ""
-            if (text.isNotEmpty() && text.length > 2) texts.add(text)
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i) ?: continue
-                collect(child)
-            }
-        }
-        collect(node)
-        return texts.getOrNull(1) // 第一条文本通常是昵称，第二条是预览
-    }
-
+    // Soul \u5BFC\u822A\u5230\u6D88\u606F\u5217\u8868\uFF1A\u6309\u8FD4\u56DE\u952E\u76F4\u5230\u627E\u5230 conversation_list
     override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
-        // Soul 的消息列表通常是主页面，按返回键回到这里
-        // 如果不在了，尝试全局返回
-        if (!isInMessageList(root)) {
+        if (isInMessageList(root)) return
+
+        // \u5C1D\u8BD5\u591A\u6B21\u8FD4\u56DE\uFF08\u6700\u591A 5 \u6B21\uFF09
+        repeat(5) {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(400)
+            val newRoot = service.rootInActiveWindow ?: return
+            if (isInMessageList(newRoot)) return
         }
     }
 
     override suspend fun bringToForeground(service: AccessibilityService) {
-        // 通过无障碍服务确保 Soul 在前台
         try {
             val intent = service.packageManager.getLaunchIntentForPackage(packageName)
             intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             service.startActivity(intent)
-            kotlinx.coroutines.delay(1000)
+            kotlinx.coroutines.delay(1500)
         } catch (_: Exception) {}
     }
 }
