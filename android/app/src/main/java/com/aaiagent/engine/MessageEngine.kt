@@ -1,4 +1,4 @@
-package com.aaiagent.engine
+﻿package com.aaiagent.engine
 
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
@@ -89,6 +89,7 @@ class MessageEngine(
    }
 
     // 主动扫描会话列表
+    // 主动扫描会话列表
     private suspend fun scanAndProcess() {
         android.util.Log.d("AIA", "scanAndProcess: start, platform=$currentPlatform")
         val adapter = adapterRegistry?.getByPlatform(currentPlatform)
@@ -96,52 +97,63 @@ class MessageEngine(
             android.util.Log.w("AIA", "scanAndProcess: no adapter for $currentPlatform")
             return
         }
+
+        // 检查当前前台App是否是目标平台
         var root = service?.rootInActiveWindow
         if (root == null) {
-            android.util.Log.w("AIA", "scanAndProcess: rootInActiveWindow is null")
-            return
+            android.util.Log.w("AIA", "scanAndProcess: rootInActiveWindow is null, trying bringToForeground")
+            adapter.bringToForeground(service!!)
+            delay(2000)
+            root = service?.rootInActiveWindow
+            if (root == null) {
+                android.util.Log.w("AIA", "scanAndProcess: root still null after bringToForeground")
+                state = EngineState.Idle
+                return
+            }
         }
 
-        val inMsgList = adapter.isInMessageList(root)
-        android.util.Log.d("AIA", "scanAndProcess: root available, isInMessageList=$inMsgList")
+        val currentPkg = root!!.packageName?.toString() ?: ""
+        android.util.Log.d("AIA", "scanAndProcess: current foreground pkg=$currentPkg, target=${adapter.packageName}")
 
+        // 如果当前窗口不是目标App，直接拉起目标App
+        if (currentPkg != adapter.packageName) {
+            android.util.Log.d("AIA", "scanAndProcess: not in target app, bringing to foreground")
+            adapter.bringToForeground(service!!)
+            delay(2000)
+            root = service?.rootInActiveWindow
+            if (root == null) {
+                android.util.Log.w("AIA", "scanAndProcess: root null after bringToForeground")
+                state = EngineState.Idle
+                return
+            }
+        }
+
+        // 导航到消息列表
+        val inMsgList = adapter.isInMessageList(root!!)
+        android.util.Log.d("AIA", "scanAndProcess: isInMessageList=$inMsgList")
         if (!inMsgList) {
-            android.util.Log.d("AIA", "scanAndProcess: not in msg list, navigating...")
-            adapter.navigateToMessageList(service!!, root)
-            delay(500)
+            android.util.Log.d("AIA", "scanAndProcess: navigating to message list...")
+            adapter.navigateToMessageList(service!!, root!!)
+            delay(800)
             root = service?.rootInActiveWindow
             if (root == null) {
                 android.util.Log.w("AIA", "scanAndProcess: root null after navigate")
                 state = EngineState.Idle
                 return
             }
-            val inList2 = adapter.isInMessageList(root)
+            val inList2 = adapter.isInMessageList(root!!)
             android.util.Log.d("AIA", "scanAndProcess: after navigate, isInMessageList=$inList2")
-            if (!inList2) {
-                // 还没到，尝试拉起 Soul
-                android.util.Log.d("AIA", "scanAndProcess: bringing Soul to foreground")
-                adapter.bringToForeground(service!!)
-                delay(2000)
-                root = service?.rootInActiveWindow
-                if (root == null) {
-                    android.util.Log.w("AIA", "scanAndProcess: root null after bringToForeground")
-                    state = EngineState.Idle
-                    return
-                }
-                val inList3 = adapter.isInMessageList(root)
-                android.util.Log.d("AIA", "scanAndProcess: after bringToForeground, isInMessageList=$inList3")
-            }
         }
 
         RuntimeJournal.stateChange(state.toString(), "ScanningConversations")
         state = EngineState.ScanningConversations
 
-        // 扫描未读会话
-        for (attempt in 1..3) {
-            android.util.Log.d("AIA", "scanAndProcess: scanning attempt $attempt/3")
+        // 扫描未读会话（最多尝试5次，每次可带滚动）
+        for (attempt in 1..5) {
+            android.util.Log.d("AIA", "scanAndProcess: scanning attempt $attempt/5")
             val info = adapter.clickFirstUnreadConversation(root!!, shouldClick = true)
             if (info != null) {
-                android.util.Log.d("AIA", "scanAndProcess: found unread: ${info.contactName}")
+                android.util.Log.d("AIA", "scanAndProcess: found unread: ${info.contactName}, clicking...")
                 val ctx = getOrCreateContext(currentPlatform, info.contactId)
                 ctx.contactName = info.contactName
                 ctx.contactId = info.contactId
@@ -153,16 +165,15 @@ class MessageEngine(
                 processConversation(ctx)
                 return
             }
-            android.util.Log.d("AIA", "scanAndProcess: no unread found, waiting 2s")
-            delay(2000)
-            val r = service?.rootInActiveWindow ?: return
-            root = r
+            android.util.Log.d("AIA", "scanAndProcess: no unread found on attempt $attempt")
+            delay(1500)
+            val r = service?.rootInActiveWindow
+            if (r != null) root = r
         }
 
-        android.util.Log.d("AIA", "scanAndProcess: no unread after 3 attempts, going idle")
+        android.util.Log.d("AIA", "scanAndProcess: no unread after 5 attempts, going idle")
         state = EngineState.Idle
     }
-
     companion object {
         const val SHORT_WINDOW_MS = 500L
         const val MAX_RECALC = 3

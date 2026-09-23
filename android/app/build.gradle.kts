@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 34
        versionCode = 1
-       versionName = "20260924-053004"
+       versionName = "20260924-060022"
     }
 
     buildTypes {

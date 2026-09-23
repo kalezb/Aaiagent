@@ -1,4 +1,4 @@
-package com.aaiagent.ui.screens
+﻿package com.aaiagent.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -356,6 +356,8 @@ private fun SaveButton(label: String, status: String, onClick: () -> Unit, modif
 
 // ══════════════════════ 卡片3: AI 托管控制 ══════════════════════
 
+// ══════════════════════ 卡片3: AI 托管控制 ══════════════════════
+
 @Composable
 private fun Card3HostingControl(
     isHosting: Boolean, engineState: String,
@@ -387,25 +389,63 @@ private fun Card3HostingControl(
             Divider(color = Divider, thickness = 1.dp)
             Spacer(Modifier.height(14.dp))
 
-            // 发送方式
-            Text(text = "发送方式", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("auto" to "🤖 自动发送", "manual" to "👆 手动确认").forEach { (mode, label) ->
-                    val sel = sendMode == mode
-                    Surface(
-                        Modifier.weight(1f).clickable { onSendModeChange(mode) },
-                        RoundedCornerShape(10.dp),
-                        color = if (sel) GreenLight else White,
-                        border = BorderStroke(1.5.dp, if (sel) Green else Gray)
-                    ) {
-                        Text(text = label, modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                            color = if (sel) Green else TextSecondary)
+            // 托管模式选择（AI托管开启后才显示）
+            AnimatedVisibility(visible = isHosting) {
+                Column {
+                    Text(text = "托管模式", fontSize = 13.sp, color = TextSecondary)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            HostingMode.FULL_AUTO to "🤖 全自动",
+                            HostingMode.SEMI_AUTO to "✍️ 半自动",
+                            HostingMode.MONITOR_ONLY to "📋 仅记录"
+                        ).forEach { (mode, label) ->
+                            val sel = hostingMode == mode
+                            Surface(
+                                Modifier.weight(1f).clickable { onHostingModeChange(mode) },
+                                RoundedCornerShape(10.dp),
+                                color = if (sel) GreenLight else White,
+                                border = BorderStroke(1.5.dp, if (sel) Green else Gray)
+                            ) {
+                                Column(Modifier.padding(vertical = 8.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                        color = if (sel) Green else TextSecondary)
+                                    Text(text = when (mode) {
+                                        HostingMode.FULL_AUTO -> "自动读+回"
+                                        HostingMode.SEMI_AUTO -> "填框不发送"
+                                        HostingMode.MONITOR_ONLY -> "仅同步记录"
+                                    }, fontSize = 9.sp, color = TextHint)
+                                }
+                            }
+                        }
                     }
+                    Spacer(Modifier.height(14.dp))
+                    Divider(color = Divider, thickness = 1.dp)
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            // 发送方式 - 托管关闭或非仅记录模式时显示
+            if (!isHosting || hostingMode != HostingMode.MONITOR_ONLY) {
+                Spacer(Modifier.height(if (isHosting) 14.dp else 14.dp))
+                Text(text = "发送方式", fontSize = 13.sp, color = TextSecondary)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("auto" to "🤖 自动发送", "manual" to "👆 手动确认").forEach { (mode, label) ->
+                        val sel = sendMode == mode
+                        Surface(
+                            Modifier.weight(1f).clickable { onSendModeChange(mode) },
+                            RoundedCornerShape(10.dp),
+                            color = if (sel) GreenLight else White,
+                            border = BorderStroke(1.5.dp, if (sel) Green else Gray)
+                        ) {
+                            Text(text = label, modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                color = if (sel) Green else TextSecondary)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
             Divider(color = Divider, thickness = 1.dp)
             Spacer(Modifier.height(14.dp))
 

@@ -1,4 +1,4 @@
-package com.aaiagent.adapter
+﻿package com.aaiagent.adapter
 
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
@@ -165,23 +165,52 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         root: AccessibilityNodeInfo,
         shouldClick: Boolean
     ): ConversationInfo? {
-        // \u4F18\u5148\u7528 Soul \u7279\u5B9A View ID \u627E\u672A\u8BFB\u6570\u5B57
+        // 先尝试直接找未读标记
+        var result = tryFindAndUnread(root, shouldClick)
+        if (result != null) return result
+
+        // 如果没找到，尝试滚动后再找（最多5次）
+        android.util.Log.d("AIA", "Soul clickFirstUnread: no unread visible, trying scroll...")
+        for (attempt in 1..5) {
+            val scrolled = scrollConversationList(root)
+            if (!scrolled) {
+                android.util.Log.d("AIA", "Soul clickFirstUnread: cannot scroll, giving up")
+                break
+            }
+            kotlinx.coroutines.delay(800)
+            // 重新获取root（scroll后节点树会刷新）
+            val newRoot = getFreshRoot() ?: continue
+            result = tryFindAndUnread(newRoot, shouldClick)
+            if (result != null) {
+                android.util.Log.d("AIA", "Soul clickFirstUnread: found after scroll attempt $attempt")
+                return result
+            }
+        }
+        android.util.Log.d("AIA", "Soul clickFirstUnread: no unread found after scrolling")
+        return null
+    }
+
+    // 从当前root查找并点击未读会话
+    private fun tryFindAndUnread(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
         val unreadBadges = root.findAccessibilityNodeInfosByViewId(PREFIX + "unread_msg_number")
             .filter { it.isVisibleToUser && it.text?.toString()?.toIntOrNull() != null }
 
         if (unreadBadges.isEmpty()) return null
 
-        // \u627E\u5230\u7B2C\u4E00\u4E2A\u672A\u8BFB\u5BF9\u5E94\u7684\u4F1A\u8BDD\u9879 item_content_root
         val badge = unreadBadges.first()
-        val conversationItem = findAncestorByViewId(badge, "item_content_root") ?: return null
+        val conversationItem = findAncestorByViewId(badge, "item_content_root")
+            ?: badge.parent?.parent ?: return null
 
-        // \u8BFB\u53D6\u8054\u7CFB\u4EBA\u4FE1\u606F
         val name = readChildText(conversationItem, "name")
         val preview = readChildText(conversationItem, "message")
         val contactName = name ?: preview ?: "unknown"
 
-        if (shouldClick && conversationItem.isClickable) {
-            conversationItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        if (shouldClick) {
+            try {
+                conversationItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            } catch (_: Exception) {
+                badge.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            }
         }
 
         return ConversationInfo(
@@ -191,7 +220,35 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         )
     }
 
-    // \u5411\u4E0A\u67E5\u627E\u5305\u542B\u6307\u5B9A View ID \u7684\u7956\u5148\u8282\u70B9
+    // 滚动会话列表
+    private fun scrollConversationList(root: AccessibilityNodeInfo): Boolean {
+        // 尝试在 conversation_list 或 RecyclerView 上执行滚动
+        val scrollableNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "conversation_list")
+        if (scrollableNodes.isNotEmpty()) {
+            val node = scrollableNodes.first { it.isScrollable }
+            if (node != null) {
+                return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            }
+        }
+        // Fallback: 找任何可滚动的容器
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val n = queue.removeFirst()
+            if (n.isScrollable) {
+                return n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            }
+            for (i in 0 until n.childCount) {
+                n.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return false
+    }
+
+    // 获取最新的root节点
+    private fun getFreshRoot(): AccessibilityNodeInfo? {
+        return service.rootInActiveWindow
+    }
     private fun findAncestorByViewId(node: AccessibilityNodeInfo, targetId: String): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node.parent
         while (current != null) {

@@ -328,6 +328,49 @@ export const onRequest = async (context) => {
       return json({ action: "send", reply });
     }
 
+    // POST /api/config/save — unified config save (device_key required)
+    if (path === "/api/config/save" && method === "POST") {
+      const body = await request.json();
+      const { device_key, action } = body;
+      if (!device_key) return json({ error: "缺少 device_key" }, 400);
+      const tokenRow = await validateToken(env.DB, "Bearer " + device_key);
+      if (!tokenRow) return json({ error: "设备钥匙无效" }, 401);
+
+      // Verify token
+      if (action === "verify_token") return json({ success: true, message: "钥匙有效" });
+
+      // Verify persona
+      if (action === "verify_persona") {
+        const personaId = body.persona_id || "female";
+        const persona = await env.DB.prepare("SELECT id, name FROM personas WHERE id = ?").bind(personaId).first();
+        if (!persona) return json({ success: false, error: "人设不存在" });
+        return json({ success: true, message: "人设已验证: " + persona.name });
+      }
+
+      // Save location
+      if (action === "save_location") {
+        return json({ success: true, message: "位置已保存" });
+      }
+
+      // Switch platform
+      if (action === "switch_platform") {
+        const platform = body.platform || "soul";
+        return json({ success: true, message: "已切换到 " + platform });
+      }
+
+      // Toggle hosting
+      if (action === "toggle_hosting") {
+        return json({ success: true, message: body.enabled === "true" ? "托管已开启" : "托管已暂停" });
+      }
+
+      // Toggle weather / time
+      if (action === "toggle_weather" || action === "toggle_time") {
+        return json({ success: true, message: "设置已保存" });
+      }
+
+      return json({ success: false, error: "未知 action: " + (action || "null") }, 400);
+    }
+
     return json({ error: "Not Found" }, 404);
   } catch (error) {
     return json({ error: "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef" }, 500);

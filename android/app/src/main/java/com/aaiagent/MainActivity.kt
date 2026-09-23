@@ -1,4 +1,4 @@
-package com.aaiagent
+﻿package com.aaiagent
 
 import android.content.Intent
 import android.net.Uri
@@ -72,6 +72,14 @@ class MainActivity : ComponentActivity() {
             try { loadPersonas() } catch (_: Exception) {}
         }
 
+        // 检查引擎是否正在托管，提前设置状态（避免UI先显示灰色再变绿）
+        val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+        if (engine != null && engine.hostingEnabled) {
+            isHosting = true
+            hostingMode = engine.hostingMode
+            platformsStatus[enabledPlatforms.firstOrNull() ?: "soul"] = true
+        }
+
         setContent {
             AaiagentTheme {
                 DashboardScreen(
@@ -98,9 +106,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-
-        val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
-        if (engine != null && engine.hostingEnabled) { isHosting = true; platformsStatus[enabledPlatforms.firstOrNull() ?: "soul"] = true }
         requestPermissions()
     }
 
@@ -170,13 +175,6 @@ class MainActivity : ComponentActivity() {
         if (enable) {
             startForegroundService(); val platform = enabledPlatforms.firstOrNull() ?: "soul"; platformsStatus[platform] = true
             lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "true")) } catch (_: Exception) {} } }
-            val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
-            if (engine != null) { engine.hostingMode = hostingMode; engine.startHosting(platform) }
-            statePollJob?.cancel(); statePollJob = lifecycleScope.launch { while (isHosting) { engineState = com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.currentState().toString(); kotlinx.coroutines.delay(500) } }
-        } else {
-            com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.stopHosting()
-            platformsStatus.keys.forEach { platformsStatus[it] = false }; statePollJob?.cancel(); engineState = "IDLE"
-            lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "false")) } catch (_: Exception) {} } }
         }
     }
 
