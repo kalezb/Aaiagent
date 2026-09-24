@@ -489,10 +489,21 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     private fun badgeHasUnread(badge: AccessibilityNodeInfo): Boolean {
-        val text = badge.text?.toString()?.trim() ?: ""
-        val description = badge.contentDescription?.toString()?.trim() ?: ""
-        if (text.toIntOrNull()?.let { it > 0 } == true) return true
-        if (description.contains("未读") || description.contains("unread", ignoreCase = true)) return true
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(badge)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (UnreadBadgeState.isUnread(
+                    text = node.text?.toString(),
+                    description = node.contentDescription?.toString()
+                )
+            ) {
+                return true
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::add)
+            }
+        }
         return false
     }
 
