@@ -1,97 +1,126 @@
 package com.aaiagent
 
+import com.aaiagent.engine.AutomationLease
+import com.aaiagent.engine.ConversationIdentity
+import com.aaiagent.engine.ReplyFormatter
+import com.aaiagent.engine.ReplyFreshnessDecision
+import com.aaiagent.engine.ReplyFreshnessPolicy
+import com.aaiagent.engine.UserInteractionGate
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.Assert.*
 
 class MessageEngineTest {
-
     @Test
-    fun `dedup window is 5 minutes`() {
-        val now = System.currentTimeMillis()
-        val fiveMinAgo = now - 5 * 60 * 1000
+    fun `lease only belongs to the latest owner`() {
+        var now = 1_000L
+        val lease = AutomationLease(clock = { now }, tokenFactory = { "token-${now}" })
 
-        // Within 5 minutes
-        assertTrue(now - 60_000 > fiveMinAgo)
+        val first = lease.acquire(ttlMs = 500L)
+        assertTrue(lease.owns(first))
 
-        // Outside 5 minutes
-        assertFalse(now - 6 * 60 * 1000 > fiveMinAgo)
+        now += 100L
+        val second = lease.acquire(ttlMs = 500L)
+        assertTrue(lease.owns(second))
+        assertFalse(lease.owns(first))
+
+        now += 501L
+        assertFalse(lease.owns(second))
     }
 
     @Test
-    fun `max recalc is 3`() {
-        val MAX_RECALC = 3
-        var recalcCount = 0
+    fun `lease can renew and revoke`() {
+        var now = 10_000L
+        val lease = AutomationLease(clock = { now }, tokenFactory = { "lease" })
+        val token = lease.acquire(ttlMs = 500L)
 
-        while (recalcCount < MAX_RECALC) {
-            recalcCount++
-            if (recalcCount >= MAX_RECALC) break
-        }
+        now += 400L
+        assertTrue(lease.renew(token, ttlMs = 500L))
+        now += 400L
+        assertTrue(lease.owns(token))
 
-        assertEquals(3, recalcCount)
+        lease.revoke()
+        assertFalse(lease.owns(token))
     }
 
     @Test
-    fun `short window is 500ms`() {
-        val SHORT_WINDOW_MS = 500L
-        assertEquals(500L, SHORT_WINDOW_MS)
+    fun `automation events do not count as manual takeover`() {
+        var now = 5_000L
+        val gate = UserInteractionGate(clock = { now })
+
+        gate.onAutomationActionStarted(protectionMs = 1_000L)
+        assertFalse(gate.onAccessibilityInteraction())
+
+        now += 1_001L
+        assertTrue(gate.onAccessibilityInteraction())
+        assertTrue(gate.shouldPause(windowMs = 5_000L))
+
+        now += 5_001L
+        assertFalse(gate.shouldPause(windowMs = 5_000L))
     }
 
     @Test
-    fun `max wait time is 8 seconds`() {
-        val MAX_WAIT_MS = 8000L
-        assertEquals(8000L, MAX_WAIT_MS)
+    fun `manual takeover increments interaction epoch once`() {
+        var now = 1_000L
+        val gate = UserInteractionGate(clock = { now })
+
+        assertEquals(0L, gate.interactionEpoch())
+        assertTrue(gate.onAccessibilityInteraction())
+        assertEquals(1L, gate.interactionEpoch())
+
+        gate.onAutomationActionStarted(protectionMs = 500L)
+        assertFalse(gate.onAccessibilityInteraction())
+        assertEquals(1L, gate.interactionEpoch())
     }
 
     @Test
-    fun `delay range is 500 to 1500ms`() {
-        val MIN_DELAY = 500L
-        val MAX_DELAY = 1500L
-
-        val random = java.util.Random()
-        for (i in 1..100) {
-            val delay = MIN_DELAY + random.nextLong(MAX_DELAY - MIN_DELAY)
-            assertTrue("Delay $delay should be >= $MIN_DELAY", delay >= MIN_DELAY)
-            assertTrue("Delay $delay should be < $MAX_DELAY", delay < MAX_DELAY) // exclusive bound
-        }
+    fun `conversation identity accepts safe title variations`() {
+        assertTrue(ConversationIdentity.matches("星暮", "星暮"))
+        assertTrue(ConversationIdentity.matches("小明同学", "小明同学 在线"))
+        assertFalse(ConversationIdentity.matches("小明", "小明明"))
+        assertFalse(ConversationIdentity.matches("unknown", "小明"))
+        assertFalse(ConversationIdentity.matches("", "小明"))
     }
 
     @Test
-    fun `sensitive words detection`() {
-        val sensitiveWords = listOf("借钱", "账号", "密码", "银行卡", "转账", "验证码", "身份证")
-
-        assertTrue(sensitiveWords.any { "可以借我点钱吗".contains(it) })
-        assertTrue(sensitiveWords.any { "你的账号是多少".contains(it) })
-        assertFalse(sensitiveWords.any { "今天天气真好".contains(it) })
-        assertFalse(sensitiveWords.any { "晚上吃什么".contains(it) })
-    }
-
-    @Test
-    fun `platform package names are correct`() {
-        val platforms = mapOf(
-            "soul" to "com.soulapp.cn",
-            "qq" to "com.tencent.mobileqq",
-            "immomo" to "com.immomo.momo",
-            "lianxin" to "com.lianxin.app"
+    fun `reply freshness forces send after deadline`() {
+        assertEquals(
+            ReplyFreshnessDecision.KEEP,
+            ReplyFreshnessPolicy.decide(2, 2, 0, 1_000L, 2_000L)
         )
-
-        assertEquals(4, platforms.size)
-        assertEquals("com.soulapp.cn", platforms["soul"])
-        assertEquals("com.tencent.mobileqq", platforms["qq"])
+        assertEquals(
+            ReplyFreshnessDecision.RECOMPUTE,
+            ReplyFreshnessPolicy.decide(2, 3, 0, 1_000L, 2_000L)
+        )
+        assertEquals(
+            ReplyFreshnessDecision.FORCE_SEND,
+            ReplyFreshnessPolicy.decide(2, 3, 0, 1_000L, 10_000L)
+        )
+        assertEquals(
+            ReplyFreshnessDecision.FORCE_SEND,
+            ReplyFreshnessPolicy.decide(2, 3, 3, 1_000L, 2_000L)
+        )
     }
 
     @Test
-    fun `notification fail threshold is 10`() {
-        val threshold = 10
-        assertTrue(threshold > 0)
-        assertEquals(10, threshold)
+    fun `reply formatter removes punctuation and splits short sentences`() {
+        assertEquals(
+            listOf("在的 刚忙完", "你周末有空吗", "我想约你出来吃饭"),
+            ReplyFormatter.formatForSending("在的，刚忙完。你周末有空吗？我想约你出来吃饭。")
+        )
+        assertEquals(
+            listOf("你好呀"),
+            ReplyFormatter.formatForSending("你好呀")
+        )
+        assertEquals(
+            listOf("一 二 三 四 五 六"),
+            ReplyFormatter.formatForSending("一。二。三。四。五。六。")
+        )
     }
 
     @Test
-    fun `temperature and max_tokens are correct`() {
-        val temperature = 0.7
-        val maxTokens = 300
-
-        assertTrue(temperature in 0.0..1.0)
-        assertEquals(300, maxTokens)
+    fun `reply formatter keeps a short reply together`() {
+        assertEquals(listOf("好的 马上"), ReplyFormatter.formatForSending("好的，马上。"))
     }
 }
