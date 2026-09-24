@@ -4,96 +4,102 @@ import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.delay
 
 /**
- * 语音消息处理 (补充页-语音图片表情处理方案)
- * 利用 App 自带的"转文字"按钮, 不用自己接 ASR
+ * Soul voice messages can expose a native transcription action. This helper
+ * uses that action first and returns null when the menu is drawn outside the
+ * accessibility tree. The engine then falls back to screenshot vision or a
+ * safe text reply.
  */
 object VoiceHandler {
+    private const val prefix = "cn.soulapp.android:id/"
 
-    private const val TRANSCRIBE_WAIT_MS = 2000L
+    suspend fun tryTranscribe(
+        service: android.accessibilityservice.AccessibilityService,
+        root: AccessibilityNodeInfo,
+        platform: String
+    ): String? {
+        if (platform != "soul") return null
+        val voiceNode = root.findAccessibilityNodeInfosByViewId(prefix + "voice_bubble")
+            .lastOrNull { it.isVisibleToUser }
+            ?: return null
 
-    /**
-     * 尝试对语音消息点"转文字", 返回转出来的文字
-     * 找不到按钮 → 返回 null (上层用兜底文案)
-     */
-    suspend fun tryTranscribe(messageNode: AccessibilityNodeInfo, platform: String): String? {
-        val btn = findTranscribeButton(messageNode, platform)
-        if (btn == null) return null
+        GestureMonitor.onAutomationActionStarted()
+        val longClicked = voiceNode.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+        GestureMonitor.onAutomationActionFinished()
+        if (!longClicked) return null
+        delay(900)
 
-        // 点击转文字
-        btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        delay(TRANSCRIBE_WAIT_MS)
-
-        // 读转出来的文字
-        return readTranscribedText(messageNode, platform)
-    }
-
-    /**
-     * 找"转文字"按钮
-     */
-    private fun findTranscribeButton(node: AccessibilityNodeInfo, platform: String): AccessibilityNodeInfo? {
-        // 在各平台的语音消息区域搜索"转文字"
-        val keywords = listOf("转文字", "转文本", "转成文字", "转换文字")
-        val results = mutableListOf<AccessibilityNodeInfo>()
-        findClickableWithText(node, keywords, results)
-        return results.firstOrNull()
-    }
-
-    /**
-     * 读转文字结果
-     * 转文字后, 附近会出现一个新 TextView 包含文字内容
-     */
-    private fun readTranscribedText(node: AccessibilityNodeInfo, platform: String): String? {
-        // 在语音消息节点附近找新出现的文字
-        val texts = mutableListOf<String>()
-
-        // 同级兄弟节点
-        var parent = node.parent
-        if (parent != null) {
-            collectTextFromChildren(parent, texts, excludeNode = node)
+        val menuRoot = climbToRoot(voiceNode) ?: root
+        val transcribeButton = findClickableByText(
+            menuRoot,
+            listOf("转文字", "转文本", "文字转换")
+        ) ?: run {
+            service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+            return null
         }
 
-        // 如果同级没找到, 扩大范围
-        if (texts.isEmpty() && parent?.parent != null) {
-            collectTextFromChildren(parent.parent!!, texts, excludeNode = parent)
-        }
+        GestureMonitor.onAutomationActionStarted()
+        val clicked = transcribeButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        GestureMonitor.onAutomationActionFinished()
+        if (!clicked) return null
+        delay(1_800)
 
-        return texts.firstOrNull { it.length > 1 }
+        val refreshedRoot = climbToRoot(voiceNode) ?: menuRoot
+        val item = findAncestorByViewId(refreshedRoot, voiceNode, "item_root") ?: refreshedRoot
+        return collectText(item, voiceNode)
+            .firstOrNull { it.length in 2..500 && !it.contains("转文字") }
     }
 
-    // ── 工具方法 ──
-
-    private fun findClickableWithText(
+    private fun findClickableByText(
         node: AccessibilityNodeInfo,
-        keywords: List<String>,
-        results: MutableList<AccessibilityNodeInfo>
-    ) {
+        keywords: List<String>
+    ): AccessibilityNodeInfo? {
         if (node.isClickable && node.isVisibleToUser) {
-            val text = node.text?.toString()?.trim() ?: ""
-            val desc = node.contentDescription?.toString()?.trim() ?: ""
-            for (kw in keywords) {
-                if (text.contains(kw) || desc.contains(kw)) {
-                    results.add(node)
-                    return
-                }
+            val text = node.text?.toString().orEmpty()
+            val description = node.contentDescription?.toString().orEmpty()
+            if (keywords.any { text.contains(it) || description.contains(it) }) return node
+        }
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            findClickableByText(child, keywords)?.let { return it }
+        }
+        return null
+    }
+
+    private fun collectText(root: AccessibilityNodeInfo, excluded: AccessibilityNodeInfo): List<String> {
+        val result = mutableListOf<String>()
+        fun visit(node: AccessibilityNodeInfo) {
+            if (node == excluded) return
+            val text = node.text?.toString()?.trim().orEmpty()
+            if (text.isNotEmpty()) result.add(text)
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(::visit)
             }
         }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { findClickableWithText(it, keywords, results) }
-        }
+        visit(root)
+        return result
     }
 
-    private fun collectTextFromChildren(
+    private fun findAncestorByViewId(
+        root: AccessibilityNodeInfo,
         node: AccessibilityNodeInfo,
-        texts: MutableList<String>,
-        excludeNode: AccessibilityNodeInfo? = null
-    ) {
-        if (node == excludeNode) return
-        if (node.className?.toString()?.contains("TextView") == true) {
-            val t = node.text?.toString()?.trim() ?: ""
-            if (t.isNotEmpty() && t.length in 2..500) texts.add(t)
+        viewId: String
+    ): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = node
+        while (current != null) {
+            if (current.findAccessibilityNodeInfosByViewId(prefix + viewId).isNotEmpty()) return current
+            if (current == root) return null
+            current = current.parent
         }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { collectTextFromChildren(it, texts, excludeNode) }
+        return null
+    }
+
+    private fun climbToRoot(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo = node
+        var parent = current.parent
+        while (parent != null) {
+            current = parent
+            parent = current.parent
         }
+        return current
     }
 }

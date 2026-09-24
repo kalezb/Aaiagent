@@ -1,22 +1,33 @@
 // Dashboard App - AI托管助手管理面板
 var API_BASE = "/api";
-var DASHBOARD_PASSWORD = "515730";
+var dashboardPassword = "";
 var isLoggedIn = false;
 
-function login() {
+async function login() {
   var pw = document.getElementById("passwordInput").value;
-  if (pw === DASHBOARD_PASSWORD) {
+  var error = document.getElementById("loginError");
+  error.style.display = "none";
+  try {
+    var response = await fetch(API_BASE + "/dashboard/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw })
+    });
+    var result = await response.json();
+    if (!response.ok || !result.success) throw new Error("invalid password");
+    dashboardPassword = pw;
     isLoggedIn = true;
     document.getElementById("loginView").style.display = "none";
     document.getElementById("appView").style.display = "block";
     loadOverview();
-  } else {
-    document.getElementById("loginError").style.display = "block";
+  } catch (_) {
+    error.style.display = "block";
   }
 }
 
 function logout() {
   isLoggedIn = false;
+  dashboardPassword = "";
   document.getElementById("loginView").style.display = "flex";
   document.getElementById("appView").style.display = "none";
   document.getElementById("passwordInput").value = "";
@@ -44,7 +55,9 @@ function switchTab(name) {
 }
 
 async function api(method, path, body) {
-  var opts = { method: method, headers: { "Content-Type": "application/json" } };
+  var headers = { "Content-Type": "application/json" };
+  if (dashboardPassword) headers["X-Dashboard-Password"] = dashboardPassword;
+  var opts = { method: method, headers: headers };
   if (body) opts.body = JSON.stringify(body);
   var resp = await fetch(API_BASE + path, opts);
   return resp.json();

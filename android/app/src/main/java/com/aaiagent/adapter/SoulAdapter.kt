@@ -1,271 +1,324 @@
-﻿package com.aaiagent.adapter
+package com.aaiagent.adapter
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 import com.aaiagent.adapter.PlatformAdapter.ConversationInfo
+import com.aaiagent.adapter.PlatformAdapter.ListSnapshot
+import com.aaiagent.adapter.PlatformAdapter.ScrollDirection
 import com.aaiagent.adapter.PlatformAdapter.SendResult
+import com.aaiagent.engine.ConversationIdentity
+import com.aaiagent.engine.GestureMonitor
+import kotlinx.coroutines.delay
 
 class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     override val packageName = "cn.soulapp.android"
 
-    private val PREFIX = "cn.soulapp.android:id/"
+    private val prefix = "cn.soulapp.android:id/"
+    private var emptyScanStreak = 0
 
-    // ═══ P0-问题3: 放宽 isInChat——有 et_sendmessage 就算聊天页 ═══
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
-        val hasInput = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage").isNotEmpty()
-        return hasInput
+        return root.packageName?.toString() == packageName &&
+            root.findAccessibilityNodeInfosByViewId(prefix + "et_sendmessage").isNotEmpty()
     }
 
-    // ═══ P0-问题2: 读聊天页顶部标题，验证进没进错人 ═══
-    fun readChatTitle(root: AccessibilityNodeInfo): String? {
-        // Soul聊天页顶部标题是 tv_title
-        val titles = root.findAccessibilityNodeInfosByViewId(PREFIX + "tv_title")
-        for (t in titles) {
-            val text = t.text?.toString()?.trim()
-            if (!text.isNullOrEmpty() && t.isVisibleToUser) {
-                android.util.Log.d("AIA", "Soul readChatTitle: found='$text'")
-                return text
-            }
+    override fun readChatTitle(root: AccessibilityNodeInfo): String? {
+        val titles = root.findAccessibilityNodeInfosByViewId(prefix + "tv_title")
+        for (node in titles) {
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrEmpty() && node.isVisibleToUser) return text
         }
-        // fallback: 找可见的、顶部位置的文本
+
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
-            val rect = android.graphics.Rect()
+            val rect = Rect()
             node.getBoundsInScreen(rect)
             val text = node.text?.toString()?.trim()
-            if (!text.isNullOrEmpty() && text.length in 2..20 && rect.top < 200 && rect.width() > 200 && node.isVisibleToUser) {
-                android.util.Log.d("AIA", "Soul readChatTitle fallback: found='$text' at top=" + rect.top)
+            if (!text.isNullOrEmpty() && text.length in 2..24 &&
+                rect.top in 40..240 && rect.width() > 160 && node.isVisibleToUser
+            ) {
                 return text
             }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.add(it) }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::add)
             }
         }
         return null
     }
 
     override fun isInMessageList(root: AccessibilityNodeInfo): Boolean {
-        // 必须有conversation_list才算是消息列表（广场页也有item_content_root）
-        val hasConvList = root.findAccessibilityNodeInfosByViewId(PREFIX + "conversation_list").isNotEmpty()
-        if (hasConvList) return true
-        // 备用：底部聊天tab选中 + 有多个item_content_root
-        val chatTab = root.findAccessibilityNodeInfosByViewId(PREFIX + "main_tab_msg")
+        if (root.packageName?.toString() != packageName) return false
+        if (root.findAccessibilityNodeInfosByViewId(prefix + "conversation_list").isNotEmpty()) return true
+        val chatTab = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg")
         val tabSelected = chatTab.any { it.isSelected || it.isFocused }
-        val items = root.findAccessibilityNodeInfosByViewId(PREFIX + "item_content_root")
+        val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
         return tabSelected && items.size >= 2
+    }
+
+    override fun listSnapshot(root: AccessibilityNodeInfo): ListSnapshot {
+        val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
+            .filter { it.isVisibleToUser }
+        if (items.isEmpty()) return ListSnapshot()
+        return ListSnapshot(
+            itemCount = items.size,
+            firstConversation = readChildText(items.first(), "name") ?: "",
+            lastConversation = readChildText(items.last(), "name") ?: ""
+        )
     }
 
     override fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage> {
         val messages = mutableListOf<ChatMessage>()
-        val messageItems = root.findAccessibilityNodeInfosByViewId(PREFIX + "item_root")
+        val screenWidth = service.resources.displayMetrics.widthPixels
+        val messageItems = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
+
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
-            val aigcNodes = item.findAccessibilityNodeInfosByViewId(PREFIX + "aigcRootView")
-            if (aigcNodes.isNotEmpty()) continue
-            val privacyNodes = item.findAccessibilityNodeInfosByViewId(PREFIX + "tv_privacy_protect_tag")
-            if (privacyNodes.isNotEmpty()) continue
-            val hasMeAvatar = item.findAccessibilityNodeInfosByViewId(PREFIX + "meAvatar").isNotEmpty()
-            val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(PREFIX + "otherAvatar").isNotEmpty()
-            if (hasMeAvatar && !hasOtherAvatar) continue
-            val textNodes = item.findAccessibilityNodeInfosByViewId(PREFIX + "content_text")
-            val content = textNodes.mapNotNull { it.text?.toString()?.trim() }
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
+
+            val hasSelfAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "meAvatar").isNotEmpty()
+            val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "otherAvatar").isNotEmpty()
+            val bounds = Rect()
+            item.getBoundsInScreen(bounds)
+            val sender = when {
+                hasSelfAvatar && !hasOtherAvatar -> "self"
+                hasOtherAvatar -> "other"
+                bounds.centerX() > screenWidth / 2 -> "self"
+                else -> "other"
+            }
+
+            val text = item.findAccessibilityNodeInfosByViewId(prefix + "content_text")
+                .mapNotNull { it.text?.toString()?.trim() }
                 .filter { it.isNotEmpty() }
                 .joinToString("")
-            if (content.isNotEmpty()) {
-                messages.add(ChatMessage(sender = "other", content = content))
+
+            val type = when {
+                item.findAccessibilityNodeInfosByViewId(prefix + "voice_bubble").isNotEmpty() -> "voice"
+                item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() -> "image"
+                item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() -> "image"
+                item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty() -> "image"
+                item.findAccessibilityNodeInfosByViewId(prefix + "gif_intimacy").isNotEmpty() -> "sticker"
+                text.isNotEmpty() -> "text"
+                else -> "unknown"
             }
+
+            val content = when {
+                text.isNotEmpty() -> text
+                type == "voice" -> "[语音]"
+                type == "image" -> "[图片]"
+                type == "sticker" -> "[表情]"
+                else -> ""
+            }
+            if (content.isNotEmpty()) messages.add(ChatMessage(sender, content, type))
         }
-        if (messages.isEmpty()) {
-            fallbackReadTextViews(root, messages)
-        }
+
+        if (messages.isEmpty()) fallbackReadTextViews(root, messages, screenWidth)
         return messages
     }
 
-    private fun fallbackReadTextViews(node: AccessibilityNodeInfo, messages: MutableList<ChatMessage>) {
+    override fun readVisualTargetBounds(root: AccessibilityNodeInfo): Rect? {
+        val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
+        for (item in items.asReversed()) {
+            if (!item.isVisibleToUser) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
+            val hasSelfAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "meAvatar").isNotEmpty()
+            val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "otherAvatar").isNotEmpty()
+            if (hasSelfAvatar && !hasOtherAvatar) continue
+
+            val targets = listOf("image", "image_content", "chat_image_url", "gif_intimacy", "voice_bubble")
+            for (target in targets) {
+                val node = item.findAccessibilityNodeInfosByViewId(prefix + target)
+                    .firstOrNull { it.isVisibleToUser }
+                    ?: continue
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.width() > 0 && rect.height() > 0) return rect
+            }
+        }
+        return null
+    }
+
+    private fun fallbackReadTextViews(
+        node: AccessibilityNodeInfo,
+        messages: MutableList<ChatMessage>,
+        screenWidth: Int
+    ) {
         if (node.className?.toString()?.contains("TextView") == true) {
             val text = node.text?.toString()?.trim() ?: ""
             if (text.isNotEmpty() && text.length > 1) {
-                val rect = android.graphics.Rect()
+                val rect = Rect()
                 node.getBoundsInScreen(rect)
-                val isSelf = rect.left > 600
-                if (!isSelf) {
-                    messages.add(ChatMessage(sender = "other", content = text))
+                if (rect.top > 240 && rect.bottom < 2140) {
+                    messages.add(ChatMessage(if (rect.left > screenWidth / 2) "self" else "other", text))
                 }
             }
         }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            fallbackReadTextViews(child, messages)
+        for (index in 0 until node.childCount) {
+            node.getChild(index)?.let { fallbackReadTextViews(it, messages, screenWidth) }
         }
     }
 
-    // ═══ P1-问题6: 发送按钮查找增加重试和坐标兜底 ═══
     override suspend fun fillAndSend(
         service: AccessibilityService,
         root: AccessibilityNodeInfo,
-        text: String
+        text: String,
+        expectedContactName: String?
     ): SendResult {
-        // 1. 点击输入框激活
-        val inputNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
-        val inputField = inputNodes.firstOrNull { it.isClickable && it.isVisibleToUser }
-        if (inputField == null) {
-            android.util.Log.w("AIA", "Soul fillAndSend: et_sendmessage not found")
-            return SendResult.TIMEOUT
-        }
-        
-        inputField.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        kotlinx.coroutines.delay(300)
-        
-        val retryRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
-        val allEditTexts = retryRoot.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
-        var realInput: AccessibilityNodeInfo? = null
-        for (node in allEditTexts) {
-            if (node.isEditable && node.isVisibleToUser) {
-                realInput = node
-                break
-            }
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i)
-                if (child != null && child.isEditable && child.isVisibleToUser) {
-                    realInput = child
-                    break
-                }
-            }
-            if (realInput != null) break
-        }
-        
-        if (realInput == null) {
-            android.util.Log.w("AIA", "Soul fillAndSend: no editable field found, using clickable input")
-            realInput = inputField
+        var currentRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
+        if (!isInChat(currentRoot)) return SendResult.NOT_VERIFIED
+        if (!titleMatches(currentRoot, expectedContactName)) {
+            android.util.Log.w("AIA", "Soul send blocked: conversation title mismatch, expected=$expectedContactName")
+            return SendResult.NOT_VERIFIED
         }
 
-        // 2. 设置文本
-        val args = Bundle()
-        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        val textSet = realInput.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-        android.util.Log.d("AIA", "Soul fillAndSend: text set result=$textSet")
+        val beforeSelfCount = readMessages(currentRoot).count { it.sender == "self" }
+        val input = findEditableInput(currentRoot) ?: return SendResult.TIMEOUT
+        if (!setTextAndVerify(input, text)) return SendResult.NOT_VERIFIED
 
-        // 3. ═══ P1-问题6: 等1秒让发送按钮出现，然后重试5次 ═══
-        kotlinx.coroutines.delay(1000)
-        
-        var sendButton: AccessibilityNodeInfo? = null
-        var sendRetries = 0
-        
-        while (sendButton == null && sendRetries < 5) {
-            if (sendRetries > 0) kotlinx.coroutines.delay(500)
-            val sendRoot = service.rootInActiveWindow ?: break
-            
-            // 方法1：btn_send ID
-            val byId = sendRoot.findAccessibilityNodeInfosByViewId(PREFIX + "btn_send")
-            sendButton = byId.firstOrNull { it.isClickable && it.isVisibleToUser }
-            
-            // 方法2：输入框右侧可点击元素
-            if (sendButton == null) {
-                val inputBounds = android.graphics.Rect()
-                realInput.getBoundsInScreen(inputBounds)
-                val allClickable = mutableListOf<AccessibilityNodeInfo>()
-                findClickableInArea(sendRoot, inputBounds.right - 60, inputBounds.top - 10, inputBounds.right + 120, inputBounds.bottom + 10, allClickable)
-                for (node in allClickable) {
-                    val bounds = android.graphics.Rect()
-                    node.getBoundsInScreen(bounds)
-                    if (bounds.left >= inputBounds.right - 20) {
-                        android.util.Log.d("AIA", "Soul fillAndSend: found send by position at ${bounds.toShortString()}")
-                        sendButton = node
-                        break
-                    }
-                }
-            }
-            
-            // 方法3：底部区域可点击元素
-            if (sendButton == null) {
-                val allClickable = mutableListOf<AccessibilityNodeInfo>()
-                findBottomClickables(sendRoot, allClickable)
-                for (node in allClickable) {
-                    val b = android.graphics.Rect()
-                    node.getBoundsInScreen(b)
-                    if (b.left > 700 && b.left < 900 && b.bottom > 2200) {
-                        android.util.Log.d("AIA", "Soul fillAndSend: trying send at ${b.toShortString()}")
-                        sendButton = node
-                        break
-                    }
-                }
-            }
-            sendRetries++
-            if (sendButton == null) android.util.Log.d("AIA", "Soul fillAndSend: send button retry $sendRetries/5")
-        }
+        currentRoot = service.rootInActiveWindow ?: return SendResult.NOT_VERIFIED
+        if (!titleMatches(currentRoot, expectedContactName)) return SendResult.NOT_VERIFIED
 
-        if (sendButton != null) {
-            sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            // ═══ P1-问题6: 点完发送后等800ms验证输入框清空 ═══
-            kotlinx.coroutines.delay(800)
-            val checkRoot = service.rootInActiveWindow
-            if (checkRoot != null && detectBanned(checkRoot)) return SendResult.BANNED
-            return SendResult.SUCCESS
+        delay(700)
+        val sendButton = findSendButtonWithRetry(input)
+        val clicked = if (sendButton != null) {
+            tapNode(sendButton)
+        } else {
+            tapSendFallback(input)
         }
+        if (!clicked) return SendResult.TIMEOUT
 
-        // ═══ P1-问题6: 坐标兜底——输入框右边中间位置 ═══
-        android.util.Log.w("AIA", "Soul fillAndSend: all retries failed, using gesture fallback")
-        try {
-            val inputBounds = android.graphics.Rect()
-            realInput.getBoundsInScreen(inputBounds)
-            val cx = (inputBounds.right + 50).toFloat()
-            val cy = inputBounds.centerY().toFloat()
-            android.util.Log.d("AIA", "Soul fillAndSend: gesture fallback tap at ($cx, $cy)")
-            val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
-                    android.graphics.Path().apply { moveTo(cx, cy) },
-                    0, 1
-                ))
-                .build()
-            service.dispatchGesture(gesture, null, null)
-            kotlinx.coroutines.delay(800)
-            val checkRoot = service.rootInActiveWindow
-            if (checkRoot != null && detectBanned(checkRoot)) return SendResult.BANNED
-            return SendResult.SUCCESS
-        } catch (_: Exception) {
-            return SendResult.TIMEOUT
-        }
-    }
-    
-    private fun findClickableInArea(node: AccessibilityNodeInfo, left: Int, top: Int, right: Int, bottom: Int, results: MutableList<AccessibilityNodeInfo>) {
-        val bounds = android.graphics.Rect()
-        node.getBoundsInScreen(bounds)
-        if (bounds.left >= left && bounds.right <= right && bounds.top >= top && bounds.bottom <= bottom && node.isClickable && node.isVisibleToUser) {
-            results.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { findClickableInArea(it, left, top, right, bottom, results) }
-        }
-    }
-    
-    private fun findBottomClickables(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>) {
-        val bounds = android.graphics.Rect()
-        node.getBoundsInScreen(bounds)
-        if (bounds.bottom > 2100 && node.isClickable && node.isVisibleToUser) {
-            results.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { findBottomClickables(it, results) }
-        }
+        val verified = verifySent(text, beforeSelfCount, expectedContactName)
+        if (verified == SendResult.BANNED) return SendResult.BANNED
+        return verified
     }
 
-    suspend fun fillInputOnly(text: String): Boolean {
+    suspend fun fillInputOnly(text: String, expectedContactName: String? = null): Boolean {
         val root = service.rootInActiveWindow ?: return false
-        val inputNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
-        val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser }
-            ?: return false
-        val args = Bundle()
-        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        return inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        if (!isInChat(root) || !titleMatches(root, expectedContactName)) return false
+        val input = findEditableInput(root) ?: return false
+        return setTextAndVerify(input, text)
     }
 
-    // ═══ P1-问题7: 扩充违规关键词 ═══
+    private fun findEditableInput(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val candidates = root.findAccessibilityNodeInfosByViewId(prefix + "et_sendmessage")
+        for (node in candidates) {
+            if (!node.isVisibleToUser) continue
+            if (node.isEditable) return node
+            for (index in 0 until node.childCount) {
+                val child = node.getChild(index)
+                if (child != null && child.isEditable && child.isVisibleToUser) return child
+            }
+        }
+        return candidates.firstOrNull { it.isVisibleToUser }
+    }
+
+    private suspend fun setTextAndVerify(input: AccessibilityNodeInfo, text: String): Boolean {
+        repeat(3) { attempt ->
+            GestureMonitor.onAutomationActionStarted()
+            input.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            delay(220)
+
+            val freshInput = service.rootInActiveWindow?.let(::findEditableInput) ?: input
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            val accepted = freshInput.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            delay(250)
+            GestureMonitor.onAutomationActionFinished()
+
+            val actual = freshInput.text?.toString()?.trim()
+            if (accepted && actual == text.trim()) return true
+            android.util.Log.w("AIA", "Soul set text verify failed attempt=${attempt + 1}, actual=$actual")
+        }
+        return false
+    }
+
+    private suspend fun findSendButtonWithRetry(input: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        repeat(5) { attempt ->
+            if (attempt > 0) delay(500)
+            val root = service.rootInActiveWindow ?: return@repeat
+            val byId = root.findAccessibilityNodeInfosByViewId(prefix + "btn_send")
+                .asSequence()
+                .mapNotNull(::actionableNode)
+                .firstOrNull { it.isVisibleToUser }
+            if (byId != null) return byId
+
+            val inputBounds = Rect()
+            input.getBoundsInScreen(inputBounds)
+            val candidates = mutableListOf<AccessibilityNodeInfo>()
+            collectClickableNodes(root, candidates)
+            candidates.firstOrNull {
+                val bounds = Rect()
+                it.getBoundsInScreen(bounds)
+                bounds.left >= inputBounds.right - 30 &&
+                    bounds.bottom >= inputBounds.top &&
+                    bounds.top <= inputBounds.bottom + 80
+            }?.let { return it }
+        }
+        return null
+    }
+
+    private fun actionableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var current: AccessibilityNodeInfo? = node
+        repeat(3) {
+            val candidate = current ?: return null
+            if (candidate.isClickable && candidate.isVisibleToUser) return candidate
+            current = candidate.parent
+        }
+        return node.takeIf { it.isVisibleToUser }
+    }
+
+    private suspend fun tapSendFallback(input: AccessibilityNodeInfo): Boolean {
+        val bounds = Rect()
+        input.getBoundsInScreen(bounds)
+        val screenWidth = service.resources.displayMetrics.widthPixels
+        val screenHeight = service.resources.displayMetrics.heightPixels
+        val x = (bounds.right + 55).coerceIn(40, screenWidth - 40).toFloat()
+        val y = bounds.centerY().coerceIn(40, screenHeight - 40).toFloat()
+        android.util.Log.w("AIA", "Soul send fallback tap x=$x y=$y")
+        return performTap(x, y)
+    }
+
+    private suspend fun verifySent(
+        text: String,
+        beforeSelfCount: Int,
+        expectedContactName: String?
+    ): SendResult {
+        repeat(3) { attempt ->
+            delay(if (attempt == 0) 800 else 600)
+            val root = service.rootInActiveWindow ?: return@repeat
+            if (detectBanned(root)) return SendResult.BANNED
+            if (!isInChat(root) || !titleMatches(root, expectedContactName)) {
+                return SendResult.NOT_VERIFIED
+            }
+
+            val selfMessages = readMessages(root).filter { it.sender == "self" }
+            val expected = compact(text)
+            val matched = selfMessages.size > beforeSelfCount &&
+                selfMessages.takeLast(4).any { compact(it.content) == expected }
+            if (matched) return SendResult.SUCCESS
+        }
+        return SendResult.NOT_VERIFIED
+    }
+
+    private fun titleMatches(root: AccessibilityNodeInfo, expectedContactName: String?): Boolean {
+        if (expectedContactName.isNullOrBlank()) return true
+        return ConversationIdentity.matches(expectedContactName, readChatTitle(root))
+    }
+
+    private fun compact(value: String): String = value.replace(Regex("\\s+"), "").trim()
+
     private fun detectBanned(root: AccessibilityNodeInfo): Boolean {
-        val errorKeywords = listOf(
+        val keywords = listOf(
             "发送失败", "已被禁言", "发言太快", "内容违规", "违规消息", "账号异常", "操作频繁",
             "请稍后再试", "已被限制", "禁止发言", "聊天功能被封", "举报处理中",
             "违反社区规定", "请遵守", "发送内容包含", "封号", "永久封禁", "临时封禁"
@@ -275,13 +328,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             val text = node.text?.toString() ?: ""
-            if (errorKeywords.any { text.contains(it) }) {
-                android.util.Log.w("AIA", "Soul detectBanned: hit keyword in '$text'")
-                return true
-            }
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { queue.add(it) }
-            }
+            if (keywords.any(text::contains)) return true
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
         return false
     }
@@ -290,155 +338,193 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         root: AccessibilityNodeInfo,
         shouldClick: Boolean
     ): ConversationInfo? {
-        var result = tryFindAndUnread(root, shouldClick)
-        if (result != null) return result
-
-        // ═══ P1-问题4: 滑动后稳定验证 ═══
-        android.util.Log.d("AIA", "Soul clickFirstUnread: no unread visible, trying scroll...")
-        for (attempt in 1..5) {
-            val scrolled = scrollConversationList(root)
-            if (!scrolled) {
-                android.util.Log.d("AIA", "Soul clickFirstUnread: cannot scroll, giving up")
-                break
-            }
-            // 等1秒后连续读两次验证列表稳定
-            kotlinx.coroutines.delay(1000)
-            
-            var stableReads = 0
-            var prevCount = -1
-            var prevFirstName = ""
-            for (stableAttempt in 1..3) {
-                val newRoot = getFreshRoot() ?: break
-                val items = countAndFirstConversation(newRoot)
-                val currCount = items.first
-                val currFirstName = items.second
-                android.util.Log.d("AIA", "Soul scroll stability check $stableAttempt: count=$currCount first='$currFirstName' prevCount=$prevCount prevFirst='$prevFirstName'")
-                if (currCount == prevCount && currFirstName == prevFirstName) {
-                    stableReads++
-                    if (stableReads >= 2) break
-                } else {
-                    stableReads = 0
-                }
-                prevCount = currCount
-                prevFirstName = currFirstName
-                if (stableAttempt < 3) kotlinx.coroutines.delay(500)
-            }
-            
-            val stableRoot = getFreshRoot() ?: continue
-            result = tryFindAndUnread(stableRoot, shouldClick)
-            if (result != null) {
-                android.util.Log.d("AIA", "Soul clickFirstUnread: found after scroll attempt $attempt")
-                return result
-            }
+        tryFindUnread(root, shouldClick)?.let {
+            emptyScanStreak = 0
+            return it
         }
-        android.util.Log.d("AIA", "Soul clickFirstUnread: no unread found after scrolling")
+
+        emptyScanStreak++
+        val topRoot = scrollListToTop(root)
+        tryFindUnread(topRoot, shouldClick)?.let {
+            emptyScanStreak = 0
+            return it
+        }
+
+        if (emptyScanStreak < FULL_PATROL_AFTER_EMPTY_SCANS) return null
+
+        emptyScanStreak = 0
+        var currentRoot = topRoot
+        repeat(MAX_PATROL_SCROLLS) {
+            if (!scrollConversationList(currentRoot, ScrollDirection.FORWARD)) return@repeat
+            currentRoot = waitForStableListAfterScroll() ?: service.rootInActiveWindow ?: return@repeat
+            tryFindUnread(currentRoot, shouldClick)?.let { return it }
+        }
+        scrollListToTop(currentRoot)
         return null
     }
 
-    // 计数+第一个会话名
-    private fun countAndFirstConversation(root: AccessibilityNodeInfo): Pair<Int, String> {
-        val items = root.findAccessibilityNodeInfosByViewId(PREFIX + "item_content_root")
-        val firstName = items.firstOrNull()?.let {
-            it.findAccessibilityNodeInfosByViewId(PREFIX + "name").firstOrNull()?.text?.toString()?.trim() ?: ""
-        } ?: ""
-        return Pair(items.size, firstName)
-    }
-
-    private fun tryFindAndUnread(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
-        val badges = root.findAccessibilityNodeInfosByViewId(PREFIX + "unread_msg_number")
-        android.util.Log.d("AIA", "Soul tryFindAndUnread: found " + badges.size + " unread_msg_number nodes")
-        if (badges.isEmpty()) return null
-
-        var checkedBadges = 0
-        var skippedNotVisible = 0
-        var skippedNoChild = 0
+    private fun tryFindUnread(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
+        val badges = root.findAccessibilityNodeInfosByViewId(prefix + "unread_msg_number")
         for (badge in badges) {
-            // P0修复：放宽可见性检查——使用父节点bounds判断
-            val hasRedDot = badge.childCount > 0
-            checkedBadges++
-            if (!hasRedDot) { skippedNoChild++; continue }
-
-            android.util.Log.d("AIA", "Soul tryFindAndUnread: found badge with red dot")
-
-            val conversationItem = findAncestorByViewId(badge, "item_content_root")
-                ?: badge.parent?.parent?.parent ?: continue
-
-            val name = readChildText(conversationItem, "name")
-            val preview = readChildText(conversationItem, "message")
-            val contactName = name ?: preview ?: "unknown"
+            if (!badgeHasUnread(badge)) continue
+            val item = findAncestorByViewId(badge, "item_content_root")
+                ?: badge.parent?.parent?.parent
+                ?: continue
+            val name = readChildText(item, "name")
+            val preview = readChildText(item, "message") ?: ""
+            val contactName = name ?: preview.ifEmpty { "unknown" }
 
             if (shouldClick) {
-                // ??? name ??????? bounds ??????????/????
-                val nameNode = conversationItem.findAccessibilityNodeInfosByViewId(PREFIX + "name").firstOrNull()
-                val rect = android.graphics.Rect()
-                var picked = "item"
-                if (nameNode != null && nameNode.isVisibleToUser) {
-                    nameNode.getBoundsInScreen(rect)
-                    if (rect.width() >= 80 && rect.height() >= 20 && rect.left < 1000 && rect.right > 80) {
-                        picked = "name"
-                    }
+                val target = item.takeIf { it.isClickable && it.isVisibleToUser } ?: item
+                if (!tapNode(target)) {
+                    return ConversationInfo(contactName, contactName, preview)
                 }
-                if (picked == "item") {
-                    conversationItem.getBoundsInScreen(rect)
-                }
-                if (rect.width() < 80 || rect.height() < 20 || rect.left >= 1000 || rect.right <= 80) {
-                    android.util.Log.w("AIA", "Soul tryFindAndUnread: invalid bounds " + rect.toShortString() + ", fallback to safe center")
-                    rect.set(0, 400, 1080, 600)
-                }
-                val cx = rect.centerX().toFloat().coerceIn(60f, 1020f)
-                val cy = rect.centerY().toFloat().coerceIn(200f, 2200f)
-                android.util.Log.d("AIA", "Soul tap: picked=" + picked + " bounds=" + rect.toShortString() + " -> (" + cx + "," + cy + ") name='" + contactName + "'")
-                val gesture = android.accessibilityservice.GestureDescription.Builder()
-                    .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
-                        android.graphics.Path().apply { moveTo(cx, cy) },
-                        0, 1
-                    ))
-                    .build()
-                service.dispatchGesture(gesture, null, null)
             }
-
             return ConversationInfo(
                 contactId = contactName,
                 contactName = contactName,
-                preview = preview ?: ""
+                preview = preview
             )
         }
-        android.util.Log.d("AIA", "Soul tryFindAndUnread: checked=" + checkedBadges + " skippedNotVisible=" + skippedNotVisible + " skippedNoChild=" + skippedNoChild)
         return null
     }
 
-    private fun scrollConversationList(root: AccessibilityNodeInfo): Boolean {
-        val recyclerNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "recycler_view")
-        for (node in recyclerNodes) {
-            if (node.isScrollable && node.isVisibleToUser) {
-                android.util.Log.d("AIA", "Soul scroll: using recycler_view")
-                return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-            }
+    private fun badgeHasUnread(badge: AccessibilityNodeInfo): Boolean {
+        val text = badge.text?.toString()?.trim() ?: ""
+        val description = badge.contentDescription?.toString()?.trim() ?: ""
+        if (text.toIntOrNull()?.let { it > 0 } == true) return true
+        if (description.contains("未读") || description.contains("unread", ignoreCase = true)) return true
+        return badge.childCount > 0 && (badge.isVisibleToUser || badge.parent?.isVisibleToUser == true)
+    }
+
+    override fun scrollConversationList(root: AccessibilityNodeInfo, direction: ScrollDirection): Boolean {
+        val action = if (direction == ScrollDirection.FORWARD) {
+            AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+        } else {
+            AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
         }
+        val recycler = root.findAccessibilityNodeInfosByViewId(prefix + "recycler_view")
+            .firstOrNull { it.isScrollable && it.isVisibleToUser }
+        if (recycler != null) {
+            GestureMonitor.onAutomationActionStarted()
+            val result = recycler.performAction(action)
+            GestureMonitor.onAutomationActionFinished()
+            return result
+        }
+
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
-            val n = queue.removeFirst()
-            if (n.isScrollable && n.isVisibleToUser) {
-                android.util.Log.d("AIA", "Soul scroll: fallback " + (n.className?.toString() ?: "unknown"))
-                return n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            val node = queue.removeFirst()
+            if (node.isScrollable && node.isVisibleToUser) {
+                GestureMonitor.onAutomationActionStarted()
+                val result = node.performAction(action)
+                GestureMonitor.onAutomationActionFinished()
+                return result
             }
-            for (i in 0 until n.childCount) {
-                n.getChild(i)?.let { queue.add(it) }
-            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
         }
-        android.util.Log.w("AIA", "Soul scroll: no scrollable node found")
         return false
     }
 
-    private fun getFreshRoot(): AccessibilityNodeInfo? {
+    private suspend fun waitForStableListAfterScroll(): AccessibilityNodeInfo? {
+        delay(1_000)
+        var previous = ListSnapshot(-1, "", "")
+        var stableReads = 0
+        repeat(3) { attempt ->
+            val root = service.rootInActiveWindow ?: return null
+            val current = listSnapshot(root)
+            if (current == previous) stableReads++ else stableReads = 0
+            if (stableReads >= 2) return root
+            previous = current
+            if (attempt < 2) delay(500)
+        }
         return service.rootInActiveWindow
     }
-    
+
+    private suspend fun scrollListToTop(root: AccessibilityNodeInfo): AccessibilityNodeInfo {
+        var current = root
+        repeat(MAX_TOP_REWIND_SCROLLS) {
+            if (!scrollConversationList(current, ScrollDirection.BACKWARD)) return current
+            delay(450)
+            current = service.rootInActiveWindow ?: return current
+        }
+        return current
+    }
+
+    override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
+        if (isInMessageList(root)) return
+
+        repeat(3) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            delay(450)
+            val fresh = service.rootInActiveWindow
+            if (fresh != null && isInMessageList(fresh)) return
+        }
+
+        val freshRoot = service.rootInActiveWindow ?: return
+        val tab = freshRoot.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg")
+            .firstOrNull { it.isVisibleToUser }
+        if (tab != null && tapNode(tab)) {
+            delay(800)
+            if (service.rootInActiveWindow?.let(::isInMessageList) == true) return
+        }
+
+        performTap(756f, 2244f)
+        delay(1_000)
+    }
+
+    override suspend fun bringToForeground(service: AccessibilityService) {
+        val intent = service.packageManager.getLaunchIntentForPackage(packageName) ?: return
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        service.startActivity(intent)
+        delay(1_500)
+    }
+
+    private fun tapNode(node: AccessibilityNodeInfo): Boolean {
+        GestureMonitor.onAutomationActionStarted()
+        val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        if (clicked) {
+            GestureMonitor.onAutomationActionFinished()
+            return true
+        }
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val result = if (bounds.width() > 0 && bounds.height() > 0) {
+            val screenWidth = service.resources.displayMetrics.widthPixels
+            val screenHeight = service.resources.displayMetrics.heightPixels
+            performTap(
+                bounds.centerX().coerceIn(20, screenWidth - 20).toFloat(),
+                bounds.centerY().coerceIn(20, screenHeight - 20).toFloat()
+            )
+        } else {
+            false
+        }
+        GestureMonitor.onAutomationActionFinished()
+        return result
+    }
+
+    private fun performTap(x: Float, y: Float): Boolean {
+        GestureMonitor.onAutomationActionStarted()
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(Path().apply { moveTo(x, y) }, 0L, 1L))
+            .build()
+        val result = service.dispatchGesture(gesture, null, null)
+        GestureMonitor.onAutomationActionFinished()
+        return result
+    }
+
+    private fun collectClickableNodes(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>) {
+        if (node.isClickable && node.isVisibleToUser) results.add(node)
+        for (index in 0 until node.childCount) {
+            node.getChild(index)?.let { collectClickableNodes(it, results) }
+        }
+    }
+
     private fun findAncestorByViewId(node: AccessibilityNodeInfo, targetId: String): AccessibilityNodeInfo? {
-        var current: AccessibilityNodeInfo? = node.parent
+        var current = node.parent
         while (current != null) {
-            val found = current.findAccessibilityNodeInfosByViewId(PREFIX + targetId)
+            val found = current.findAccessibilityNodeInfosByViewId(prefix + targetId)
             if (found.isNotEmpty()) return found.first()
             current = current.parent
         }
@@ -446,98 +532,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     private fun readChildText(parent: AccessibilityNodeInfo, viewId: String): String? {
-        val nodes = parent.findAccessibilityNodeInfosByViewId(PREFIX + viewId)
-        return nodes.firstOrNull()?.text?.toString()?.trim()
+        return parent.findAccessibilityNodeInfosByViewId(prefix + viewId)
+            .firstOrNull { it.text?.toString()?.isNotBlank() == true }
+            ?.text
+            ?.toString()
+            ?.trim()
     }
 
-    override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
-        if (isInMessageList(root)) return
-
-        for (i in 1..5) {
-            try {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                kotlinx.coroutines.delay(400)
-                val r = service.rootInActiveWindow
-                if (r != null && isInMessageList(r)) {
-                    android.util.Log.d("AIA", "Soul nav: BACK x" + i + " success")
-                    return
-                }
-            } catch (_: Exception) {}
-        }
-
-        val freshRoot = service.rootInActiveWindow ?: return
-        val tabNodes = freshRoot.findAccessibilityNodeInfosByViewId(PREFIX + "main_tab_msg")
-        for (tab in tabNodes) {
-            if (!tab.isClickable || !tab.isVisibleToUser) continue
-            try {
-                android.util.Log.d("AIA", "Soul nav: clicking main_tab_msg")
-                tab.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                kotlinx.coroutines.delay(800)
-                val r = service.rootInActiveWindow
-                if (r != null && isInMessageList(r)) {
-                    android.util.Log.d("AIA", "Soul nav: main_tab_msg success")
-                    return
-                }
-            } catch (_: Exception) {}
-        }
-
-        try {
-            val cx = 756f
-            val cy = 2244f
-            android.util.Log.d("AIA", "Soul nav: gesture tap message tab")
-            val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
-                    android.graphics.Path().apply { moveTo(cx, cy) },
-                    0, 1
-                ))
-                .build()
-            service.dispatchGesture(gesture, null, null)
-            kotlinx.coroutines.delay(1000)
-            val r = service.rootInActiveWindow
-            if (r != null && isInMessageList(r)) {
-                android.util.Log.d("AIA", "Soul nav: gesture tap success")
-                return
-            }
-        } catch (_: Exception) {}
-
-        try {
-            android.util.Log.d("AIA", "Soul nav: restarting Soul")
-            bringToForeground(service)
-            kotlinx.coroutines.delay(2000)
-        } catch (_: Exception) {}
-
-        android.util.Log.w("AIA", "Soul nav: FAILED")
-    }
-
-    private fun findBottomNavItems(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>, screenHeight: Int) {
-        val bounds = android.graphics.Rect()
-        node.getBoundsInScreen(bounds)
-        if (bounds.bottom > screenHeight - 200 && bounds.top > screenHeight - 300 && node.isClickable && node.isVisibleToUser) {
-            results.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { findBottomNavItems(it, results, screenHeight) }
-        }
-    }
-
-    private fun findClickableTextNodes(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>, keywords: List<String>) {
-        if (!node.isVisibleToUser) return
-        
-        val text = (node.text?.toString() ?: "") + (node.contentDescription?.toString() ?: "")
-        if (node.isClickable && keywords.any { text.contains(it, ignoreCase = true) }) {
-            results.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { findClickableTextNodes(it, results, keywords) }
-        }
-    }
-
-    override suspend fun bringToForeground(service: AccessibilityService) {
-        try {
-            val intent = service.packageManager.getLaunchIntentForPackage(packageName)
-            intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            service.startActivity(intent)
-            kotlinx.coroutines.delay(1500)
-        } catch (_: Exception) {}
+    companion object {
+        private const val FULL_PATROL_AFTER_EMPTY_SCANS = 3
+        private const val MAX_PATROL_SCROLLS = 3
+        private const val MAX_TOP_REWIND_SCROLLS = 3
     }
 }

@@ -47,7 +47,12 @@ class LianxinAdapter(private val service: AccessibilityService) : PlatformAdapte
         return texts.joinToString("")
     }
 
-    override suspend fun fillAndSend(service: AccessibilityService, root: AccessibilityNodeInfo, text: String): SendResult {
+    override suspend fun fillAndSend(
+        service: AccessibilityService,
+        root: AccessibilityNodeInfo,
+        text: String,
+        expectedContactName: String?
+    ): SendResult {
         val inputNodes = root.findAccessibilityNodeInfosByViewId("com.lianxin.app:id/edit_content")
         val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser } ?: return SendResult.TIMEOUT
         val args = Bundle()

@@ -9,21 +9,46 @@ interface PlatformAdapter {
     fun isInChat(root: AccessibilityNodeInfo): Boolean
     fun isInMessageList(root: AccessibilityNodeInfo): Boolean
     fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage>
+
+    /**
+     * Reads the visible title of the current chat. Returning null is safer than
+     * guessing because the engine will skip a conversation it cannot verify.
+     */
+    fun readChatTitle(root: AccessibilityNodeInfo): String? = null
+
+    /** Returns the on-screen bounds of the latest visual message, if any. */
+    fun readVisualTargetBounds(root: AccessibilityNodeInfo): android.graphics.Rect? = null
+
+    /**
+     * Lightweight list fingerprint used to wait for list animations to settle.
+     */
+    fun listSnapshot(root: AccessibilityNodeInfo): ListSnapshot = ListSnapshot()
+
+    /**
+     * Scrolls the conversation list. Adapters that do not support scrolling can
+     * keep the default implementation.
+     */
+    fun scrollConversationList(root: AccessibilityNodeInfo, direction: ScrollDirection): Boolean = false
+
     suspend fun fillAndSend(
         service: AccessibilityService,
         root: AccessibilityNodeInfo,
-        text: String
+        text: String,
+        expectedContactName: String? = null
     ): SendResult
+
     suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean = true
     ): ConversationInfo?
+
     suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo)
     suspend fun bringToForeground(service: AccessibilityService)
 
     data class ChatMessage(
         val sender: String,
-        val content: String
+        val content: String,
+        val type: String = "text"
     )
 
     data class ConversationInfo(
@@ -39,7 +64,21 @@ interface PlatformAdapter {
         val timestamp: Long = System.currentTimeMillis()
     )
 
+    data class ListSnapshot(
+        val itemCount: Int = 0,
+        val firstConversation: String = "",
+        val lastConversation: String = ""
+    )
+
+    enum class ScrollDirection {
+        FORWARD,
+        BACKWARD
+    }
+
     enum class SendResult {
-        SUCCESS, BANNED, TIMEOUT
+        SUCCESS,
+        BANNED,
+        TIMEOUT,
+        NOT_VERIFIED
     }
 }

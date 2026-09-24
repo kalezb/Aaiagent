@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun loadPersonas() {
         try {
             val data = withContext(Dispatchers.IO) { okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url("$apiBase/api/persona").get().build()).execute().body?.string() ?: "{}" }
-            val list = (com.google.gson.Gson().fromJson(data, Map::class.java) as? Map<*, *>)?.get("personas") as? List<*>
+            val list = com.google.gson.Gson().fromJson(data, Map::class.java)?.get("personas") as? List<*>
             if (list != null) { personas = list.mapNotNull { val o = it as? Map<*, *> ?: return@mapNotNull null; PersonaItem(o["id"] as? String ?: "", o["name"] as? String ?: "") }; if (personas.isNotEmpty() && personas.none { it.id == activePersonaId }) activePersonaId = personas.first().id }
         } catch (_: Exception) {}
     }
@@ -207,6 +207,7 @@ class MainActivity : ComponentActivity() {
                 engineState = "无障碍服务未启动"
                 // 回滚状态
                 isHosting = false
+                floatingWindow?.updateHostingState(false)
                 platformsStatus.keys.forEach { platformsStatus[it] = false }
             }
         } else {
@@ -224,6 +225,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+        isHosting = engine?.hostingEnabled == true
+        if (isHosting) {
+            hostingMode = engine?.hostingMode ?: hostingMode
+            platformsStatus[enabledPlatforms.firstOrNull() ?: "soul"] = true
+        } else {
+            platformsStatus.keys.forEach { platformsStatus[it] = false }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
         if (floatingWindow == null || floatingWindow?.isShowing() == false) { floatingWindow = FloatingWindow(this); floatingWindow?.show(hosting = isHosting, toggleListener = { toggleHosting(it) }, longClickListener = { startActivity(Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT }) }) }
     }

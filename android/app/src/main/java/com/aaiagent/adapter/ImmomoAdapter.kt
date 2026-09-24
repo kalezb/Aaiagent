@@ -103,7 +103,8 @@ class ImmomoAdapter(private val service: AccessibilityService) : PlatformAdapter
     override suspend fun fillAndSend(
         service: AccessibilityService,
         root: AccessibilityNodeInfo,
-        text: String
+        text: String,
+        expectedContactName: String?
     ): SendResult {
         // 1. 找输入框
         val inputNodes = root.findAccessibilityNodeInfosByViewId(

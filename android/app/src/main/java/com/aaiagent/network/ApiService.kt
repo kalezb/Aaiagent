@@ -40,6 +40,12 @@ data class SyncMessagesRequest(
 
 data class ConfigSaveResult(val success: Boolean, val message: String, val error: String?)
 
+data class VisionResponse(
+    val success: Boolean,
+    val description: String?,
+    val error: String?
+)
+
 class ApiService(private val baseUrl: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -127,6 +133,38 @@ class ApiService(private val baseUrl: String) {
     }
 
     // 缁熶竴閰嶇疆淇濆瓨鎺ュ彛 POST /api/config/save
+    suspend fun describeVision(
+        token: String,
+        imageBase64: String,
+        mimeType: String = "image/jpeg",
+        prompt: String
+    ): VisionResponse = withContext(Dispatchers.IO) {
+        try {
+            val payload = mapOf(
+                "token" to token,
+                "image_base64" to imageBase64,
+                "mime_type" to mimeType,
+                "prompt" to prompt
+            )
+            val body = gson.toJson(payload).toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url(baseUrl.trimEnd('/') + "/api/vision/describe")
+                .header("Authorization", "Bearer " + token)
+                .post(body)
+                .build()
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: "{}"
+            val map = gson.fromJson(responseBody, Map::class.java)
+            VisionResponse(
+                success = map?.get("success") as? Boolean ?: false,
+                description = map?.get("description") as? String,
+                error = map?.get("error") as? String
+            )
+        } catch (e: Exception) {
+            VisionResponse(false, null, e.message ?: "vision request failed")
+        }
+    }
+
     suspend fun saveConfig(deviceKey: String, params: Map<String, String>): ConfigSaveResult = withContext(Dispatchers.IO) {
         try {
             val map = mutableMapOf("device_key" to deviceKey)

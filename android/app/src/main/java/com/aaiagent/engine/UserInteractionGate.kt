@@ -61,9 +61,7 @@ class UserInteractionGate(
 object GestureMonitor {
     private val gate = UserInteractionGate()
 
-    fun onTouchDetected() {
-        gate.onAccessibilityInteraction()
-    }
+    fun onTouchDetected(): Boolean = gate.onAccessibilityInteraction()
 
     fun onAutomationActionStarted(protectionMs: Long = 1_500L) {
         gate.onAutomationActionStarted(protectionMs)

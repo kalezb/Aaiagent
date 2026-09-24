@@ -25,11 +25,14 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.engine.HostingMode
 import com.aaiagent.ui.theme.*
@@ -99,8 +102,20 @@ fun DashboardScreen(
     onSendModeChange: (String) -> Unit
 ) {
     val ctx = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val versionName = remember(ctx) {
+        runCatching {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+        }.getOrNull() ?: "unknown"
+    }
     var perms by remember { mutableStateOf(checkPermissionStatus(ctx)) }
-    LaunchedEffect(Unit) { perms = checkPermissionStatus(ctx) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) perms = checkPermissionStatus(ctx)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Column(
         Modifier.fillMaxSize().background(Bg).verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 32.dp)
@@ -108,7 +123,7 @@ fun DashboardScreen(
         // 标题栏
         Text(text = "AI 托管助手", modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Text(text = "v3.0 · 4平台 · DeepSeek", modifier = Modifier.padding(horizontal = 20.dp),
+        Text(text = "v$versionName · Soul · DeepSeek", modifier = Modifier.padding(horizontal = 20.dp),
             fontSize = 11.sp, color = TextSecondary)
 
         Spacer(Modifier.height(12.dp))
@@ -142,7 +157,7 @@ fun DashboardScreen(
         )
 
         Spacer(Modifier.height(16.dp))
-        Text(text = "AI 托管助手 v3.0 · 基于 DeepSeek Chat", modifier = Modifier.padding(horizontal = 20.dp), fontSize = 11.sp, color = TextHint)
+        Text(text = "AI 托管助手 v$versionName · 基于 DeepSeek Chat", modifier = Modifier.padding(horizontal = 20.dp), fontSize = 11.sp, color = TextHint)
     }
 }
 

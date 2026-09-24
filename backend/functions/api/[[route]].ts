@@ -11,8 +11,14 @@ const PLATFORM_STYLE_HINTS = {
 function json(data, status) {
   return new Response(JSON.stringify(data), {
     status: status || 200,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*" },
   });
+}
+
+function isDashboardAuthorized(request, env) {
+  const expected = env.DASHBOARD_PASSWORD || "";
+  const supplied = request.headers.get("X-Dashboard-Password") || "";
+  return Boolean(expected) && supplied === expected;
 }
 
 async function validateToken(db, authHeader) {
@@ -56,7 +62,7 @@ export const onRequest = async (context) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Dashboard-Password",
       },
     });
   }
@@ -68,8 +74,19 @@ export const onRequest = async (context) => {
       return json({ status: "ok", time: Math.floor(Date.now() / 1000) });
     }
 
+    // POST /api/dashboard/login - verify password without exposing it in the client bundle.
+    if (path === "/api/dashboard/login" && method === "POST") {
+      if (!env.DASHBOARD_PASSWORD) return json({ success: false, error: "dashboard_not_configured" }, 503);
+      const body = await request.json();
+      if (String(body.password || "") !== env.DASHBOARD_PASSWORD) {
+        return json({ success: false, error: "invalid_password" }, 401);
+      }
+      return json({ success: true });
+    }
+
     // GET /api/token — list all tokens (Dashboard)
     if (path === "/api/token" && method === "GET") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const { results } = await env.DB.prepare("SELECT token, name, monthly_limit, spent, is_active, created_at, last_used_at FROM tokens ORDER BY created_at DESC").all();
       return json({ tokens: results || [] });
     }
@@ -86,6 +103,7 @@ export const onRequest = async (context) => {
 
     // GET /api/chat/history
     if (path === "/api/chat/history" && method === "GET") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const token = url.searchParams.get("token");
       if (!token) return json({ error: "\u7f3a\u5c11 token" }, 400);
       const platform = url.searchParams.get("platform") || "";
@@ -104,6 +122,7 @@ export const onRequest = async (context) => {
 
     // GET /api/contacts
     if (path === "/api/contacts" && method === "GET") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const token = url.searchParams.get("token");
       if (!token) return json({ error: "\u7f3a\u5c11 token" }, 400);
       const platform = url.searchParams.get("platform") || "";
@@ -119,6 +138,8 @@ export const onRequest = async (context) => {
     if (path === "/api/contacts" && method === "POST") {
       const body = await request.json();
       const { token, platform, contact_id, contact_name } = body;
+      const deviceToken = await validateToken(env.DB, "Bearer " + (token || ""));
+      if (!isDashboardAuthorized(request, env) && !deviceToken) return json({ error: "未授权" }, 401);
       if (!token || !platform || !contact_id || !contact_name) return json({ error: "\u7f3a\u5c11\u5fc5\u8981\u53c2\u6570" }, 400);
       const isWhitelisted = body.is_whitelisted ?? 1;
       const notes = body.notes || "";
@@ -130,6 +151,7 @@ export const onRequest = async (context) => {
 
     // PUT /api/contacts ? update contact (whitelist toggle, notes)
     if (path === "/api/contacts" && method === "PUT") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const body = await request.json();
       const { token, platform, contact_id } = body;
       if (!token || !platform || !contact_id) return json({ error: "缺少必要参数" }, 400);
@@ -145,6 +167,7 @@ export const onRequest = async (context) => {
 
     // DELETE /api/contacts ? delete contact
     if (path === "/api/contacts" && method === "DELETE") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const body = await request.json();
       const { token, platform, contact_id } = body;
       if (!token || !platform || !contact_id) return json({ error: "缺少必要参数" }, 400);
@@ -161,6 +184,7 @@ export const onRequest = async (context) => {
 
     // DELETE /api/persona ? delete a persona (Dashboard)
     if (path === "/api/persona" && method === "DELETE") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const body = await request.json();
       const { id } = body;
       if (!id) return json({ error: "缺少 id" }, 400);
@@ -170,6 +194,7 @@ export const onRequest = async (context) => {
 
     // PUT /api/persona
     if (path === "/api/persona" && method === "PUT") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const body = await request.json();
       const { id, name, system_prompt } = body;
       if (!id || !name || !system_prompt) return json({ error: "\u7f3a\u5c11\u5fc5\u8981\u53c2\u6570" }, 400);
@@ -200,6 +225,7 @@ export const onRequest = async (context) => {
 
     // PUT /api/token
     if (path === "/api/token" && method === "PUT") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const body = await request.json();
       const { token } = body;
       if (!token) return json({ error: "\u7f3a\u5c11 token" }, 400);
@@ -215,6 +241,7 @@ export const onRequest = async (context) => {
 
     // PUT /api/config
     if (path === "/api/config" && method === "PUT") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const body = await request.json();
       if (body.model_name) await env.KV.put("llm:model", body.model_name);
       if (body.api_base) await env.KV.put("llm:base_url", body.api_base);
@@ -333,6 +360,55 @@ export const onRequest = async (context) => {
       return json({ action: "send", reply });
     }
 
+    // POST /api/vision/describe - image/sticker understanding for chat media
+    if (path === "/api/vision/describe" && method === "POST") {
+      const authHeader = request.headers.get("Authorization") || "";
+      const tokenRow = await validateToken(env.DB, authHeader);
+      if (!tokenRow) return json({ error: "无效的设备密钥" }, 401);
+
+      const body = await request.json();
+      const imageBase64 = typeof body.image_base64 === "string" ? body.image_base64.trim() : "";
+      const mimeType = typeof body.mime_type === "string" && body.mime_type.startsWith("image/")
+        ? body.mime_type
+        : "image/jpeg";
+      if (!imageBase64) return json({ success: false, error: "missing_image_base64" }, 400);
+      if (imageBase64.length > 8_000_000) return json({ success: false, error: "image_too_large" }, 413);
+
+      const prompt = typeof body.prompt === "string" && body.prompt.trim()
+        ? body.prompt.trim()
+        : "只用简洁中文描述这张聊天图片或表情包中的可见文字、人物、物体、情绪和可能含义，不要展开分析过程。";
+
+      // deepseek-flash accepts text and image content in the same OpenAI-compatible request.
+      const visionKey = env.VISION_API_KEY || env.DEEPSEEK_API_KEY || "";
+      if (!visionKey) return json({ success: false, error: "vision_not_configured" }, 503);
+      const visionBase = (env.VISION_API_BASE || env.DEEPSEEK_API_BASE || "https://api.deepseek.com/v1").replace(/\/+$/, "");
+      const visionModel = env.VISION_MODEL || "deepseek-flash";
+      const upstream = await fetch(visionBase + "/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + visionKey },
+        body: JSON.stringify({
+          model: visionModel,
+          temperature: 0.2,
+          max_tokens: 512,
+          thinking: { type: "disabled" },
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + imageBase64 } },
+            ],
+          }],
+        }),
+      });
+      if (!upstream.ok) {
+        return json({ success: false, error: "vision_upstream_error", status: upstream.status }, 502);
+      }
+      const result = await upstream.json();
+      const description = result.choices?.[0]?.message?.content?.trim() || "";
+      if (!description) return json({ success: false, error: "vision_empty_response" }, 502);
+      return json({ success: true, description, provider: "deepseek" });
+    }
+
     // POST /api/config/save — unified config save (device_key required)
     if (path === "/api/config/save" && method === "POST") {
       const body = await request.json();
@@ -378,6 +454,7 @@ export const onRequest = async (context) => {
 
     return json({ error: "Not Found" }, 404);
   } catch (error) {
-    return json({ error: "\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef" }, 500);
+    console.error("API request failed", path, error instanceof Error ? error.stack || error.message : String(error));
+    return json({ error: "服务器内部错误" }, 500);
   }
 };

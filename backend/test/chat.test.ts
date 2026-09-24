@@ -1,42 +1,36 @@
-// backend/test/chat.test.ts
-// 使用 vitest 进行 API 测试
-// 运行: npx vitest run
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { onRequest } from "../functions/api/[[route]]";
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-
-// Mock D1 and KV
 class MockD1 {
-  private data: Map<string, unknown[]> = new Map();
-
   prepare(sql: string) {
     return {
+      all: async () => ({ results: [] }),
+      first: async () => null,
+      run: async () => ({ success: true }),
       bind: (...params: unknown[]) => ({
-        first: async <T>() => {
-          const key = params.map(String).join("|");
-          const arr = this.data.get(key) || [];
-          return (arr[0] as T) || null;
+        first: async () => {
+          if (sql.includes("FROM tokens")) {
+            return {
+              token: params[0],
+              is_active: 1,
+              monthly_limit: 100,
+              spent: 0,
+            };
+          }
+          return null;
         },
-        all: async () => {
-          const key = params.map(String).join("|");
-          return { results: this.data.get(key) || [] };
-        },
-        run: async () => {
-          return { success: true };
-        },
+        all: async () => ({ results: [] }),
+        run: async () => ({ success: true }),
       }),
     };
-  }
-
-  exec(sql: string) {
-    return { success: true };
   }
 }
 
 class MockKV {
-  private store: Map<string, string> = new Map();
+  private store = new Map<string, string>();
 
   async get(key: string): Promise<string | null> {
-    return this.store.get(key) || null;
+    return this.store.get(key) ?? null;
   }
 
   async put(key: string, value: string): Promise<void> {
@@ -44,104 +38,198 @@ class MockKV {
   }
 }
 
-describe("Chat API Logic", () => {
-  it("should detect sensitive words", () => {
-    const sensitiveWords = ["借钱", "账号", "密码", "银行卡", "转账", "验证码", "身份证"];
+function visionRequest(imageBase64 = "ZmFrZS1pbWFnZQ==") {
+  return new Request("https://example.com/api/vision/describe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer test-token",
+    },
+    body: JSON.stringify({
+      image_base64: imageBase64,
+      mime_type: "image/jpeg",
+      prompt: "describe image",
+    }),
+  });
+}
 
-    function containsSensitive(text: string): boolean {
-      return sensitiveWords.some((w) => text.includes(w));
-    }
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-    expect(containsSensitive("你借我点钱")).toBe(true);
-    expect(containsSensitive("给我你的账号密码")).toBe(true);
-    expect(containsSensitive("今天天气真好")).toBe(false);
-    expect(containsSensitive("晚上吃什么")).toBe(false);
+describe("chat logic", () => {
+  it("detects sensitive words", () => {
+    const sensitiveWords = [
+      "\u501f\u94b1",
+      "\u8d26\u53f7",
+      "\u5bc6\u7801",
+      "\u94f6\u884c\u5361",
+    ];
+    const containsSensitive = (text: string) =>
+      sensitiveWords.some((word) => text.includes(word));
+
+    expect(containsSensitive("\u6211\u60f3\u501f\u94b1")).toBe(true);
+    expect(containsSensitive("\u8d26\u53f7\u5bc6\u7801")).toBe(true);
+    expect(containsSensitive("\u4eca\u5929\u5929\u6c14\u771f\u597d")).toBe(false);
   });
 
-  it("should build system prompt correctly", () => {
-    function buildSystemPrompt(
-      personaPrompt: string,
-      historySummary: string,
-      currentTime: string
-    ): string {
-      return personaPrompt +
-        "\n\n现在时间是 " + currentTime + "。" +
-        "\n\n聊天历史摘要：\n" + (historySummary || "（这是你们第一次聊天）") +
-        "\n\n重要规则：回复控制在50字以内，自然口语化。";
-    }
-
-    const prompt = buildSystemPrompt("你是阿杰", "", "2026-09-23 14:00");
-    expect(prompt).toContain("你是阿杰");
-    expect(prompt).toContain("2026-09-23 14:00");
-    expect(prompt).toContain("第一次聊天");
-    expect(prompt).toContain("50字以内");
-  });
-
-  it("should handle dedup logic (5-minute window)", () => {
-    const now = Math.floor(Date.now() / 1000);
-    const fiveMinutesAgo = now - 300;
-
-    // Within window - should be deduped
-    const withinWindow = now - 100;
-    expect(withinWindow > fiveMinutesAgo).toBe(true);
-
-    // Outside window - should NOT be deduped
-    const outsideWindow = now - 400;
-    expect(outsideWindow > fiveMinutesAgo).toBe(false);
-  });
-
-  it("should limit history to 20 rounds (40 messages)", () => {
-    const MAX_MESSAGES = 40;
-    const messages = Array.from({ length: 50 }, (_, i) => ({
-      role: i % 2 === 0 ? "user" : "assistant",
-      content: `Message ${i}`,
-      created_at: i,
+  it("limits history to 40 recent messages", () => {
+    const messages = Array.from({ length: 50 }, (_, index) => ({
+      content: `message-${index}`,
     }));
-
-    // 超出
-    expect(messages.length).toBeGreaterThan(MAX_MESSAGES);
-
-    // 取最近40条
-    const recent = messages.slice(messages.length - MAX_MESSAGES);
-    expect(recent.length).toBe(MAX_MESSAGES);
-    expect(recent[0].content).toBe("Message 10");
-    expect(recent[recent.length - 1].content).toBe("Message 49");
+    expect(messages.slice(-40)[0].content).toBe("message-10");
+    expect(messages.slice(-40).at(-1)?.content).toBe("message-49");
   });
 });
 
-describe("API Route Validation", () => {
-  it("should reject chat without required fields", () => {
-    const requiredFields = ["token", "platform", "contact_id", "message"];
-
-    const validRequest = {
-      token: "mykey_2026_xxx",
-      platform: "soul",
-      contact_id: "test123",
-      message: "你好",
+describe("vision API", () => {
+  it("rejects an invalid device key", async () => {
+    const env = {
+      DB: new MockD1(),
+      KV: new MockKV(),
+      DEEPSEEK_API_KEY: "deepseek-key",
     };
+    const request = new Request("https://example.com/api/vision/describe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_base64: "ZmFrZQ==" }),
+    });
 
-    for (const field of requiredFields) {
-      const invalidRequest = { ...validRequest };
-      delete (invalidRequest as Record<string, string>)[field];
-      const hasField = field in invalidRequest;
-      expect(hasField).toBe(false);
-    }
+    const response = await onRequest({ request, env } as never);
+    expect(response.status).toBe(401);
   });
 
-  it("should validate persona switching", () => {
-    const personas = [
-      { id: "male", name: "阿杰", system_prompt: "你是阿杰...", is_active: 1 },
-      { id: "female", name: "小夏", system_prompt: "你是小夏...", is_active: 0 },
-    ];
+  it("returns a clear 503 when DeepSeek vision is not configured", async () => {
+    const env = { DB: new MockD1(), KV: new MockKV() };
+    const response = await onRequest({
+      request: visionRequest(),
+      env,
+    } as never);
 
-    const active = personas.find((p) => p.is_active === 1);
-    expect(active?.id).toBe("male");
-    expect(active?.name).toBe("阿杰");
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "vision_not_configured",
+    });
+  });
 
-    // Switch
-    personas[0].is_active = 0;
-    personas[1].is_active = 1;
-    const newActive = personas.find((p) => p.is_active === 1);
-    expect(newActive?.id).toBe("female");
+  it("verifies the dashboard password on the server", async () => {
+    const env = { DB: new MockD1(), KV: new MockKV(), DASHBOARD_PASSWORD: "secret" };
+    const request = new Request("https://example.com/api/dashboard/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "secret" }),
+    });
+
+    const response = await onRequest({ request, env } as never);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ success: true });
+  });
+
+  it("rejects dashboard access without the password", async () => {
+    const env = { DB: new MockD1(), KV: new MockKV(), DASHBOARD_PASSWORD: "secret" };
+    const response = await onRequest({
+      request: new Request("https://example.com/api/token"),
+      env,
+    } as never);
+
+    expect(response.status).toBe(401);
+  });
+
+  it("allows dashboard access with the password", async () => {
+    const env = { DB: new MockD1(), KV: new MockKV(), DASHBOARD_PASSWORD: "secret" };
+    const response = await onRequest({
+      request: new Request("https://example.com/api/token", {
+        headers: { "X-Dashboard-Password": "secret" },
+      }),
+      env,
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ tokens: [] });
+  });
+
+  it("sends image content to deepseek-flash with thinking disabled", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "a yellow cat sticker" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const env = {
+      DB: new MockD1(),
+      KV: new MockKV(),
+      DEEPSEEK_API_KEY: "deepseek-key",
+    };
+    const response = await onRequest({
+      request: visionRequest(),
+      env,
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      description: "a yellow cat sticker",
+      provider: "deepseek",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.deepseek.com/v1/chat/completions");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer deepseek-key",
+    );
+
+    const payload = JSON.parse(String(init.body));
+    expect(payload.model).toBe("deepseek-flash");
+    expect(payload.thinking).toEqual({ type: "disabled" });
+    expect(payload.max_tokens).toBeGreaterThanOrEqual(240);
+    expect(payload.messages[0].content).toEqual([
+      { type: "text", text: "describe image" },
+      {
+        type: "image_url",
+        image_url: {
+          url: "data:image/jpeg;base64,ZmFrZS1pbWFnZQ==",
+        },
+      },
+    ]);
+  });
+
+  it("allows an explicit vision key and model override", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "custom description" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const env = {
+      DB: new MockD1(),
+      KV: new MockKV(),
+      VISION_API_KEY: "vision-key",
+      VISION_API_BASE: "https://vision.example.com/v1/",
+      VISION_MODEL: "custom-flash",
+    };
+    const response = await onRequest({
+      request: visionRequest(),
+      env,
+    } as never);
+
+    expect(response.status).toBe(200);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://vision.example.com/v1/chat/completions");
+    expect(JSON.parse(String(init.body)).model).toBe("custom-flash");
   });
 });
