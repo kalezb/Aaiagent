@@ -259,7 +259,12 @@ export const onRequest = async (context) => {
 
       // whitelist check
       const contact = await env.DB.prepare("SELECT is_whitelisted FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?").bind(tokenRow.token, platform, contact_id).first();
-      if (!contact || contact.is_whitelisted === 0) return json({ action: "skip" });
+      if (!contact) {
+        const nowSec2 = Math.floor(Date.now() / 1000);
+        await env.DB.prepare("INSERT INTO contacts (token, platform, contact_id, contact_name, is_whitelisted, notes, created_at) VALUES (?, ?, ?, ?, 1, '', ?)").bind(tokenRow.token, platform, contact_id, contact_name, nowSec2).run();
+      } else if (contact.is_whitelisted === 0) {
+        return json({ action: "skip" });
+      }
 
       // persona
       const activePersona = await env.DB.prepare("SELECT id, system_prompt FROM personas WHERE is_active = 1 LIMIT 1").first();
