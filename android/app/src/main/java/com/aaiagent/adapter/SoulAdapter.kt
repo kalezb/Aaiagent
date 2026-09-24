@@ -84,12 +84,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
-            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty() &&
-                item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isEmpty()
+            val hasSnapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isNotEmpty()
+            val hasSnapExchange = item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()
+            val hasPrivacyTag = item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()
+            if (SoulExchangePolicy.shouldSkipPrivacyShell(
+                    hasPrivacyTag = hasPrivacyTag,
+                    hasSnapPhotoReceiveRoot = hasSnapPhoto,
+                    hasSnapExchangeRoot = hasSnapExchange
+                )
             ) {
                 continue
             }
-            if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
 
             val sender = readMessageSender(item, screenWidth)
 
@@ -111,7 +116,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 item.findAccessibilityNodeInfosByViewId(prefix + "iv_emoji").isNotEmpty()
             val hasInteraction = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "img_back_poke").isNotEmpty()
-            val hasSnapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isNotEmpty()
             val hasExchange = isExchangeItem(item)
             val type = SoulMediaType.resolve(
                 hasVoice = hasVoice,
@@ -254,7 +258,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         if (!tapNode(imageTarget)) return PlatformAdapter.VisualCapturePreparation(protectedChat)
         val imagePreview = waitForRoot(5, 700) { isImagePreview(it) }
             ?: return PlatformAdapter.VisualCapturePreparation(protectedChat)
-        return PlatformAdapter.VisualCapturePreparation(imagePreview)
+        val privacyProtected = incomingImage.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag")
+            .isNotEmpty()
+        return PlatformAdapter.VisualCapturePreparation(
+            root = imagePreview,
+            privacyProtected = privacyProtected
+        )
     }
 
     private suspend fun ensureExchangePrivacy(initialRoot: AccessibilityNodeInfo): Boolean {
@@ -453,12 +462,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         for (item in items.asReversed()) {
             if (!item.isVisibleToUser) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
-            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty() &&
-                item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isEmpty()
+            val hasSnapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isNotEmpty()
+            val hasSnapExchange = item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()
+            val hasPrivacyTag = item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()
+            if (SoulExchangePolicy.shouldSkipPrivacyShell(
+                    hasPrivacyTag = hasPrivacyTag,
+                    hasSnapPhotoReceiveRoot = hasSnapPhoto,
+                    hasSnapExchangeRoot = hasSnapExchange
+                )
             ) {
                 continue
             }
-            if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
             if (readMessageSender(item, service.resources.displayMetrics.widthPixels) == "self") continue
             if (!includeExchange && isExchangeItem(item)) continue
 

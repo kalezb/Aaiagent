@@ -1,13 +1,23 @@
 package com.aaiagent.adapter
 
 object SoulExchangePolicy {
+    const val EXCHANGE_LIST_LABEL = "交换图片"
     const val EXCHANGE_LABEL = "以图换图"
     const val PRIVACY_DISABLED_LABEL = "隐私保护"
     const val PRIVACY_ENABLED_LABEL = "禁止下载"
     const val PROTECTED_TAG = "对方无法下载/截屏"
 
     fun isExchangeLabel(text: CharSequence?): Boolean {
-        return normalize(text).contains(EXCHANGE_LABEL)
+        val normalized = normalize(text)
+        return normalized.contains(EXCHANGE_LABEL) || normalized.contains(EXCHANGE_LIST_LABEL)
+    }
+
+    fun shouldSkipPrivacyShell(
+        hasPrivacyTag: Boolean,
+        hasSnapPhotoReceiveRoot: Boolean,
+        hasSnapExchangeRoot: Boolean
+    ): Boolean {
+        return hasPrivacyTag && !hasSnapPhotoReceiveRoot && !hasSnapExchangeRoot
     }
 
     fun isPrivacyEnabled(text: CharSequence?, checked: Boolean): Boolean {

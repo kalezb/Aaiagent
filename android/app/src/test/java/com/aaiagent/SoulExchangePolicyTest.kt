@@ -46,9 +46,41 @@ class SoulExchangePolicyTest {
     }
 
     @Test
-    fun `exchange label tolerates whitespace from accessibility text`() {
+    fun `exchange label tolerates whitespace and both new Soul labels`() {
         assertTrue(SoulExchangePolicy.isExchangeLabel(" 以 图 换 图 "))
-        assertFalse(SoulExchangePolicy.isExchangeLabel("交换图片"))
+        assertTrue(SoulExchangePolicy.isExchangeLabel("交换图片"))
+    }
+
+    @Test
+    fun `privacy wrapper is skipped only when it has no openable media root`() {
+        assertTrue(
+            SoulExchangePolicy.shouldSkipPrivacyShell(
+                hasPrivacyTag = true,
+                hasSnapPhotoReceiveRoot = false,
+                hasSnapExchangeRoot = false
+            )
+        )
+        assertFalse(
+            SoulExchangePolicy.shouldSkipPrivacyShell(
+                hasPrivacyTag = true,
+                hasSnapPhotoReceiveRoot = true,
+                hasSnapExchangeRoot = false
+            )
+        )
+        assertFalse(
+            SoulExchangePolicy.shouldSkipPrivacyShell(
+                hasPrivacyTag = true,
+                hasSnapPhotoReceiveRoot = false,
+                hasSnapExchangeRoot = true
+            )
+        )
+        assertFalse(
+            SoulExchangePolicy.shouldSkipPrivacyShell(
+                hasPrivacyTag = false,
+                hasSnapPhotoReceiveRoot = false,
+                hasSnapExchangeRoot = false
+            )
+        )
     }
 
     @Test
