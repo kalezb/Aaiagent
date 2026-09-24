@@ -447,6 +447,7 @@ class MessageEngine(
         }
 
         val prompt = when (latestOther.type) {
+            "exchange" -> "这是社交聊天中的以图换图照片。请先识别图片主体、人物状态、生活场景和可聊话题，忽略截图方向与界面元素，用一到三句中文描述。"
             "image" -> "这是社交聊天中的图片。请识别图片里可见的文字、物体、场景和可能表达的情绪，用一句到三句话描述。"
             "sticker" -> "这是社交聊天中的表情包。请描述表情、动作、文字和它可能表达的聊天含义。"
             "interaction" -> "这是社交聊天中的拍一拍或戳一戳互动。请只描述界面上能确认的互动内容。"
@@ -490,6 +491,7 @@ class MessageEngine(
         }
 
         val label = when (latestOther.type) {
+            "exchange" -> "对方发来了以图换图照片，视觉识别："
             "image" -> "对方发送了图片，视觉识别："
             "sticker" -> "对方发送了表情，视觉识别："
             "interaction" -> "对方发起了拍一拍或戳一戳互动，视觉识别："
@@ -517,6 +519,7 @@ class MessageEngine(
     }
 
     private fun fallbackFor(type: String): String = when (type) {
+        "exchange" -> "以图换图没成功 先打字聊吧"
         "voice" -> "语音我这边听不了 以后打字说吧"
         "image" -> "图片我这边看不清 直接打字告诉我吧"
         "sticker" -> "别发表情啦 打字说吧"

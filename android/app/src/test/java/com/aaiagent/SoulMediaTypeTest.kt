@@ -26,6 +26,14 @@ class SoulMediaTypeTest {
     }
 
     @Test
+    fun `exchange card has priority over its image markers`() {
+        assertEquals(
+            "exchange",
+            resolve(hasImage = true, hasSnapPhoto = true, hasText = true, hasExchange = true)
+        )
+    }
+
+    @Test
     fun `text is used when no media marker exists`() {
         assertEquals("text", resolve(hasText = true))
     }
@@ -41,7 +49,8 @@ class SoulMediaTypeTest {
         hasSticker: Boolean = false,
         hasInteraction: Boolean = false,
         hasSnapPhoto: Boolean = false,
-        hasText: Boolean = false
+        hasText: Boolean = false,
+        hasExchange: Boolean = false
     ): String {
         return SoulMediaType.resolve(
             hasVoice = hasVoice,
@@ -49,7 +58,8 @@ class SoulMediaTypeTest {
             hasSticker = hasSticker,
             hasInteraction = hasInteraction,
             hasSnapPhoto = hasSnapPhoto,
-            hasText = hasText
+            hasText = hasText,
+            hasExchange = hasExchange
         )
     }
 }

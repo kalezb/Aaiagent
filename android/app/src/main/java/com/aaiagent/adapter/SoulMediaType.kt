@@ -7,9 +7,11 @@ object SoulMediaType {
         hasSticker: Boolean,
         hasInteraction: Boolean,
         hasSnapPhoto: Boolean,
-        hasText: Boolean
+        hasText: Boolean,
+        hasExchange: Boolean = false
     ): String {
         return when {
+            hasExchange -> "exchange"
             hasVoice -> "voice"
             hasSticker -> "sticker"
             hasInteraction -> "interaction"

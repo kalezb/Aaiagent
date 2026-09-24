@@ -106,17 +106,20 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val hasInteraction = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "img_back_poke").isNotEmpty()
             val hasSnapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isNotEmpty()
+            val hasExchange = isExchangeItem(item)
             val type = SoulMediaType.resolve(
                 hasVoice = hasVoice,
                 hasImage = hasImage,
                 hasSticker = hasSticker,
                 hasInteraction = hasInteraction,
                 hasSnapPhoto = hasSnapPhoto,
-                hasText = text.isNotEmpty()
+                hasText = text.isNotEmpty(),
+                hasExchange = hasExchange
             )
 
             val content = when {
                 text.isNotEmpty() -> text
+                type == "exchange" -> "[以图换图]"
                 type == "voice" -> "[语音]"
                 type == "image" -> if (hasSnapPhoto) "[闪照]" else "[图片]"
                 type == "interaction" -> "[拍一拍]"
@@ -148,6 +151,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     ): PlatformAdapter.VisualCapturePreparation? {
         val item = findLatestIncomingVisualItem(root)
             ?: return PlatformAdapter.VisualCapturePreparation(root)
+        if (isExchangeItem(item)) {
+            return completeExchangeAndOpenIncoming(item)
+        }
         val snapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root")
             .firstOrNull { it.isVisibleToUser }
             ?: return PlatformAdapter.VisualCapturePreparation(root)
@@ -175,7 +181,252 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
     }
 
-    private fun findLatestIncomingVisualItem(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    private suspend fun completeExchangeAndOpenIncoming(
+        exchangeItem: AccessibilityNodeInfo
+    ): PlatformAdapter.VisualCapturePreparation? {
+        if (!automationMayContinue()) return null
+        val entry = findExchangeEntryNode(exchangeItem) ?: return null
+        if (!tapNode(entry)) return null
+
+        val albumRoot = waitForRoot(6, 800) { isAlbumPicker(it) } ?: run {
+            android.util.Log.w("AIA", "Soul exchange album did not open")
+            recoverToChat()
+            return null
+        }
+        val firstPhoto = findFirstAlbumPhoto(albumRoot) ?: run {
+            android.util.Log.w("AIA", "Soul exchange album has no selectable photo")
+            recoverToChat()
+            return null
+        }
+        if (!tapNode(firstPhoto)) {
+            recoverToChat()
+            return null
+        }
+
+        val previewRoot = waitForRoot(6, 700) { isExchangePreview(it) } ?: run {
+            android.util.Log.w("AIA", "Soul exchange preview did not open")
+            recoverToChat()
+            return null
+        }
+        if (!ensureExchangePrivacy(previewRoot)) {
+            android.util.Log.w("AIA", "Soul exchange blocked because privacy could not be verified")
+            recoverToChat()
+            return null
+        }
+
+        submitExchange(previewRoot) ?: run {
+            android.util.Log.w("AIA", "Soul exchange submit did not return to chat")
+            recoverToChat()
+            return null
+        }
+        val protectedChat = waitForRoot(10, 700) {
+            isInChat(it) && containsProtectedExchange(it)
+        } ?: run {
+            android.util.Log.w("AIA", "Soul exchange sent without a verifiable privacy tag")
+            return null
+        }
+        android.util.Log.d("AIA", "Soul exchange privacy verified: ${SoulExchangePolicy.PROTECTED_TAG}")
+
+        val incomingImage = findLatestIncomingVisualItem(protectedChat, includeExchange = false)
+            ?: return null
+        val imageTarget = findIncomingImageTarget(incomingImage) ?: return null
+        if (!tapNode(imageTarget)) return PlatformAdapter.VisualCapturePreparation(protectedChat)
+        val imagePreview = waitForRoot(5, 700) { isImagePreview(it) }
+            ?: return PlatformAdapter.VisualCapturePreparation(protectedChat)
+        return PlatformAdapter.VisualCapturePreparation(imagePreview)
+    }
+
+    private suspend fun ensureExchangePrivacy(initialRoot: AccessibilityNodeInfo): Boolean {
+        var root = initialRoot
+        var privacy = findExchangePrivacyCheck(root)
+        if (privacy != null && SoulExchangePolicy.isPrivacyEnabled(privacy.text, privacy.isChecked)) {
+            return true
+        }
+        if (privacy == null || !tapNode(privacy)) return false
+
+        delay(700)
+        root = service.rootInActiveWindow ?: return false
+        privacy = findExchangePrivacyCheck(root)
+        if (privacy != null && SoulExchangePolicy.isPrivacyEnabled(privacy.text, privacy.isChecked)) {
+            return true
+        }
+
+        val toggle = findExchangePrivacySwitch(root) ?: return false
+        if (!tapNode(toggle)) return false
+        delay(700)
+
+        root = service.rootInActiveWindow ?: return false
+        if (findExchangePrivacySwitch(root) != null) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            delay(600)
+            root = service.rootInActiveWindow ?: root
+        }
+        privacy = findExchangePrivacyCheck(root)
+        return privacy != null && SoulExchangePolicy.isPrivacyEnabled(privacy.text, privacy.isChecked)
+    }
+
+    private suspend fun submitExchange(previewRoot: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val freshPreview = service.rootInActiveWindow ?: previewRoot
+        val submit = findVisibleNodeWithText(freshPreview, SoulExchangePolicy.EXCHANGE_LABEL)
+        if (submit != null) tapNode(submit)
+        waitForRoot(4, 650) { isInChat(it) }?.let { return it }
+
+        val point = SoulExchangePolicy.fallbackSubmitPoint(
+            screenWidth = service.resources.displayMetrics.widthPixels,
+            screenHeight = service.resources.displayMetrics.heightPixels
+        )
+        android.util.Log.w("AIA", "Soul exchange submit fallback x=${point.x} y=${point.y}")
+        if (!performTap(point.x.toFloat(), point.y.toFloat())) return null
+        return waitForRoot(8, 700) { isInChat(it) }
+    }
+
+    private fun findExchangeEntryNode(item: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        for (target in EXCHANGE_ENTRY_IDS) {
+            item.findAccessibilityNodeInfosByViewId(prefix + target)
+                .firstOrNull { it.isVisibleToUser }
+                ?.let { return actionableNode(it) }
+        }
+        return actionableNode(item)
+    }
+
+    private fun findFirstAlbumPhoto(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val firstMark = root.findAccessibilityNodeInfosByViewId(prefix + "fl_select_mark")
+            .filter { it.isVisibleToUser }
+            .minByOrNull(::photoIndex)
+        if (firstMark != null) {
+            return clickableAncestor(firstMark, maxDepth = 4)
+                ?: firstMark.parent
+                ?: firstMark
+        }
+
+        val firstImage = root.findAccessibilityNodeInfosByViewId(prefix + "iv_photo")
+            .firstOrNull { it.isVisibleToUser }
+            ?: return null
+        return clickableAncestor(firstImage, maxDepth = 4)
+            ?: firstImage.parent
+            ?: firstImage
+    }
+
+    private fun photoIndex(node: AccessibilityNodeInfo): Int {
+        val match = PHOTO_INDEX_PATTERN.find(node.contentDescription?.toString().orEmpty())
+        return match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Int.MAX_VALUE
+    }
+
+    private fun findIncomingImageTarget(item: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        for (target in INCOMING_IMAGE_TARGET_IDS) {
+            item.findAccessibilityNodeInfosByViewId(prefix + target)
+                .firstOrNull { it.isVisibleToUser }
+                ?.let { return actionableNode(it) }
+        }
+        return null
+    }
+
+    private fun findExchangePrivacyCheck(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "checkSnapChat")
+            .firstOrNull { it.isVisibleToUser }
+    }
+
+    private fun findExchangePrivacySwitch(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "switchBanScreenshotAndSave")
+            .firstOrNull { it.isVisibleToUser && it.isClickable }
+    }
+
+    private fun findVisibleNodeWithText(root: AccessibilityNodeInfo, expected: String): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val text = node.text?.toString()?.replace(Regex("\\s+"), "").orEmpty()
+            if (node.isVisibleToUser && text.contains(expected)) {
+                return actionableNode(node) ?: node
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+        }
+        return null
+    }
+
+    private fun containsProtectedExchange(root: AccessibilityNodeInfo): Boolean {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo")
+            .asReversed()
+            .filter { it.isVisibleToUser }
+            .any { item ->
+                val status = item.findAccessibilityNodeInfosByViewId(prefix + "tv_status")
+                    .firstOrNull()
+                    ?.text
+                val tag = item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag")
+                    .firstOrNull()
+                    ?.text
+                SoulExchangePolicy.isProtectedMessage(status, tag)
+            }
+    }
+
+    private fun isExchangeItem(item: AccessibilityNodeInfo): Boolean {
+        val description = item.findAccessibilityNodeInfosByViewId(prefix + "chat_exchange_desc")
+            .firstOrNull()
+            ?.text
+        if (SoulExchangePolicy.isExchangeLabel(description)) return true
+        return item.findAccessibilityNodeInfosByViewId(prefix + "chat_exchange_change").isNotEmpty()
+    }
+
+    private fun isAlbumPicker(root: AccessibilityNodeInfo): Boolean {
+        return root.packageName?.toString() == packageName && (
+            root.findAccessibilityNodeInfosByViewId(prefix + "rvAlbum").isNotEmpty() ||
+                root.findAccessibilityNodeInfosByViewId(prefix + "tv_photo_folder").isNotEmpty()
+            )
+    }
+
+    private fun isExchangePreview(root: AccessibilityNodeInfo): Boolean {
+        return root.packageName?.toString() == packageName &&
+            root.findAccessibilityNodeInfosByViewId(prefix + "checkSnapChat").isNotEmpty() &&
+            root.findAccessibilityNodeInfosByViewId(prefix + "tv_photo4photo_preview").isNotEmpty()
+    }
+
+    private fun isImagePreview(root: AccessibilityNodeInfo): Boolean {
+        return root.packageName?.toString() == packageName &&
+            root.findAccessibilityNodeInfosByViewId(prefix + "preview_vp").isNotEmpty()
+    }
+
+    private fun clickableAncestor(node: AccessibilityNodeInfo, maxDepth: Int): AccessibilityNodeInfo? {
+        var current = node.parent
+        repeat(maxDepth) {
+            val candidate = current ?: return null
+            if (candidate.isClickable && candidate.isVisibleToUser) return candidate
+            current = candidate.parent
+        }
+        return null
+    }
+
+    private suspend fun waitForRoot(
+        attempts: Int,
+        intervalMs: Long,
+        predicate: (AccessibilityNodeInfo) -> Boolean
+    ): AccessibilityNodeInfo? {
+        repeat(attempts) { attempt ->
+            if (attempt > 0) delay(intervalMs)
+            if (!automationMayContinue()) return null
+            val root = service.rootInActiveWindow ?: return@repeat
+            if (predicate(root)) return root
+        }
+        return null
+    }
+
+    private suspend fun recoverToChat() {
+        repeat(3) {
+            val root = service.rootInActiveWindow
+            if (root != null && isInChat(root)) return
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            delay(500)
+        }
+    }
+
+    private fun automationMayContinue(): Boolean {
+        return !GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)
+    }
+
+    private fun findLatestIncomingVisualItem(
+        root: AccessibilityNodeInfo,
+        includeExchange: Boolean = true
+    ): AccessibilityNodeInfo? {
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
         for (item in items.asReversed()) {
             if (!item.isVisibleToUser) continue
@@ -187,6 +438,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             }
             if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
             if (readMessageSender(item, service.resources.displayMetrics.widthPixels) == "self") continue
+            if (!includeExchange && isExchangeItem(item)) continue
 
             val hasVisualTarget = VISUAL_TARGET_IDS.any { target ->
                 item.findAccessibilityNodeInfosByViewId(prefix + target).any { it.isVisibleToUser }
@@ -252,7 +504,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
         if (!clicked) return SendResult.TIMEOUT
 
-        val verified = verifySent(text, beforeSelfCount, expectedContactName)
+        val verified = verifySent(text, beforeSelfCount)
         if (verified == SendResult.BANNED) return SendResult.BANNED
         return verified
     }
@@ -438,8 +690,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private suspend fun verifySent(
         text: String,
-        beforeSelfCount: Int,
-        expectedContactName: String?
+        beforeSelfCount: Int
     ): SendResult {
         repeat(3) { attempt ->
             delay(if (attempt == 0) 800 else 600)
@@ -775,6 +1026,18 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         private const val FULL_PATROL_AFTER_EMPTY_SCANS = 3
         private const val MAX_PATROL_SCROLLS = 3
         private const val MAX_TOP_REWIND_SCROLLS = 3
+        private const val USER_PAUSE_MS = 5_000L
+        private val PHOTO_INDEX_PATTERN = Regex("图片第(\\d+)个")
+        private val EXCHANGE_ENTRY_IDS = listOf(
+            "image",
+            "chat_exchange_change",
+            "container"
+        )
+        private val INCOMING_IMAGE_TARGET_IDS = listOf(
+            "image",
+            "image_content",
+            "chat_image_url"
+        )
         private val VISUAL_TARGET_IDS = listOf(
             "image",
             "image_content",
