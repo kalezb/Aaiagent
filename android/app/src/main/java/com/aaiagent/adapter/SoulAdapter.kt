@@ -90,49 +90,141 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             fallbackReadTextViews(child, messages)
         }
     }
-
     override suspend fun fillAndSend(
         service: AccessibilityService,
         root: AccessibilityNodeInfo,
         text: String
     ): SendResult {
-        // 1. \u627E\u8F93\u5165\u6846
+        // 1. 点击输入框激活（Soul的输入框是View不是EditText，点击后才显示真正的EditText）
         val inputNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
-        val inputField = inputNodes.firstOrNull { it.isEditable && it.isVisibleToUser }
-            ?: run {
-                // \u5C1D\u8BD5\u91CD\u65B0\u83B7\u53D6 root
-                val retry = service.rootInActiveWindow
-                    ?.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
-                    ?.firstOrNull { it.isEditable && it.isVisibleToUser }
-                retry ?: return SendResult.TIMEOUT
-            }
-
-        // 2. \u8BBE\u7F6E\u6587\u672C
-        val args = Bundle()
-        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-        inputField.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-
-        // 3. \u7B49\u5F85\u53D1\u9001\u6309\u94AE\u53EF\u7528
-        kotlinx.coroutines.delay(500)
-        val retryRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
-        val sendNodes = retryRoot.findAccessibilityNodeInfosByViewId(PREFIX + "btn_send")
-        val sendButton = sendNodes.firstOrNull { it.isClickable && it.isVisibleToUser }
-        if (sendButton == null) {
-            // Soul \u53EF\u80FD\u6CA1\u6709 btn_send\uFF0C\u5C1D\u8BD5\u6309\u786C\u4EF6\u56DE\u8F66\u952E
-            inputField.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            kotlinx.coroutines.delay(200)
-            // \u5C1D\u8BD5\u4F7F\u7528\u5168\u5C40\u56DE\u8F66\u952E
-            // \u6CE8\u610F\uFF1A\u8FD9\u4E2A\u65B9\u6CD5\u5728\u67D0\u4E9B\u65E0\u969C\u788D\u670D\u52A1\u4E2D\u53EF\u80FD\u4E0D\u53EF\u7528
+        val inputField = inputNodes.firstOrNull { it.isClickable && it.isVisibleToUser }
+        if (inputField == null) {
+            android.util.Log.w("AIA", "Soul fillAndSend: et_sendmessage not found")
             return SendResult.TIMEOUT
         }
-        sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        
+        // 先点击输入框激活
+        inputField.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        kotlinx.coroutines.delay(300)
+        
+        // 重新获取root，找真正的EditText
+        val retryRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
+        val allEditTexts = retryRoot.findAccessibilityNodeInfosByViewId(PREFIX + "et_sendmessage")
+        // 在所有子节点中找可编辑的
+        var realInput: AccessibilityNodeInfo? = null
+        for (node in allEditTexts) {
+            if (node.isEditable && node.isVisibleToUser) {
+                realInput = node
+                break
+            }
+            // 也递归查找子节点
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i)
+                if (child != null && child.isEditable && child.isVisibleToUser) {
+                    realInput = child
+                    break
+                }
+            }
+            if (realInput != null) break
+        }
+        
+        if (realInput == null) {
+            // Fallback: 直接对原inputField设文本
+            android.util.Log.w("AIA", "Soul fillAndSend: no editable field found, using clickable input")
+            realInput = inputField
+        }
 
-        // 4. \u68C0\u6D4B\u7ED3\u679C
-        kotlinx.coroutines.delay(800)
-        val checkRoot = service.rootInActiveWindow ?: return SendResult.SUCCESS
-        if (detectBanned(checkRoot)) return SendResult.BANNED
+        // 2. 设置文本
+        val args = Bundle()
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        val textSet = realInput.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        android.util.Log.d("AIA", "Soul fillAndSend: text set result=$textSet")
 
-        return SendResult.SUCCESS
+        // 3. 等发送按钮出现（Soul输入文字后AI助手按钮会变成发送按钮）
+        kotlinx.coroutines.delay(500)
+        val sendRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
+        
+        // 尝试多种方式找发送按钮
+        var sendButton: AccessibilityNodeInfo? = null
+        
+        // 方法1：btn_send ID
+        val byId = sendRoot.findAccessibilityNodeInfosByViewId(PREFIX + "btn_send")
+        sendButton = byId.firstOrNull { it.isClickable && it.isVisibleToUser }
+        
+        // 方法2：找输入框右侧的可点击元素（发送按钮应在et_sendmessage右侧）
+        if (sendButton == null) {
+            val inputBounds = android.graphics.Rect()
+            realInput.getBoundsInScreen(inputBounds)
+            val sendX = inputBounds.right + 30  // 输入框右边一点
+            val sendY = inputBounds.centerY()
+            
+            val allClickable = mutableListOf<AccessibilityNodeInfo>()
+            findClickableInArea(sendRoot, sendX - 60, inputBounds.top - 10, sendX + 120, inputBounds.bottom + 10, allClickable)
+            for (node in allClickable) {
+                val bounds = android.graphics.Rect()
+                node.getBoundsInScreen(bounds)
+                if (bounds.left >= inputBounds.right - 20) {
+                    android.util.Log.d("AIA", "Soul fillAndSend: found send button by position at ${bounds.toShortString()}")
+                    sendButton = node
+                    break
+                }
+            }
+        }
+        
+        if (sendButton == null) {
+            // 方法3：找所有可点击元素，排除已知的（语音、AI助手、表情、+号）
+            val allClickable = mutableListOf<AccessibilityNodeInfo>()
+            findBottomClickables(sendRoot, allClickable)
+            android.util.Log.d("AIA", "Soul fillAndSend: ${allClickable.size} bottom clickables found")
+            // 输入文字后，原来的"AI助手"应变成"发送"
+            for (node in allClickable) {
+                val b = android.graphics.Rect()
+                node.getBoundsInScreen(b)
+                if (b.left > 700 && b.left < 900 && b.bottom > 2200) {
+                    android.util.Log.d("AIA", "Soul fillAndSend: trying send at ${b.toShortString()}")
+                    sendButton = node
+                    break
+                }
+            }
+        }
+
+        if (sendButton != null) {
+            sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            kotlinx.coroutines.delay(800)
+            // 检查是否被禁言
+            val checkRoot = service.rootInActiveWindow
+            if (checkRoot != null && detectBanned(checkRoot)) return SendResult.BANNED
+            return SendResult.SUCCESS
+        }
+
+        android.util.Log.w("AIA", "Soul fillAndSend: send button not found, trying keyboard ENTER")
+        // 最后手段：尝试键盘回车
+        // 通过输入法ACTION_SEND
+        return SendResult.TIMEOUT
+    }
+    
+    // 在指定区域内递归查找可点击节点
+    private fun findClickableInArea(node: AccessibilityNodeInfo, left: Int, top: Int, right: Int, bottom: Int, results: MutableList<AccessibilityNodeInfo>) {
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.left >= left && bounds.right <= right && bounds.top >= top && bounds.bottom <= bottom && node.isClickable && node.isVisibleToUser) {
+            results.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { findClickableInArea(it, left, top, right, bottom, results) }
+        }
+    }
+    
+    // 找底部区域所有可点击元素
+    private fun findBottomClickables(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>) {
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.bottom > 2100 && node.isClickable && node.isVisibleToUser) {
+            results.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { findBottomClickables(it, results) }
+        }
     }
 
     // 半自动模式：只填输入框不发送
@@ -191,34 +283,57 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     // 从当前root查找并点击未读会话
+    // 从当前root查找并点击未读会话
     private fun tryFindAndUnread(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
-        val unreadBadges = root.findAccessibilityNodeInfosByViewId(PREFIX + "unread_msg_number")
-            .filter { it.isVisibleToUser && it.text?.toString()?.toIntOrNull() != null }
+        // 找所有 unread_msg_number 的 FrameLayout
+        val badges = root.findAccessibilityNodeInfosByViewId(PREFIX + "unread_msg_number")
+        if (badges.isEmpty()) return null
 
-        if (unreadBadges.isEmpty()) return null
-
-        val badge = unreadBadges.first()
-        val conversationItem = findAncestorByViewId(badge, "item_content_root")
-            ?: badge.parent?.parent ?: return null
-
-        val name = readChildText(conversationItem, "name")
-        val preview = readChildText(conversationItem, "message")
-        val contactName = name ?: preview ?: "unknown"
-
-        if (shouldClick) {
-            try {
-                conversationItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            } catch (_: Exception) {
-                badge.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        // 遍历badge，找第一个有数字子节点的（数字在子TextView里，不在父FrameLayout）
+        for (badge in badges) {
+            if (!badge.isVisibleToUser) continue
+            // 检查子节点中是否有数字文本
+            var unreadCount = 0
+            for (i in 0 until badge.childCount) {
+                val child = badge.getChild(i) ?: continue
+                val t = child.text?.toString()?.trim() ?: ""
+                val n = t.toIntOrNull()
+                if (n != null && n > 0) {
+                    unreadCount = n
+                    break
+                }
             }
-        }
+            if (unreadCount == 0) continue
 
-        return ConversationInfo(
-            contactId = contactName,
-            contactName = contactName,
-            preview = preview ?: ""
-        )
+            android.util.Log.d("AIA", "Soul tryFindAndUnread: found badge with count=$unreadCount")
+
+            // 找到父级会话项
+            val conversationItem = findAncestorByViewId(badge, "item_content_root")
+                ?: badge.parent?.parent?.parent ?: continue
+
+            // 读取联系人信息
+            val name = readChildText(conversationItem, "name")
+            val preview = readChildText(conversationItem, "message")
+            val contactName = name ?: preview ?: "unknown"
+
+            if (shouldClick) {
+                try {
+                    conversationItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                } catch (_: Exception) {
+                    // Fallback: click the badge's grandparent
+                    badge.parent?.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+            }
+
+            return ConversationInfo(
+                contactId = contactName,
+                contactName = contactName,
+                preview = preview ?: ""
+            )
+        }
+        return null
     }
+
 
     // 滚动会话列表
     private fun scrollConversationList(root: AccessibilityNodeInfo): Boolean {
@@ -268,21 +383,22 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     // Soul \u5BFC\u822A\u5230\u6D88\u606F\u5217\u8868\uFF1A\u6309\u8FD4\u56DE\u952E\u76F4\u5230\u627E\u5230 conversation_list
     // Soul 导航到消息列表
     // Soul 默认进入广场页，需要点底部“消息”栏目
+    // Soul 导航到消息列表
+    // Soul 默认进入广场页，需要点底部"消息"栏目（图标无文字，需位置兜底）
     override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
         if (isInMessageList(root)) {
             android.util.Log.d("AIA", "Soul navigateToMessageList: already in message list")
             return
         }
 
-        // 方法1：找底部导航栏中的“消息”或“聊天”标签
+        // 方法1：找底部导航栏中的"消息"或"聊天"标签（可能没有文字）
         android.util.Log.d("AIA", "Soul navigateToMessageList: searching for message tab...")
         val keywords = listOf("消息", "聊天", "message", "chat", "IM")
         
-        // 递归搜索所有可点击的 TextView 或 ImageView
         val clickableNodes = mutableListOf<AccessibilityNodeInfo>()
         findClickableTextNodes(root, clickableNodes, keywords)
         
-        android.util.Log.d("AIA", "Soul navigateToMessageList: found ${clickableNodes.size} candidate nodes")
+        android.util.Log.d("AIA", "Soul navigateToMessageList: found ${clickableNodes.size} keyword nodes")
         for (node in clickableNodes) {
             val text = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
             android.util.Log.d("AIA", "Soul navigateToMessageList: trying '$text'")
@@ -297,29 +413,58 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             } catch (_: Exception) {}
         }
 
-        // 方法2：如果还找不到，先返回X次回到主页，再找
-        android.util.Log.d("AIA", "Soul navigateToMessageList: fallback - pressing back then retrying")
-        repeat(2) {
+        // 方法2：位置估算点击底部"消息"tab（第4个，约75%位置，1080宽*0.7≈756, 2400高一带底部≈2320）
+        android.util.Log.d("AIA", "Soul navigateToMessageList: position-based fallback tap")
+        try {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            kotlinx.coroutines.delay(300)
+        } catch (_: Exception) {}
+        
+        for (attempt in 1..3) {
+            android.util.Log.d("AIA", "Soul navigateToMessageList: position tap attempt $attempt")
+            // 底部5个tab：广场(108) 推荐(324) +(540) 消息(756) 我(972)
+            // Y: 屏幕底部上约100px = 2300
+            val displayMetrics = service.resources.displayMetrics
+            val msgX = (displayMetrics.widthPixels * 0.70).toInt()
+            val msgY = displayMetrics.heightPixels - 100
+            // 使用adb-style坐标（需要root权限？不，我们用performGlobalAction不能tap坐标）
+            // 改用：找底部所有可点击元素，按位置点第4个
+            val clickableBottom = mutableListOf<AccessibilityNodeInfo>()
+            findBottomNavItems(root, clickableBottom, displayMetrics.heightPixels)
+            // 按x坐标排序
+            val sorted = clickableBottom.sortedBy { 
+                val b = android.graphics.Rect(); it.getBoundsInScreen(b); b.centerX() 
+            }
+            android.util.Log.d("AIA", "Soul navigateToMessageList: found ${sorted.size} bottom nav items")
+            if (sorted.size >= 4) {
+                try {
+                    sorted[3].performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    kotlinx.coroutines.delay(800)
+                    val newRoot = service.rootInActiveWindow
+                    if (newRoot != null && isInMessageList(newRoot)) {
+                        android.util.Log.d("AIA", "Soul navigateToMessageList: success via position (4th tab)")
+                        return
+                    }
+                } catch (_: Exception) {}
+            }
             kotlinx.coroutines.delay(500)
-        }
-        val freshRoot = service.rootInActiveWindow ?: return
-        // 重新搜索
-        findClickableTextNodes(freshRoot, clickableNodes, keywords)
-        for (node in clickableNodes) {
-            try {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                kotlinx.coroutines.delay(800)
-                val newRoot = service.rootInActiveWindow
-                if (newRoot != null && isInMessageList(newRoot)) {
-                    android.util.Log.d("AIA", "Soul navigateToMessageList: success via fallback")
-                    return
-                }
-            } catch (_: Exception) {}
         }
         
         android.util.Log.w("AIA", "Soul navigateToMessageList: FAILED - could not find message list")
     }
+    
+    // 找底部导航栏项目
+    private fun findBottomNavItems(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>, screenHeight: Int) {
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.bottom > screenHeight - 200 && bounds.top > screenHeight - 300 && node.isClickable && node.isVisibleToUser) {
+            results.add(node)
+        }
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { findBottomNavItems(it, results, screenHeight) }
+        }
+    }
+
 
     // 递归找包含关键词的可点击节点
     private fun findClickableTextNodes(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>, keywords: List<String>) {
