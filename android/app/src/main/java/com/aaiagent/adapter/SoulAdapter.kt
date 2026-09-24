@@ -98,6 +98,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
             val sender = readMessageSender(item, screenWidth)
 
+            val momentCardContent = readMomentCardContent(item)
+
             val text = item.findAccessibilityNodeInfosByViewId(prefix + "content_text")
                 .mapNotNull { it.text?.toString()?.trim() }
                 .filter { it.isNotEmpty() }
@@ -125,10 +127,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 hasInteraction = hasInteraction,
                 hasSnapPhoto = hasSnapPhoto,
                 hasText = text.isNotEmpty(),
-                hasExchange = hasExchange
+                hasExchange = hasExchange,
+                hasMomentCard = momentCardContent != null
             )
 
             val content = when {
+                type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
                 type == "voice" -> SoulVoiceContent.resolve(voiceTranscription, text)
                 text.isNotEmpty() -> text
                 type == "exchange" -> "[以图换图]"
@@ -1114,6 +1118,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val bounds = Rect()
         target.getBoundsInScreen(bounds)
         return if (bounds.width() > 0) bounds.centerX() else null
+    }
+
+    private fun readMomentCardContent(item: AccessibilityNodeInfo): String? {
+        val cardRoot = item.findAccessibilityNodeInfosByViewId(prefix + "cardRoot")
+            .firstOrNull { it.isVisibleToUser }
+            ?: return null
+        return SoulMomentCard.format(
+            author = readChildText(cardRoot, "nickName"),
+            content = readChildText(cardRoot, "content")
+        )
     }
 
     private fun readChildText(parent: AccessibilityNodeInfo, viewId: String): String? {

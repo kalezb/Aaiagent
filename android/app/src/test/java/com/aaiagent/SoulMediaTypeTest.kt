@@ -35,6 +35,13 @@ class SoulMediaTypeTest {
     }
 
     @Test
+    fun `forwarded moment card is not mistaken for a sticker or image`() {
+        assertEquals(
+            "moment_card",
+            resolve(hasImage = true, hasSticker = true, hasMomentCard = true)
+        )
+    }
+    @Test
     fun `text is used when no media marker exists`() {
         assertEquals("text", resolve(hasText = true))
     }
@@ -64,7 +71,8 @@ class SoulMediaTypeTest {
         hasInteraction: Boolean = false,
         hasSnapPhoto: Boolean = false,
         hasText: Boolean = false,
-        hasExchange: Boolean = false
+        hasExchange: Boolean = false,
+        hasMomentCard: Boolean = false
     ): String {
         return SoulMediaType.resolve(
             hasVoice = hasVoice,
@@ -73,7 +81,8 @@ class SoulMediaTypeTest {
             hasInteraction = hasInteraction,
             hasSnapPhoto = hasSnapPhoto,
             hasText = hasText,
-            hasExchange = hasExchange
+            hasExchange = hasExchange,
+            hasMomentCard = hasMomentCard
         )
     }
 }
