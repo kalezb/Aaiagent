@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客户看板参考三 · 天蓝驾驶舱版</title>
+<style>
+:root{
+  --sky:#2fa8f4;--sky-bright:#56bdf8;--sky-dark:#0a6da9;--sky-deep:#064d7b;--sky-pale:#eaf8ff;
+  --bg:#e9f5fc;--text:#11354f;--muted:#6f8fa4;--line:#d3eaf7;--white:#fff;
+  --green:#21a879;--amber:#f3a43a;--coral:#ed6666;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0}
+body{overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif}
+button,input,textarea{font:inherit}
+.workspace{height:100vh;display:grid;grid-template-rows:74px minmax(0,1fr);background:#e8f4fb}
+.topbar{background:#208fd8;color:#fff;display:flex;align-items:center;padding:0 24px;gap:24px;box-shadow:0 8px 22px rgba(10,109,169,.16);position:relative;z-index:3}
+.brand{display:flex;align-items:center;gap:11px;min-width:210px}.brand-mark{width:40px;height:40px;border-radius:13px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);display:grid;place-items:center;font-weight:900}.brand h1{margin:0;font-size:17px}.brand p{margin:1px 0 0;font-size:10px;color:#cceeff}
+.top-search{height:40px;flex:1;max-width:520px;border-radius:12px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;gap:9px;padding:0 13px}.top-search span{font-size:18px}.top-search input{border:0;outline:0;background:transparent;color:#fff;width:100%}.top-search input::placeholder{color:#d9f2ff}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px}.top-pill{height:36px;padding:0 12px;border-radius:10px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;gap:7px;font-size:11px}.online{width:8px;height:8px;border-radius:50%;background:#9cf1c9;box-shadow:0 0 0 4px rgba(156,241,201,.14)}.top-avatar{width:36px;height:36px;border-radius:11px;background:#fff;color:var(--sky-dark);display:grid;place-items:center;font-weight:800}
+.content{display:grid;grid-template-columns:330px minmax(0,1fr) 300px;gap:1px;background:#cfe5f2;min-height:0}
+.panel{background:#fff;min-width:0;min-height:0}
+.sidebar{display:flex;flex-direction:column}
+.side-head{padding:18px 16px 13px;border-bottom:1px solid var(--line);background:#f9fdff}
+.segmented{display:grid;grid-template-columns:1fr 1fr;background:#eaf5fb;border-radius:11px;padding:3px}.segmented button{border:0;border-radius:8px;padding:8px;background:transparent;color:#66869b;font-weight:700}.segmented .on{background:#fff;color:var(--sky-dark);box-shadow:0 3px 10px rgba(31,119,173,.1)}
+.side-filters{display:flex;gap:7px;margin-top:12px}.filter{flex:1;height:36px;border:1px solid var(--line);border-radius:9px;background:#fff;color:#668398;padding:0 9px}
+.sort-row{display:flex;justify-content:space-between;margin-top:12px;color:#819bac;font-size:10px}
+.customer-wrap{overflow:auto;padding:9px}
+.customer{width:100%;border:0;text-align:left;border-radius:14px;padding:12px 11px;background:#fff;display:grid;grid-template-columns:44px 1fr auto;gap:10px;position:relative}.customer.on{background:linear-gradient(100deg,#e8f8ff,#f7fcff)}.customer.on:after{content:"";position:absolute;right:0;top:16px;bottom:16px;width:3px;background:var(--sky);border-radius:3px 0 0 3px}
+.avatar{width:44px;height:44px;border-radius:14px;background:#d6f1ff;color:var(--sky-deep);display:grid;place-items:center;font-size:17px;font-weight:900}
+.customer-name{font-weight:800;display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.unread{width:7px;height:7px;border-radius:50%;background:var(--coral)}
+.preview{color:var(--muted);font-size:11px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rightmeta{text-align:right;font-size:10px;color:#9bb0bf}.count{margin-top:9px;display:inline-block;background:#dff3ff;color:var(--sky-dark);border-radius:999px;padding:1px 7px;font-weight:700}
+.chat{display:flex;flex-direction:column;background:#fbfeff}
+.chat-top{height:90px;padding:15px 22px;border-bottom:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:space-between}
+.chat-person{display:flex;align-items:center;gap:12px}.chat-person h2{margin:0;font-size:19px}.chat-person p{margin:4px 0 0;color:var(--muted);font-size:10px}
+.badges{display:flex;gap:5px;margin-top:7px}.badge{font-size:9px;border-radius:999px;padding:3px 7px;background:#edf8ff;color:#557d96}.badge.active{background:var(--sky);color:#fff}.badge.amber{background:#fff5df;color:#a77418}
+.chat-buttons{display:flex;gap:7px}.btn{border:1px solid var(--line);background:#fff;color:#55758a;border-radius:10px;padding:9px 12px;font-weight:700}.btn.sky{background:var(--sky);border-color:var(--sky);color:#fff}
+.conversation{flex:1;min-height:0;padding:21px 30px;overflow:hidden;background:radial-gradient(circle at 50% 30%,#f7fcff,#f4fafe 65%,#eff8fd)}
+.date{align-self:center;text-align:center;margin:0 auto 18px;color:#93aebf;font-size:10px;background:#eef8fd;border-radius:999px;padding:4px 11px;width:max-content}
+.msg{display:flex;align-items:flex-start;gap:9px;margin:11px 0}.msg.me{justify-content:flex-end}.mini-avatar{width:30px;height:30px;border-radius:10px;background:#dff3ff;color:var(--sky-deep);display:grid;place-items:center;font-weight:800;font-size:11px;margin-top:3px}
+.bubble{max-width:68%;padding:11px 14px;background:#fff;border:1px solid #d7eaf6;border-radius:15px 15px 15px 5px;box-shadow:0 5px 16px rgba(29,105,153,.055);white-space:pre-wrap}.me .bubble{background:#d7f2ff;border-color:#b8e5fb;border-radius:15px 15px 5px 15px}
+.time{font-size:9px;color:#9fb3c0;margin-top:4px}.me .time{text-align:right}
+.memory{align-self:center;margin:18px auto;background:#e6f7ff;color:#4e7c98;border:1px solid #c9ebfc;border-radius:999px;padding:6px 12px;font-size:10px}
+.composer{padding:13px 18px 15px;border-top:1px solid var(--line);background:#fff}.prompt-row{display:flex;gap:7px;margin-bottom:9px;overflow:hidden}.prompt-row span{white-space:nowrap;background:#f0f9fd;color:#638399;border-radius:7px;padding:5px 9px;font-size:10px}
+.inputbox{border:1px solid #bce1f7;border-radius:14px;background:#f8fdff;display:grid;grid-template-columns:1fr auto;gap:10px;padding:9px 10px 9px 13px;box-shadow:0 4px 16px rgba(35,132,190,.07)}.inputbox textarea{border:0;outline:0;resize:none;height:45px;background:transparent;color:var(--text)}.send{border:0;background:#1d9ee9;color:#fff;border-radius:11px;padding:10px 17px;font-weight:800;box-shadow:0 8px 18px rgba(29,158,233,.22)}
+.composer-foot{display:flex;justify-content:space-between;margin-top:6px;color:#839cab;font-size:10px}
+.details{display:flex;flex-direction:column;background:#f8fcff}
+.detail-head{padding:19px;background:#fff;border-bottom:1px solid var(--line)}.detail-head h3{margin:0;font-size:15px}.detail-head p{margin:4px 0 0;color:var(--muted);font-size:11px}
+.profile{padding:17px;background:#fff;border-bottom:1px solid var(--line);display:flex;gap:11px;align-items:center}.profile .avatar{width:50px;height:50px}.profile h4{margin:0;font-size:15px}.profile span{color:var(--muted);font-size:10px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:15px}.kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}.kpi b{display:block;color:var(--sky-dark);font-size:18px}.kpi span{font-size:10px;color:var(--muted)}
+.section{padding:16px 17px;border-top:1px solid var(--line)}.section h4{margin:0 0 10px;color:#69899e;font-size:11px}.platforms{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.platform{border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 3px;text-align:center;color:#8ca2b1;font-size:9px}.platform b{display:block;font-size:13px;margin-bottom:3px}.platform.on{background:#e8f8ff;border-color:#a9ddf9;color:var(--sky-dark);font-weight:800}
+.line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ebf5fa;font-size:10px}.line:last-child{border:0}.line span{color:var(--muted)}.line b{font-weight:700}.ok{color:var(--green)}.warn{color:#c5811c}.blue{color:var(--sky-dark)}
+.tip{margin:auto 16px 16px;padding:12px;border-left:3px solid var(--sky);background:#eaf8ff;color:#5f8196;font-size:10px;line-height:1.7}
+</style>
+</head>
+<body>
+<main class="workspace">
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">AI</div><div><h1>Aaiagent 客户看板</h1><p>跨平台客户会话与自动回复</p></div></div>
+    <label class="top-search"><span>⌕</span><input placeholder="搜索昵称或聊天内容"></label>
+    <div class="top-right"><div class="top-pill"><i class="online"></i>托管运行中</div><div class="top-pill">当前设备：xY7k9mP3qR</div><div class="top-pill">女客服 · 星暮</div><div class="top-avatar">管</div></div>
+  </header>
+
+  <div class="content">
+    <aside class="panel sidebar">
+      <div class="side-head">
+        <div class="segmented"><button class="on">客户会话</button><button>优先任务</button></div>
+        <div class="side-filters"><select class="filter"><option>全部设备</option></select><select class="filter"><option>全部平台</option></select></div>
+        <div class="sort-row"><span>1 位客户</span><span>按最近消息</span></div>
+      </div>
+      <div class="customer-wrap">
+        <button class="customer on">
+          <span class="avatar">期</span>
+          <span><span class="customer-name"><i class="unread"></i>期待下一步的我们</span><span class="preview">谢谢 你眼光不错</span></span>
+          <span class="rightmeta">06:52<span class="count">362</span></span>
+        </button>
+      </div>
+    </aside>
+
+    <section class="panel chat">
+      <header class="chat-top">
+        <div class="chat-person"><div class="avatar">期</div><div><h2>期待下一步的我们</h2><p>最后同步：刚刚 · Soul</p><div class="badges"><span class="badge active">Soul 已绑定</span><span class="badge amber">优先回复</span><span class="badge">跨平台记忆</span></div></div></div>
+        <div class="chat-buttons"><button class="btn">关联平台账号</button><button class="btn sky">优先回复已开启</button></div>
+      </header>
+      <div class="conversation">
+        <div class="date">今天 · 9月25日</div>
+        <div class="msg"><span class="mini-avatar">期</span><div><div class="bubble">高跟鞋那张挺有气质</div><div class="time">06:48 · Soul</div></div></div>
+        <div class="msg me"><div><div class="bubble">谢谢 你眼光不错</div><div class="time">06:49 · Soul</div></div></div>
+        <div class="memory">系统已合并该客户在不同平台的聊天记忆</div>
+        <div class="msg"><span class="mini-avatar">期</span><div><div class="bubble">周末有空吗</div><div class="time">06:51 · Soul</div></div></div>
+        <div class="msg me"><div><div class="bubble">刚忙完 晚点跟你聊</div><div class="time">06:52 · Soul</div></div></div>
+      </div>
+      <div class="composer">
+        <div class="prompt-row"><span>我晚点联系你</span><span>在的 刚忙完</span><span>方便留个QQ吗</span><span>优先处理这位客户</span></div>
+        <div class="inputbox"><textarea placeholder="输入要原样发送的消息"></textarea><button class="send">优先发送</button></div>
+        <div class="composer-foot"><span>Ctrl + Enter 快速发送</span><span>手机端托管开启后自动处理</span></div>
+      </div>
+    </section>
+
+    <aside class="panel details">
+      <div class="detail-head"><h3>客户侧栏</h3><p>资料、记忆与自动化状态</p></div>
+      <div class="profile"><div class="avatar">期</div><div><h4>期待下一步的我们</h4><span>Soul · 当前会话</span></div></div>
+      <div class="kpis"><div class="kpi"><b>362</b><span>聊天记录</span></div><div class="kpi"><b>1</b><span>绑定平台</span></div></div>
+      <div class="section"><h4>平台账号</h4><div class="platforms"><button class="platform on"><b>S</b>Soul</button><button class="platform"><b>Q</b>QQ</button><button class="platform"><b>陌</b>陌陌</button><button class="platform"><b>连</b>连信</button></div></div>
+      <div class="section"><h4>运行状态</h4><div class="line"><span>回复优先级</span><b class="warn">最高</b></div><div class="line"><span>托管模式</span><b class="blue">AI 全自动</b></div><div class="line"><span>共享记忆</span><b class="ok">正常</b></div><div class="line"><span>最后消息</span><b>刚刚</b></div><div class="line"><span>设备在线</span><b class="ok">在线</b></div></div>
+      <div class="section"><h4>人工插话</h4><div style="font-size:10px;color:#728da0;line-height:1.7">从看板发送的内容会排在普通未读消息前。Android 端进入该客户会话后，优先原样发送。</div></div>
+      <div class="tip">天蓝状态代表当前有效操作；橙色表示优先回复；绿色表示服务正常。</div>
+    </aside>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客户看板参考二 · 专业三栏版</title>
+<style>
+:root{
+  --sky:#38a8f5;--sky-2:#1692e8;--sky-3:#0b6fb8;--sky-pale:#eef9ff;--sky-line:#d7edfb;
+  --text:#17334a;--muted:#718b9e;--bg:#edf7fd;--panel:#fff;--line:#dcebf4;
+  --mint:#1fa87b;--orange:#f2a33b;--red:#e75e60;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0}
+body{overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.5 "Microsoft YaHei","PingFang SC","Segoe UI",sans-serif}
+button,input,textarea{font:inherit}
+.app{height:100vh;display:grid;grid-template-columns:78px 330px minmax(0,1fr) 320px;background:var(--line);gap:1px}
+.rail{background:#f8fcff;display:flex;flex-direction:column;align-items:center;padding:18px 0;color:#66869c}
+.rail-logo{width:44px;height:44px;border-radius:14px;background:var(--sky);color:#fff;display:grid;place-items:center;font-weight:900;box-shadow:0 10px 24px rgba(56,168,245,.24)}
+.rail-menu{display:grid;gap:10px;margin-top:32px;width:100%;padding:0 12px}
+.rail-item{height:48px;border-radius:13px;display:grid;place-items:center;font-size:11px;font-weight:700;color:#7591a4}
+.rail-item.active{background:#def2ff;color:var(--sky-3)}
+.rail-bottom{margin-top:auto;display:grid;gap:10px;text-align:center;font-size:10px}
+.status-dot{width:9px;height:9px;border-radius:50%;background:var(--mint);margin:0 auto 4px;box-shadow:0 0 0 4px #e7f8f2}
+.list-panel{background:var(--panel);display:flex;flex-direction:column;min-width:0}
+.list-head{padding:20px 18px 15px;border-bottom:1px solid var(--line)}
+.list-title{display:flex;align-items:center;justify-content:space-between}
+.list-title h1{margin:0;font-size:18px}.list-title p{margin:4px 0 0;color:var(--muted);font-size:11px}
+.add{width:34px;height:34px;border:0;border-radius:11px;background:var(--sky-pale);color:var(--sky-3);font-size:20px;font-weight:500}
+.toolbox{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:15px}
+.search,.select{height:40px;border:1px solid var(--line);border-radius:11px;background:#fbfdff;display:flex;align-items:center;gap:8px;padding:0 11px}
+.search input,.select select{width:100%;border:0;outline:0;background:transparent;color:var(--text)}
+.search span{font-size:18px;color:var(--sky-2)}
+.tabs{display:flex;gap:6px;margin-top:12px}
+.tab{border:0;background:#f4fafd;color:#648398;border-radius:999px;padding:5px 11px;font-size:11px}.tab.on{background:var(--sky);color:#fff}
+.filter-row{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;color:var(--muted);font-size:10px;background:#fcfdff;border-bottom:1px solid var(--line)}
+.customers{overflow:auto;padding:8px}
+.row{width:100%;border:0;background:#fff;display:grid;grid-template-columns:45px minmax(0,1fr) auto;gap:10px;padding:12px 10px;border-radius:13px;text-align:left;position:relative}
+.row.active{background:#eaf8ff}.row.active:before{content:"";position:absolute;left:0;top:15px;bottom:15px;width:3px;border-radius:0 4px 4px 0;background:var(--sky)}
+.avatar{width:45px;height:45px;border-radius:15px;background:#dff3ff;color:var(--sky-3);display:grid;place-items:center;font-size:17px;font-weight:800}
+.name{display:flex;align-items:center;gap:6px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.preview{color:var(--muted);font-size:12px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side{text-align:right;color:#9bb0bf;font-size:10px}.badge{display:inline-block;margin-top:9px;padding:1px 7px;border-radius:999px;background:#e8f7ff;color:var(--sky-2);font-size:10px}
+.four{display:inline-flex;gap:3px}.pf{width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:#eef4f7;color:#a9b9c4;font-size:8px;font-weight:800}.pf.on.s{background:var(--sky)}.pf.on.q{background:#3badf0}.pf.on.m{background:#f7a04b}.pf.on.l{background:#35b68a}.pf.on{color:#fff}
+.priority{width:7px;height:7px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 3px #fff3dd}
+.chat-panel{background:#fff;min-width:0;display:flex;flex-direction:column}
+.topbar{height:82px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:#fff}
+.identity{display:flex;align-items:center;gap:12px}.identity .avatar{width:42px;height:42px}.identity h2{margin:0;font-size:18px}.identity p{margin:3px 0 0;color:var(--muted);font-size:11px}
+.top-actions{display:flex;gap:8px}.action{border:1px solid var(--line);background:#fff;color:#57798f;border-radius:10px;padding:9px 12px}.action.on{background:var(--sky);border-color:var(--sky);color:#fff;font-weight:700}
+.timeline{flex:1;min-height:0;padding:22px 30px;background:linear-gradient(180deg,#fbfeff,#f8fcff);overflow:hidden}
+.day{display:flex;align-items:center;gap:10px;color:#9cb1c0;font-size:10px;margin-bottom:18px}.day:before,.day:after{content:"";flex:1;height:1px;background:#e4f1f8}
+.line{display:flex;gap:10px;margin:12px 0}.line.self{justify-content:flex-end}
+.avatar-small{width:29px;height:29px;border-radius:10px;background:#e0f3ff;color:var(--sky-3);display:grid;place-items:center;font-size:11px;font-weight:800;margin-top:3px}
+.bubble{max-width:70%;padding:11px 14px;border-radius:14px 14px 14px 5px;background:#fff;border:1px solid #dcebf4;box-shadow:0 4px 14px rgba(39,104,143,.05)}
+.self .bubble{background:#dff4ff;border-color:#c5e8fb;border-radius:14px 14px 5px 14px}
+.caption{font-size:9px;color:#a2b5c2;margin-top:4px}.self .caption{text-align:right}
+.system{align-self:center;margin:17px auto;background:#edf8ff;color:#5f8299;border-radius:999px;padding:6px 12px;font-size:10px}
+.command{border-top:1px solid var(--line);padding:13px 18px 16px;background:#fff}
+.quick{display:flex;gap:7px;margin-bottom:9px;overflow:hidden}.quick span{padding:5px 9px;border-radius:7px;background:#f2f9fd;color:#5f8096;font-size:10px;white-space:nowrap}
+.editor{border:1px solid #cfe7f6;border-radius:13px;background:#f9fdff;padding:9px 10px 9px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.editor textarea{margin:0;height:44px;resize:none;border:0;outline:0;background:transparent;color:var(--text)}
+.send{border:0;border-radius:10px;background:var(--sky-2);color:#fff;padding:10px 17px;font-weight:700;box-shadow:0 7px 18px rgba(22,146,232,.2)}
+.helper{display:flex;justify-content:space-between;margin-top:7px;color:#8299a9;font-size:10px}
+.info-panel{background:#fafdff;display:flex;flex-direction:column;min-width:0}
+.info-head{padding:20px;background:#fff;border-bottom:1px solid var(--line)}.info-head h3{margin:0;font-size:16px}.info-head p{margin:4px 0 0;color:var(--muted);font-size:11px}
+.info-profile{padding:18px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;background:#fff}.info-profile .avatar{width:50px;height:50px;border-radius:17px}.info-profile h4{margin:0;font-size:15px}.info-profile p{margin:4px 0 0;color:var(--muted);font-size:10px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.metric{background:#fff;padding:16px;text-align:center}.metric b{display:block;font-size:19px;color:var(--sky-2)}.metric span{color:var(--muted);font-size:10px}
+.block{padding:18px;border-bottom:1px solid var(--line)}.block h4{margin:0 0 12px;color:#68879b;font-size:11px;letter-spacing:.4px}
+.link-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.link{border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px;text-align:left;color:#69869a;font-size:10px}.link.on{border-color:#b5dffa;background:#ebf8ff;color:var(--sky-3)}.link b{display:block;color:inherit;font-size:12px;margin-bottom:2px}
+.status-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:11px}.status-row span{color:var(--muted)}.state{display:flex;align-items:center;gap:6px;font-weight:700}.state i{width:7px;height:7px;border-radius:50%;background:var(--mint)}
+.note{margin:18px;border-left:3px solid var(--sky);background:#ebf8ff;padding:12px;color:#5f8096;font-size:10px;line-height:1.8}
+</style>
+</head>
+<body>
+<main class="app">
+  <nav class="rail">
+    <div class="rail-logo">AI</div>
+    <div class="rail-menu">
+      <div class="rail-item active">会话</div><div class="rail-item">客户</div><div class="rail-item">任务</div><div class="rail-item">人设</div><div class="rail-item">设置</div>
+    </div>
+    <div class="rail-bottom"><div class="status-dot"></div><span>托管在线</span></div>
+  </nav>
+
+  <aside class="list-panel">
+    <div class="list-head">
+      <div class="list-title"><div><h1>客户消息</h1><p>跨平台账号统一管理</p></div><button class="add">＋</button></div>
+      <div class="toolbox"><label class="search"><span>⌕</span><input value="搜索昵称或聊天内容"></label><label class="select"><select><option>设备</option></select></label></div>
+      <div class="tabs"><button class="tab on">全部</button><button class="tab">优先回复</button><button class="tab">未回复</button></div>
+    </div>
+    <div class="filter-row"><span>1 位客户</span><span>按最后消息排序</span></div>
+    <div class="customers">
+      <button class="row active">
+        <span class="avatar">期</span>
+        <span><span class="name"><i class="priority"></i>期待下一步的我们</span><span class="preview">谢谢 你眼光不错</span></span>
+        <span class="side">06:52<span class="badge">362</span></span>
+      </button>
+    </div>
+  </aside>
+
+  <section class="chat-panel">
+    <header class="topbar">
+      <div class="identity"><div class="avatar">期</div><div><h2>期待下一步的我们</h2><div class="four"><i class="pf on s">S</i><i class="pf q">Q</i><i class="pf m">陌</i><i class="pf l">连</i><span style="color:#8299a9;font-size:10px;margin-left:4px">Soul 已绑定</span></div></div></div>
+      <div class="top-actions"><button class="action">关联账号</button><button class="action on">优先回复</button></div>
+    </header>
+    <div class="timeline">
+      <div class="day">9月25日 · 星期五</div>
+      <div class="line"><span class="avatar-small">期</span><div><div class="bubble">高跟鞋那张挺有气质</div><div class="caption">06:48 · Soul</div></div></div>
+      <div class="line self"><div><div class="bubble">谢谢 你眼光不错</div><div class="caption">06:49 · Soul</div></div></div>
+      <div class="system">已合并 1 个平台账号的聊天记忆</div>
+      <div class="line"><span class="avatar-small">期</span><div><div class="bubble">周末有空吗</div><div class="caption">06:51 · Soul</div></div></div>
+      <div class="line self"><div><div class="bubble">刚忙完 晚点跟你聊</div><div class="caption">06:52 · Soul</div></div></div>
+    </div>
+    <div class="command">
+      <div class="quick"><span>我晚点联系你</span><span>在的 刚忙完</span><span>方便留个QQ吗</span></div>
+      <div class="editor"><textarea id="v2">输入要原样发送的消息</textarea><button class="send">优先发送</button></div>
+      <div class="helper"><span>回车换行 · Ctrl + Enter 发送</span><span>托管开启后会优先处理</span></div>
+    </div>
+  </section>
+
+  <aside class="info-panel">
+    <div class="info-head"><h3>客户资料</h3><p>身份关联与运行状态</p></div>
+    <div class="info-profile"><div class="avatar">期</div><div><h4>期待下一步的我们</h4><p>Soul · 当前客户</p></div></div>
+    <div class="metrics"><div class="metric"><b>362</b><span>聊天记录</span></div><div class="metric"><b>1</b><span>平台账号</span></div></div>
+    <div class="block"><h4>平台账号</h4><div class="link-grid"><button class="link on"><b>Soul</b>已绑定</button><button class="link"><b>QQ</b>未绑定</button><button class="link"><b>陌陌</b>未绑定</button><button class="link"><b>连信</b>未绑定</button></div></div>
+    <div class="block"><h4>当前状态</h4><div class="status-row"><span>回复优先级</span><b style="color:#d98b1f">最高</b></div><div class="status-row"><span>托管模式</span><b>AI 全自动</b></div><div class="status-row"><span>共享记忆</span><span class="state"><i></i>正常运行</span></div><div class="status-row"><span>最后同步</span><b>刚刚</b></div></div>
+    <div class="note">从后台插入的消息会排在普通未读消息之前，手机端优先进入该客户会话并发送。</div>
+  </aside>
+</main>
+</body>
+</html>
