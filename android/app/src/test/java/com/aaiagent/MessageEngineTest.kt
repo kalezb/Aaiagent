@@ -9,6 +9,8 @@ import com.aaiagent.engine.HostingMode
 import com.aaiagent.engine.ReplyFormatter
 import com.aaiagent.engine.ReplyFreshnessDecision
 import com.aaiagent.engine.ReplyFreshnessPolicy
+import com.aaiagent.engine.ReplyTaskAction
+import com.aaiagent.engine.ReplyTaskPolicy
 import com.aaiagent.engine.UserInteractionGate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -217,6 +219,22 @@ class MessageEngineTest {
         assertEquals(
             listOf("咋啦", "发这么一串问号"),
             ReplyFormatter.formatForSending("咋啦 发这么一串问号")
+        )
+    }
+
+    @Test
+    fun `backend task policy sends manual text exactly and prioritizes contacts for ai reply`() {
+        assertEquals(
+            ReplyTaskAction.SEND_EXACT,
+            ReplyTaskPolicy.decide("manual", "soul", "soul")
+        )
+        assertEquals(
+            ReplyTaskAction.PROCESS_AI,
+            ReplyTaskPolicy.decide("priority_contact", "soul", "soul")
+        )
+        assertEquals(
+            ReplyTaskAction.IGNORE,
+            ReplyTaskPolicy.decide("manual", "qq", "soul")
         )
     }
 }

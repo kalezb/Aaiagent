@@ -3,166 +3,288 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI托管助手 - 管理面板</title>
+<title>Aaiagent 客户会话</title>
 <style>
 :root {
-  --bg: #0f0f0f;
-  --surface: #1a1a1a;
-  --surface2: #252525;
-  --border: #333;
-  --text: #e0e0e0;
-  --text2: #999;
-  --accent: #4ade80;
-  --accent2: #22c55e;
-  --danger: #ef4444;
-  --warn: #f59e0b;
-  --radius: 8px;
+  color-scheme: light;
+  --bg: #eef2f4;
+  --panel: #ffffff;
+  --panel-soft: #f7f9fa;
+  --line: #dfe5e8;
+  --text: #15232b;
+  --muted: #73808a;
+  --green: #16a36a;
+  --green-dark: #0d7950;
+  --green-soft: #e8f7f0;
+  --blue: #2878d0;
+  --amber: #b87808;
+  --danger: #c84343;
+  --shadow: 0 18px 50px rgba(26, 44, 54, .12);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-.login { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-.login-card { background: var(--surface); padding: 40px; border-radius: 12px; border: 1px solid var(--border); width: 360px; text-align: center; }
-.login-card h1 { font-size: 20px; margin-bottom: 8px; }
-.login-card p { color: var(--text2); margin-bottom: 24px; font-size: 14px; }
-.login-card input { width: 100%; padding: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 16px; text-align: center; letter-spacing: 4px; }
-.login-card input:focus { outline: none; border-color: var(--accent); }
-.login-card button { width: 100%; margin-top: 16px; padding: 12px; background: var(--accent); color: #000; border: none; border-radius: var(--radius); font-size: 16px; font-weight: 600; cursor: pointer; }
-.login-card button:hover { background: var(--accent2); }
-.login-error { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
-.app { display: none; max-width: 1200px; margin: 0 auto; padding: 20px; }
-.app-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
-.app-header h1 { font-size: 18px; }
-.app-header button { padding: 8px 16px; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: var(--radius); cursor: pointer; }
-.app-header button:hover { border-color: var(--danger); color: var(--danger); }
-.tabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--surface); border-radius: var(--radius); padding: 4px; }
-.tab { padding: 10px 20px; border: none; background: transparent; color: var(--text2); border-radius: 6px; cursor: pointer; font-size: 14px; }
-.tab.active { background: var(--surface2); color: var(--accent); }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
-.stat-card { background: var(--surface); padding: 20px; border-radius: var(--radius); border: 1px solid var(--border); }
-.stat-card .num { font-size: 28px; font-weight: 700; color: var(--accent); }
-.stat-card .label { font-size: 13px; color: var(--text2); margin-top: 4px; }
-.panel { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
-.panel-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-.panel-header h2 { font-size: 15px; }
-.panel-body { padding: 20px; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; }
+body {
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+
+.login-layer {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  padding: 24px; background:
+    linear-gradient(135deg, rgba(22,163,106,.10), rgba(40,120,208,.08)),
+    #eef2f4;
+}
+.login-card {
+  width: min(420px, 100%); padding: 28px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--panel); box-shadow: var(--shadow);
+}
+.login-card h1 { margin: 0; font-size: 23px; letter-spacing: 0; }
+.login-card p { margin: 7px 0 20px; color: var(--muted); }
+.login-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.login-error { min-height: 20px; margin-top: 10px; color: var(--danger); font-size: 13px; }
+
+.app { height: 100dvh; display: grid; grid-template-columns: 390px minmax(0, 1fr); gap: 1px; background: var(--line); }
+.sidebar, .chat { min-width: 0; min-height: 0; background: var(--panel); }
+.sidebar { display: flex; flex-direction: column; }
+.sidebar-head { padding: 18px 18px 14px; border-bottom: 1px solid var(--line); }
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--green); color: white; font-weight: 800; letter-spacing: -1px;
+}
+.brand h1 { margin: 0; font-size: 17px; }
+.brand small { display: block; margin-top: 1px; color: var(--muted); font-size: 11px; }
+.head-actions { display: flex; gap: 6px; }
+.icon-button, .ghost-button, .primary-button, .danger-button {
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px; background: #fff; color: var(--text);
+}
+.icon-button:hover, .ghost-button:hover { background: var(--panel-soft); }
+.primary-button { border-color: var(--green); background: var(--green); color: #fff; font-weight: 650; }
+.primary-button:hover { background: var(--green-dark); }
+.danger-button { border-color: #efcaca; color: var(--danger); background: #fff; }
+button:disabled { opacity: .55; cursor: wait; }
+
+.filters { display: grid; grid-template-columns: 1fr 118px; gap: 8px; margin-top: 14px; }
+.filters .search { grid-column: 1 / -1; }
+input, select, textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px;
+  background: #fbfcfd; color: var(--text); outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(22,163,106,.10); }
+.summary-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; color: var(--muted); font-size: 12px; }
+
+.customer-list { min-height: 0; overflow: auto; padding: 8px; }
+.customer-list::-webkit-scrollbar, .messages::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
+.customer-list::-webkit-scrollbar-thumb, .messages::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb { background: #ccd4d8; border-radius: 999px; }
+.customer {
+  width: 100%; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; padding: 11px 10px; border: 0; border-radius: 9px; background: transparent; text-align: left;
+}
+.customer:hover { background: var(--panel-soft); }
+.customer.active { background: var(--green-soft); }
+.avatar {
+  width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+  background: #dce9e3; color: var(--green-dark); font-size: 17px; font-weight: 750;
+}
+.customer-main { min-width: 0; }
+.customer-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.customer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 680; }
+.priority-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--amber); }
+.customer-preview { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.customer-meta { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.count-pill { padding: 2px 6px; border-radius: 999px; background: #edf1f2; }
+
+.platforms { display: inline-flex; gap: 3px; flex: 0 0 auto; }
+.platform-dot {
+  width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center;
+  border: 1px solid #d2dade; background: #f7f9fa; color: #a6b0b6; font-size: 9px; font-weight: 800;
+}
+.platform-dot.on.soul { background: #7e57c2; border-color: #7e57c2; color: white; }
+.platform-dot.on.qq { background: #168bd2; border-color: #168bd2; color: white; }
+.platform-dot.on.immomo { background: #ef7f1a; border-color: #ef7f1a; color: white; }
+.platform-dot.on.lianxin { background: #1f9b70; border-color: #1f9b70; color: white; }
+
+.chat { display: flex; flex-direction: column; min-width: 0; }
+.chat-head { min-height: 84px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.chat-title-wrap { min-width: 0; }
+.chat-title-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 750; }
+.chat-subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.alias-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.alias-chip { padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font-size: 11px; }
+.alias-chip.active { border-color: var(--green); background: var(--green-soft); color: var(--green-dark); }
+.chat-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.priority-button.active { border-color: var(--amber); background: #fff4dc; color: #8b5d00; }
+.action-status { min-width: 90px; color: var(--muted); font-size: 12px; text-align: right; }
+
+.messages { flex: 1; min-height: 0; overflow: auto; padding: 24px 28px 30px; background: #fafbfc; }
+.date-separator { margin: 18px 0; color: #98a2a8; text-align: center; font-size: 11px; }
+.message-row { display: flex; margin: 9px 0; }
+.message-row.self { justify-content: flex-end; }
+.message-block { max-width: min(720px, 78%); }
+.bubble {
+  padding: 10px 13px; border: 1px solid #e1e7ea; border-radius: 13px; background: #fff;
+  box-shadow: 0 2px 10px rgba(27,45,55,.04); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px;
+}
+.self .bubble { border-color: #bfe6d5; border-bottom-right-radius: 4px; background: #def5e9; }
+.peer .bubble { border-bottom-left-radius: 4px; }
+.message-meta { display: flex; gap: 6px; margin-top: 4px; color: #97a2a8; font-size: 10px; }
+.self .message-meta { justify-content: flex-end; }
+.platform-label { padding: 1px 5px; border-radius: 5px; background: #edf1f2; }
+
+.composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 14px 20px 16px; border-top: 1px solid var(--line); background: #fff; }
+.composer textarea { min-height: 52px; max-height: 130px; resize: vertical; padding: 12px 13px; }
+.composer button { min-width: 112px; }
+.composer-note { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+
+.empty-state { height: 100%; display: grid; place-items: center; color: var(--muted); text-align: center; }
+.section-empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+.modal-layer { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(19,31,38,.38); }
+.modal { width: min(760px, 100%); max-height: min(760px, 90dvh); display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; background: #fff; box-shadow: var(--shadow); }
+.modal.small { width: min(520px, 100%); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { margin: 0; font-size: 17px; }
+.modal-body { min-height: 0; overflow: auto; padding: 18px; }
+.bind-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
+.bind-list { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.bind-item { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.bind-item:last-child { border-bottom: 0; }
+.bind-item input { width: auto; }
+.bind-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.small-muted { color: var(--muted); font-size: 11px; }
+.persona-list { display: grid; gap: 10px; }
+.persona-card { padding: 14px; border: 1px solid var(--line); border-radius: 9px; }
+.persona-card.active { border-color: var(--green); background: var(--green-soft); }
+.persona-card h3 { margin: 0 0 6px; font-size: 15px; }
+.persona-card p { margin: 0; color: var(--muted); font-size: 12px; }
+.persona-actions { display: flex; gap: 8px; margin-top: 10px; }
+.table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
-th, td { padding: 12px 16px; text-align: left; font-size: 13px; }
-th { color: var(--text2); font-weight: 500; border-bottom: 1px solid var(--border); }
-td { border-bottom: 1px solid var(--border); }
-tr:hover td { background: var(--surface2); }
-select, input[type=text], textarea { padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 13px; }
-select:focus, input:focus, textarea:focus { outline: none; border-color: var(--accent); }
-textarea { width: 100%; min-height: 80px; font-family: inherit; }
-.btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
-.btn-primary { background: var(--accent); color: #000; }
-.btn-primary:hover { background: var(--accent2); }
-.btn-danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
-.btn-danger:hover { background: var(--danger); color: #fff; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
-.badge-green { background: #166534; color: #4ade80; }
-.badge-gray { background: #333; color: #999; }
-.filter-bar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
-.filter-bar select, .filter-bar input { min-width: 140px; }
-.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: var(--radius); font-size: 14px; z-index: 1000; animation: slideIn 0.3s; }
-.toast-success { background: #166534; color: #4ade80; border: 1px solid #22c55e; }
-.toast-error { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; }
-@keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-.persona-card { background: var(--surface2); padding: 16px; border-radius: var(--radius); margin-bottom: 12px; border: 1px solid var(--border); }
-.persona-card.active { border-color: var(--accent); }
-.persona-card h3 { font-size: 15px; margin-bottom: 8px; }
-.persona-card p { font-size: 13px; color: var(--text2); }
-.persona-actions { margin-top: 12px; display: flex; gap: 8px; }
-.empty { text-align: center; color: var(--text2); padding: 40px; font-size: 14px; }
-.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+th, td { padding: 10px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 12px; white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; }
+.toast-stack { position: fixed; z-index: 200; top: 18px; right: 18px; display: grid; gap: 8px; }
+.toast { min-width: 220px; max-width: 360px; padding: 11px 13px; border-radius: 9px; background: #17332a; color: #fff; box-shadow: var(--shadow); font-size: 13px; }
+.toast.error { background: #6f2727; }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .sidebar.mobile-open { display: flex; position: fixed; inset: 0 12% 0 0; z-index: 50; box-shadow: var(--shadow); }
+  .chat-head { align-items: flex-start; flex-direction: column; }
+  .chat-actions { justify-content: flex-start; }
+  .messages { padding: 18px 14px 24px; }
+  .message-block { max-width: 88%; }
+}
 </style>
 </head>
 <body>
 
-<div class="login" id="loginView">
+<div class="login-layer" id="loginView">
   <div class="login-card">
-    <h1>🔐 AI托管助手</h1>
-    <p>请输入管理密码</p>
-    <input type="password" id="passwordInput" placeholder="输入密码" autofocus>
-    <button onclick="login()">登录</button>
-    <div class="login-error" id="loginError">密码错误</div>
+    <h1>Aaiagent 客户会话</h1>
+    <p>设备对话、跨平台身份和人工优先回复</p>
+    <div class="login-row">
+      <input id="passwordInput" type="password" placeholder="管理密码" autocomplete="current-password" autofocus>
+      <button class="primary-button" id="loginButton">进入</button>
+    </div>
+    <div class="login-error" id="loginError"></div>
   </div>
 </div>
 
-<div class="app" id="appView">
-  <div class="app-header">
-    <h1>📊 AI托管助手 · 管理面板</h1>
-    <button onclick="logout()">退出登录</button>
-  </div>
-
-  <div class="tabs">
-    <button class="tab active" onclick="switchTab('overview')">📈 概览</button>
-    <button class="tab" onclick="switchTab('history')">💬 聊天记录</button>
-    <button class="tab" onclick="switchTab('contacts')">👤 联系人</button>
-    <button class="tab" onclick="switchTab('personas')">🎭 人设管理</button>
-    <button class="tab" onclick="switchTab('tokens')">🔑 设备密钥</button>
-  </div>
-
-  <div id="tabOverview">
-    <div class="stats" id="statsGrid"></div>
-    <div class="panel">
-      <div class="panel-header"><h2>最近回复</h2></div>
-      <div class="panel-body" id="recentReplies"></div>
-    </div>
-  </div>
-
-  <div id="tabHistory" style="display:none">
-    <div class="panel">
-      <div class="panel-header"><h2>聊天记录</h2></div>
-      <div class="panel-body">
-        <div class="filter-bar">
-          <select id="filterToken" onchange="loadHistory()"><option value="">全部设备</option></select>
-          <select id="filterPlatform" onchange="loadHistory()">
-            <option value="">全部平台</option><option value="soul">Soul</option><option value="qq">QQ</option><option value="immomo">陌陌</option><option value="lianxin">连信</option>
-          </select>
-          <input type="text" id="filterContact" placeholder="搜索联系人..." oninput="loadHistory()">
+<main class="app" id="appView" hidden>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand-row">
+        <div class="brand">
+          <div class="brand-mark">AI</div>
+          <div><h1>客户会话</h1><small>跨平台统一记忆</small></div>
         </div>
-        <div id="historyTable"></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="tabContacts" style="display:none">
-    <div class="panel">
-      <div class="panel-header"><h2>联系人管理</h2></div>
-      <div class="panel-body">
-        <div class="filter-bar">
-          <select id="contactFilterToken" onchange="loadContacts()"><option value="">全部设备</option></select>
-          <select id="contactFilterPlatform" onchange="loadContacts()">
-            <option value="">全部平台</option><option value="soul">Soul</option><option value="qq">QQ</option><option value="immomo">陌陌</option><option value="lianxin">连信</option>
-          </select>
+        <div class="head-actions">
+          <button class="icon-button" id="personaButton" title="人设管理">人设</button>
+          <button class="icon-button" id="tokenButton" title="设备密钥">设备</button>
+          <button class="icon-button" id="logoutButton" title="退出">退出</button>
         </div>
-        <div id="contactsTable"></div>
       </div>
-    </div>
-  </div>
-
-  <div id="tabPersonas" style="display:none">
-    <div class="panel">
-      <div class="panel-header">
-        <h2>人设管理</h2>
-        <button class="btn btn-primary" onclick="addPersona()">+ 新建人设</button>
+      <div class="filters">
+        <select class="search" id="deviceSelect"><option value="">全部设备</option></select>
+        <input class="search" id="searchInput" type="search" placeholder="搜索昵称或聊天内容">
+        <select id="platformSelect">
+          <option value="">全部平台</option>
+          <option value="soul">Soul</option>
+          <option value="qq">QQ</option>
+          <option value="immomo">陌陌</option>
+          <option value="lianxin">连信</option>
+        </select>
+        <button class="ghost-button" id="refreshButton">刷新</button>
       </div>
-      <div class="panel-body" id="personasList"></div>
+      <div class="summary-row"><span id="customerSummary">0 位客户</span><span id="lastRefresh"></span></div>
     </div>
-  </div>
+    <div class="customer-list" id="customerList"></div>
+  </aside>
 
-  <div id="tabTokens" style="display:none">
-    <div class="panel">
-      <div class="panel-header"><h2>设备密钥</h2></div>
-      <div class="panel-body" id="tokensTable"></div>
+  <section class="chat">
+    <header class="chat-head">
+      <div class="chat-title-wrap">
+        <div class="chat-title-row">
+          <div class="chat-title" id="chatTitle">请选择客户</div>
+          <div class="platforms" id="chatPlatforms"></div>
+        </div>
+        <div class="chat-subtitle" id="chatSubtitle">从左侧选择设备与客户查看完整对话</div>
+        <div class="alias-strip" id="aliasStrip"></div>
+      </div>
+      <div class="chat-actions">
+        <span class="action-status" id="actionStatus"></span>
+        <button class="ghost-button" id="bindButton" disabled>关联平台账号</button>
+        <button class="ghost-button priority-button" id="priorityButton" disabled>优先回复</button>
+      </div>
+    </header>
+    <div class="messages" id="messages">
+      <div class="empty-state">选择客户后查看跨平台完整对话</div>
+    </div>
+    <div class="composer">
+      <textarea id="manualInput" placeholder="输入要原样发送的消息" disabled></textarea>
+      <button class="primary-button" id="manualSendButton" disabled>优先发送</button>
+      <div class="composer-note" id="composerNote">人工消息会进入最高优先队列，手机端托管开启后优先发送。</div>
+    </div>
+  </section>
+</main>
+
+<div class="modal-layer" id="bindModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>关联同一客户的平台账号</h2><button class="ghost-button" data-close="bindModal">关闭</button></div>
+    <div class="modal-body">
+      <div class="bind-tools">
+        <input id="bindNameInput" placeholder="统一显示名称，例如：王先生">
+        <button class="primary-button" id="saveBindButton">保存关联</button>
+      </div>
+      <input id="bindSearchInput" type="search" placeholder="筛选平台账号或昵称">
+      <div class="small-muted" id="bindHint" style="margin:10px 0"></div>
+      <div class="bind-list" id="bindList"></div>
     </div>
   </div>
 </div>
 
-<div id="toastContainer"></div>
+<div class="modal-layer" id="personaModal" hidden>
+  <div class="modal small">
+    <div class="modal-head"><h2>人设管理</h2><button class="ghost-button" data-close="personaModal">关闭</button></div>
+    <div class="modal-body persona-list" id="personaList"></div>
+  </div>
+</div>
 
+<div class="modal-layer" id="tokenModal" hidden>
+  <div class="modal medium">
+    <div class="modal-head"><h2>设备密钥</h2><button class="ghost-button" data-close="tokenModal">关闭</button></div>
+    <div class="modal-body table-wrap" id="tokenList"></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toastStack"></div>
 <script src="app.js"></script>
 </body>
 </html>

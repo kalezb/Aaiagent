@@ -795,6 +795,44 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return false
     }
 
+    override suspend fun clickConversationByName(
+        root: AccessibilityNodeInfo,
+        contactName: String,
+        shouldClick: Boolean
+    ): ConversationInfo? {
+        tryFindNamedConversation(root, contactName, shouldClick)?.let { return it }
+        val topRoot = scrollListToTop(root)
+        tryFindNamedConversation(topRoot, contactName, shouldClick)?.let { return it }
+
+        var currentRoot = topRoot
+        repeat(MAX_PATROL_SCROLLS) {
+            if (!scrollConversationList(currentRoot, ScrollDirection.FORWARD)) return@repeat
+            currentRoot = waitForStableListAfterScroll() ?: service.rootInActiveWindow ?: return@repeat
+            tryFindNamedConversation(currentRoot, contactName, shouldClick)?.let { return it }
+        }
+        scrollListToTop(currentRoot)
+        return null
+    }
+
+    private fun tryFindNamedConversation(
+        root: AccessibilityNodeInfo,
+        expectedName: String,
+        shouldClick: Boolean
+    ): ConversationInfo? {
+        val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
+            .filter { it.isVisibleToUser }
+        for (item in items) {
+            val name = readChildText(item, "name") ?: continue
+            if (!ConversationIdentity.matches(expectedName, name)) continue
+            val preview = readChildText(item, "message") ?: ""
+            if (shouldClick && !tapNode(item)) {
+                return ConversationInfo(name, name, preview)
+            }
+            return ConversationInfo(contactId = name, contactName = name, preview = preview)
+        }
+        return null
+    }
+
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean
@@ -835,7 +873,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val name = readChildText(item, "name")
             val preview = readChildText(item, "message") ?: ""
             val contactName = name ?: preview.ifEmpty { "unknown" }
-            if (contactName != TEST_CONTACT_ONLY) continue
 
             if (shouldClick) {
                 val target = item.takeIf { it.isClickable && it.isVisibleToUser } ?: item
@@ -1143,7 +1180,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     companion object {
-        private const val TEST_CONTACT_ONLY = "期待下一步的我们"
         private const val FULL_PATROL_AFTER_EMPTY_SCANS = 3
         private const val MAX_PATROL_SCROLLS = 3
         private const val MAX_TOP_REWIND_SCROLLS = 3

@@ -1,222 +1,525 @@
-// Dashboard App - AI托管助手管理面板
-var API_BASE = "/api";
-var dashboardPassword = "";
-var isLoggedIn = false;
+const API_BASE = "/api";
+const PLATFORMS = [
+  { id: "soul", label: "Soul", short: "S" },
+  { id: "qq", label: "QQ", short: "Q" },
+  { id: "immomo", label: "陌陌", short: "陌" },
+  { id: "lianxin", label: "连信", short: "连" },
+];
+
+const state = {
+  password: "",
+  tokens: [],
+  groups: [],
+  contacts: [],
+  selected: null,
+  targetAlias: null,
+  refreshTimer: null,
+  customerRequest: 0,
+  bindingSelection: new Set(),
+};
+
+const $ = (id) => document.getElementById(id);
+
+function contactKey(platform, contactId) {
+  return `${String(platform || "")}\u0000${String(contactId || "")}`;
+}
+
+function syncBindingSelectionFromGroup(group) {
+  state.bindingSelection = new Set((group?.aliases || []).map((alias) => contactKey(alias.platform, alias.contact_id)));
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function platformMeta(id) {
+  return PLATFORMS.find((item) => item.id === id) || { id, label: id || "未知", short: "?" };
+}
+
+function platformName(id) {
+  return platformMeta(id).label;
+}
+
+function renderPlatforms(platforms, className = "platforms") {
+  const active = new Set(Array.isArray(platforms) ? platforms : []);
+  return `<span class="${className}">` + PLATFORMS.map((platform) =>
+    `<span class="platform-dot ${active.has(platform.id) ? "on " + platform.id : ""}" title="${platform.label}">${platform.short}</span>`
+  ).join("") + `</span>`;
+}
+
+function showToast(message, type = "success") {
+  const toast = document.createElement("div");
+  toast.className = `toast ${type === "error" ? "error" : ""}`;
+  toast.textContent = message;
+  $("toastStack").appendChild(toast);
+  setTimeout(() => toast.remove(), 3200);
+}
+
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (state.password) headers["X-Dashboard-Password"] = state.password;
+  const response = await fetch(API_BASE + path, {
+    method,
+    headers,
+    cache: "no-store",
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401 && $("appView").hidden === false) logout();
+    throw new Error(data.error || `请求失败 (${response.status})`);
+  }
+  return data;
+}
 
 async function login() {
-  var pw = document.getElementById("passwordInput").value;
-  var error = document.getElementById("loginError");
-  error.style.display = "none";
+  const password = $("passwordInput").value;
+  $("loginError").textContent = "";
   try {
-    var response = await fetch(API_BASE + "/dashboard/login", {
+    const response = await fetch(API_BASE + "/dashboard/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: pw })
+      body: JSON.stringify({ password }),
     });
-    var result = await response.json();
-    if (!response.ok || !result.success) throw new Error("invalid password");
-    dashboardPassword = pw;
-    isLoggedIn = true;
-    document.getElementById("loginView").style.display = "none";
-    document.getElementById("appView").style.display = "block";
-    loadOverview();
-  } catch (_) {
-    error.style.display = "block";
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error("密码错误");
+    state.password = password;
+    $("loginView").hidden = true;
+    $("appView").hidden = false;
+    await initializeDashboard();
+    state.refreshTimer = window.setInterval(refreshVisibleData, 5000);
+  } catch (error) {
+    $("loginError").textContent = error.message || "登录失败";
   }
 }
 
 function logout() {
-  isLoggedIn = false;
-  dashboardPassword = "";
-  document.getElementById("loginView").style.display = "flex";
-  document.getElementById("appView").style.display = "none";
-  document.getElementById("passwordInput").value = "";
+  state.password = "";
+  state.selected = null;
+  state.groups = [];
+  if (state.refreshTimer) window.clearInterval(state.refreshTimer);
+  state.refreshTimer = null;
+  $("appView").hidden = true;
+  $("loginView").hidden = false;
+  $("passwordInput").value = "";
 }
 
-function showToast(msg, type) {
-  var c = document.getElementById("toastContainer");
-  var el = document.createElement("div");
-  el.className = "toast toast-" + (type || "success");
-  el.textContent = msg;
-  c.appendChild(el);
-  setTimeout(function() { el.remove(); }, 3000);
+async function initializeDashboard() {
+  await loadTokens();
+  await loadCustomers();
 }
 
-function switchTab(name) {
-  document.querySelectorAll(".tab").forEach(function(t) { t.classList.remove("active"); });
-  document.querySelectorAll("[id^=tab]").forEach(function(p) { if (p.id.startsWith("tab")) p.style.display = "none"; });
-  event.target.classList.add("active");
-  document.getElementById("tab" + name.charAt(0).toUpperCase() + name.slice(1)).style.display = "block";
-  if (name === "overview") loadOverview();
-  if (name === "history") loadHistory();
-  if (name === "contacts") loadContacts();
-  if (name === "personas") loadPersonas();
-  if (name === "tokens") loadTokens();
-}
-
-async function api(method, path, body) {
-  var headers = { "Content-Type": "application/json" };
-  if (dashboardPassword) headers["X-Dashboard-Password"] = dashboardPassword;
-  var opts = { method: method, headers: headers };
-  if (body) opts.body = JSON.stringify(body);
-  var resp = await fetch(API_BASE + path, opts);
-  return resp.json();
-}
-
-// ===== OVERVIEW =====
-async function loadOverview() {
-  var tokens = await api("GET", "/token");
-  var personas = await api("GET", "/persona");
-  var contacts = await api("GET", "/contacts?token=");
-
-  var activeTokens = (tokens.tokens || []).filter(function(t) { return t.is_active; }).length;
-  var activePersona = (personas.personas || []).find(function(p) { return p.is_active; });
-  var whitelist = (contacts.contacts || []).filter(function(c) { return c.is_whitelisted; }).length;
-
-  var html = '<div class="stat-card"><div class="num">' + activeTokens + '</div><div class="label">活跃设备</div></div>';
-  html += '<div class="stat-card"><div class="num">' + whitelist + '</div><div class="label">白名单联系人</div></div>';
-  html += '<div class="stat-card"><div class="num">' + (activePersona ? activePersona.name : "无") + '</div><div class="label">当前人设</div></div>';
-  html += '<div class="stat-card"><div class="num">4</div><div class="label">支持平台</div></div>';
-  document.getElementById("statsGrid").innerHTML = html;
-
-  // Recent replies
-  var history = await api("GET", "/chat/history?token=&limit=10");
-  var recents = (history.history || []).filter(function(h) { return h.role === "assistant"; }).slice(0, 10);
-  if (recents.length === 0) {
-    document.getElementById("recentReplies").innerHTML = '<div class="empty">暂无回复记录</div>';
-    return;
-  }
-  var rh = '<table><tr><th>时间</th><th>平台</th><th>联系人</th><th>回复内容</th></tr>';
-  recents.forEach(function(r) {
-    var d = new Date(r.created_at * 1000);
-    rh += '<tr><td>' + d.toLocaleString("zh-CN") + '</td><td>' + r.platform + '</td><td>' + r.contact_name + '</td><td>' + (r.content || "").substring(0, 60) + '</td></tr>';
-  });
-  rh += '</table>';
-  document.getElementById("recentReplies").innerHTML = rh;
-}
-
-// ===== HISTORY =====
-async function loadHistory() {
-  var token = document.getElementById("filterToken").value || "";
-  var platform = document.getElementById("filterPlatform").value || "";
-  var contact = document.getElementById("filterContact").value || "";
-  var params = "token=" + encodeURIComponent(token) + "&limit=50";
-  if (platform) params += "&platform=" + platform;
-  if (contact) params += "&contact_id=" + encodeURIComponent(contact);
-  var data = await api("GET", "/chat/history?" + params);
-  var list = data.history || [];
-  if (list.length === 0) {
-    document.getElementById("historyTable").innerHTML = '<div class="empty">暂无聊天记录</div>';
-    return;
-  }
-  var h = '<table><tr><th>时间</th><th>设备</th><th>平台</th><th>联系人</th><th>角色</th><th>内容</th></tr>';
-  list.forEach(function(r) {
-    var d = new Date(r.created_at * 1000);
-    var roleBadge = r.role === "assistant" ? '<span class="badge badge-green">AI</span>' : '<span class="badge badge-gray">用户</span>';
-    h += '<tr><td>' + d.toLocaleString("zh-CN") + '</td><td>' + (r.token || "").substring(0, 12) + '</td><td>' + r.platform + '</td><td>' + r.contact_name + '</td><td>' + roleBadge + '</td><td>' + (r.content || "").substring(0, 80) + '</td></tr>';
-  });
-  h += '</table>';
-  document.getElementById("historyTable").innerHTML = h;
-}
-
-// ===== CONTACTS =====
-async function loadContacts() {
-  var token = document.getElementById("contactFilterToken").value || "";
-  var platform = document.getElementById("contactFilterPlatform").value || "";
-  var params = "token=" + encodeURIComponent(token);
-  if (platform) params += "&platform=" + platform;
-  var data = await api("GET", "/contacts?" + params);
-  var list = data.contacts || [];
-  if (list.length === 0) {
-    document.getElementById("contactsTable").innerHTML = '<div class="empty">暂无联系人</div>';
-    return;
-  }
-  var h = '<table><tr><th>平台</th><th>联系人ID</th><th>昵称</th><th>白名单</th><th>备注</th><th>操作</th></tr>';
-  list.forEach(function(c) {
-    var badge = c.is_whitelisted ? '<span class="badge badge-green">是</span>' : '<span class="badge badge-gray">否</span>';
-    h += '<tr><td>' + c.platform + '</td><td>' + c.contact_id + '</td><td>' + c.contact_name + '</td><td>' + badge + '</td><td>' + (c.notes || "") + '</td><td><button class="btn btn-sm ' + (c.is_whitelisted ? 'btn-danger' : 'btn-primary') + '" onclick="toggleWhitelist(\'' + c.platform + '\',\'' + c.contact_id + '\',' + c.is_whitelisted + ')">' + (c.is_whitelisted ? '移除' : '加入') + '</button></td></tr>';
-  });
-  h += '</table>';
-  document.getElementById("contactsTable").innerHTML = h;
-}
-
-async function toggleWhitelist(platform, contactId, current) {
-  await api("POST", "/contacts", { token: "", platform: platform, contact_id: contactId, contact_name: "", is_whitelisted: current ? 0 : 1 });
-  showToast(current ? "已移除白名单" : "已加入白名单");
-  loadContacts();
-}
-
-// ===== PERSONAS =====
-async function loadPersonas() {
-  var data = await api("GET", "/persona");
-  var list = data.personas || [];
-  if (list.length === 0) {
-    document.getElementById("personasList").innerHTML = '<div class="empty">暂无人设</div>';
-    return;
-  }
-  var h = "";
-  list.forEach(function(p) {
-    h += '<div class="persona-card' + (p.is_active ? ' active' : '') + '">';
-    h += '<h3>' + p.name + (p.is_active ? ' ✅ 当前使用' : '') + '</h3>';
-    h += '<p>' + (p.system_prompt || "").substring(0, 120) + '...</p>';
-    h += '<div class="persona-actions">';
-    if (!p.is_active) h += '<button class="btn btn-sm btn-primary" onclick="activatePersona(\'' + p.id + '\')">启用</button>';
-    h += '<button class="btn btn-sm btn-danger" onclick="deletePersona(\'' + p.id + '\')">删除</button>';
-    h += '</div></div>';
-  });
-  document.getElementById("personasList").innerHTML = h;
-}
-
-async function activatePersona(id) {
-  await api("PUT", "/persona/activate", { id: id });
-  showToast("人设已切换");
-  loadPersonas();
-  loadOverview();
-}
-
-async function deletePersona(id) {
-  if (!confirm("确定删除？")) return;
-  await api("DELETE", "/persona", { id: id });
-  showToast("已删除");
-  loadPersonas();
-}
-
-function addPersona() {
-  var id = prompt("人设ID（英文）：");
-  if (!id) return;
-  var name = prompt("显示名称：");
-  if (!name) return;
-  var prompt = prompt("系统提示词：");
-  if (!prompt) return;
-  api("PUT", "/persona", { token: "", id: id, name: name, system_prompt: prompt, is_active: 0 }).then(function() {
-    showToast("人设已创建");
-    loadPersonas();
-  });
-}
-
-// ===== TOKENS =====
 async function loadTokens() {
-  var data = await api("GET", "/token");
-  var list = data.tokens || [];
-  if (list.length === 0) {
-    document.getElementById("tokensTable").innerHTML = '<div class="empty">暂无设备密钥</div>';
+  const data = await api("GET", "/token");
+  state.tokens = data.tokens || [];
+  const select = $("deviceSelect");
+  const current = select.value;
+  select.innerHTML = '<option value="">全部设备</option>' + state.tokens.map((token) => {
+    const label = token.name ? `${token.name} · ${token.token}` : token.token;
+    return `<option value="${esc(token.token)}">${esc(label)}</option>`;
+  }).join("");
+  select.value = state.tokens.some((token) => token.token === current) ? current : "";
+}
+
+async function loadCustomers(keepSelection = true) {
+  const requestId = ++state.customerRequest;
+  const params = new URLSearchParams();
+  params.set("token", $("deviceSelect").value || "");
+  params.set("platform", $("platformSelect").value || "");
+  params.set("q", $("searchInput").value.trim());
+  try {
+    const data = await api("GET", `/customer-groups?${params.toString()}`);
+    if (requestId !== state.customerRequest) return;
+    state.groups = data.groups || [];
+    if (keepSelection && state.selected) {
+      const fresh = state.groups.find((group) => group.id === state.selected.id);
+      if (fresh) state.selected = { ...fresh, platforms: fresh.platforms || state.selected.platforms };
+      else state.selected = null;
+    }
+    renderCustomers();
+    updateChatHeader();
+    $("lastRefresh").textContent = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderCustomers() {
+  const host = $("customerList");
+  $("customerSummary").textContent = `${state.groups.length} 位客户`;
+  if (!state.groups.length) {
+    host.innerHTML = '<div class="section-empty">没有匹配的客户<br>可以换设备、平台或搜索词</div>';
     return;
   }
-  var h = '<table><tr><th>密钥</th><th>名称</th><th>月度上限</th><th>已花费</th><th>状态</th><th>最后使用</th><th>操作</th></tr>';
-  list.forEach(function(t) {
-    var status = t.is_active ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-gray">停用</span>';
-    var lastUsed = t.last_used_at ? new Date(t.last_used_at * 1000).toLocaleString("zh-CN") : "从未";
-    h += '<tr><td>' + t.token.substring(0, 20) + '...</td><td>' + (t.name || "") + '</td><td>¥' + t.monthly_limit + '</td><td>¥' + (t.spent || 0).toFixed(2) + '</td><td>' + status + '</td><td>' + lastUsed + '</td><td><button class="btn btn-sm ' + (t.is_active ? 'btn-danger' : 'btn-primary') + '" onclick="toggleToken(\'' + t.token + '\',' + t.is_active + ')">' + (t.is_active ? '停用' : '启用') + '</button></td></tr>';
+  host.innerHTML = state.groups.map((group) => {
+    const active = state.selected?.id === group.id;
+    const last = group.last_message;
+    const preview = last
+      ? `${last.role === "assistant" ? "我：" : ""}${last.content || "[非文字消息]"}`
+      : "暂无聊天记录";
+    const when = group.last_at ? formatShortTime(group.last_at) : "";
+    return `
+      <button class="customer ${active ? "active" : ""}" data-group-id="${esc(group.id)}">
+        <span class="avatar">${esc(Array.from(group.display_name || "客")[0] || "客")}</span>
+        <span class="customer-main">
+          <span class="customer-name-row">
+            <span class="customer-name">${esc(group.display_name || "未命名客户")}</span>
+            ${group.priority_reply ? '<span class="priority-dot" title="优先回复"></span>' : ""}
+            ${renderPlatforms(group.platforms)}
+          </span>
+          <span class="customer-preview">${esc(preview)}</span>
+        </span>
+        <span class="customer-meta"><span>${esc(when)}</span><span class="count-pill">${Number(group.message_count || 0)}</span></span>
+      </button>`;
+  }).join("");
+  host.querySelectorAll("[data-group-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = state.groups.find((item) => item.id === button.dataset.groupId);
+      if (group) openCustomer(group);
+    });
   });
-  h += '</table>';
-  document.getElementById("tokensTable").innerHTML = h;
 }
 
-async function toggleToken(token, current) {
-  await api("PUT", "/token", { token: token, is_active: current ? 0 : 1 });
-  showToast(current ? "已停用" : "已启用");
-  loadTokens();
+async function openCustomer(group) {
+  state.selected = group;
+  state.targetAlias = group.aliases?.[0] || null;
+  renderCustomers();
+  updateChatHeader();
+  $("messages").innerHTML = '<div class="empty-state">读取消息...</div>';
+  await refreshMessages(true);
 }
 
-// Init
-document.getElementById("passwordInput").addEventListener("keydown", function(e) { if (e.key === "Enter") login(); });
+function updateChatHeader() {
+  const group = state.selected;
+  const title = group?.display_name || "请选择客户";
+  $("chatTitle").textContent = title;
+  $("chatPlatforms").innerHTML = renderPlatforms(group?.platforms || []);
+  $("chatSubtitle").textContent = group
+    ? `${state.tokens.find((token) => token.token === group.token)?.name || group.token} · ${group.aliases?.length || 0} 个平台账号`
+    : "从左侧选择设备与客户查看完整对话";
+  $("aliasStrip").innerHTML = (group?.aliases || []).map((alias) => {
+    const active = state.targetAlias?.platform === alias.platform && state.targetAlias?.contact_id === alias.contact_id;
+    return `<button class="alias-chip ${active ? "active" : ""}" data-platform="${esc(alias.platform)}" data-contact-id="${esc(alias.contact_id)}">${esc(platformName(alias.platform))} · ${esc(alias.contact_name || alias.contact_id)}</button>`;
+  }).join("");
+  $("aliasStrip").querySelectorAll("[data-platform]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.targetAlias = group.aliases.find((alias) =>
+        alias.platform === button.dataset.platform && alias.contact_id === button.dataset.contactId
+      ) || null;
+      updateChatHeader();
+    });
+  });
+
+  const hasSelected = Boolean(group);
+  $("bindButton").disabled = !hasSelected;
+  $("priorityButton").disabled = !hasSelected;
+  $("manualInput").disabled = !hasSelected || !state.targetAlias;
+  $("manualSendButton").disabled = !hasSelected || !state.targetAlias;
+  $("priorityButton").classList.toggle("active", Boolean(group?.priority_reply));
+  $("priorityButton").textContent = group?.priority_reply ? "优先回复已开启" : "优先回复";
+  $("composerNote").textContent = state.targetAlias
+    ? `将发送到 ${platformName(state.targetAlias.platform)} · ${state.targetAlias.contact_name || state.targetAlias.contact_id}`
+    : "请选择发送目标平台账号";
+}
+
+async function refreshMessages(forceBottom = false) {
+  const group = state.selected;
+  if (!group) return;
+  const host = $("messages");
+  const nearBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 100;
+  try {
+    const params = new URLSearchParams({ token: group.token, group_id: group.id, limit: "1000" });
+    const data = await api("GET", `/customer-messages?${params.toString()}`);
+    if (state.selected?.id !== group.id) return;
+    state.selected = {
+      ...group,
+      ...data.identity,
+      platforms: group.platforms || [],
+      last_message: group.last_message,
+      last_at: group.last_at,
+      message_count: group.message_count,
+    };
+    renderMessages(data.messages || []);
+    if (forceBottom || nearBottom) host.scrollTop = host.scrollHeight;
+    updateChatHeader();
+  } catch (error) {
+    $("messages").innerHTML = `<div class="empty-state">消息读取失败：${esc(error.message)}</div>`;
+  }
+}
+
+function renderMessages(messages) {
+  const host = $("messages");
+  if (!messages.length) {
+    host.innerHTML = '<div class="empty-state">暂无聊天记录</div>';
+    return;
+  }
+  let lastDate = "";
+  host.innerHTML = messages.map((message) => {
+    const date = new Date((message.created_at || 0) * 1000);
+    const dateText = date.toLocaleDateString("zh-CN");
+    const separator = dateText !== lastDate ? `<div class="date-separator">${esc(dateText)}</div>` : "";
+    lastDate = dateText;
+    const side = message.role === "assistant" ? "self" : "peer";
+    return `${separator}
+      <div class="message-row ${side}">
+        <div class="message-block">
+          <div class="bubble">${esc(message.content || "[非文字消息]")}</div>
+          <div class="message-meta">
+            <span>${esc(formatFullTime(message.created_at))}</span>
+            <span class="platform-label">${esc(platformName(message.platform))}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function enqueueManualMessage() {
+  const group = state.selected;
+  const alias = state.targetAlias;
+  const content = $("manualInput").value.trim();
+  if (!group || !alias || !content) return;
+  $("manualSendButton").disabled = true;
+  $("actionStatus").textContent = "正在加入优先队列...";
+  try {
+    await api("POST", "/manual-replies", {
+      token: group.token,
+      group_id: group.id.startsWith("single:") ? "" : group.id,
+      platform: alias.platform,
+      contact_id: alias.contact_id,
+      contact_name: alias.contact_name,
+      content,
+    });
+    $("manualInput").value = "";
+    $("actionStatus").textContent = "已加入最高优先队列";
+    showToast("消息已加入优先发送队列");
+  } catch (error) {
+    $("actionStatus").textContent = `发送失败：${error.message}`;
+    showToast(error.message, "error");
+  } finally {
+    $("manualSendButton").disabled = false;
+  }
+}
+
+async function togglePriority() {
+  const group = state.selected;
+  if (!group) return;
+  const enabled = !group.priority_reply;
+  $("priorityButton").disabled = true;
+  $("actionStatus").textContent = "正在更新优先级...";
+  try {
+    const data = await api("PUT", "/customer-groups/priority", {
+      token: group.token,
+      group_id: group.id,
+      enabled,
+    });
+    state.selected = {
+      ...state.selected,
+      ...data.group,
+      platforms: group.platforms || [],
+      last_message: group.last_message,
+      last_at: group.last_at,
+      message_count: group.message_count,
+    };
+    $("actionStatus").textContent = enabled ? "优先回复已开启" : "已恢复普通回复";
+    showToast(enabled ? "已开启优先回复" : "已取消优先回复");
+    await loadCustomers();
+  } catch (error) {
+    $("actionStatus").textContent = `更新失败：${error.message}`;
+    showToast(error.message, "error");
+  } finally {
+    $("priorityButton").disabled = false;
+    updateChatHeader();
+  }
+}
+
+async function openBindModal() {
+  const group = state.selected;
+  if (!group) return;
+  $("bindModal").hidden = false;
+  $("bindNameInput").value = group.display_name || "";
+  $("bindSearchInput").value = "";
+  syncBindingSelectionFromGroup(group);
+  $("bindHint").textContent = "正在读取该设备的平台联系人...";
+  try {
+    const data = await api("GET", `/contacts?token=${encodeURIComponent(group.token)}`);
+    state.contacts = data.contacts || [];
+    $("bindHint").textContent = "选择要归为同一个人的账号。已关联账号会保持勾选。";
+    renderBindContacts();
+  } catch (error) {
+    $("bindHint").textContent = error.message;
+  }
+}
+
+function renderBindContacts() {
+  const group = state.selected;
+  const query = $("bindSearchInput").value.trim().toLowerCase();
+  const selectedKeys = state.bindingSelection;
+  const rows = state.contacts.filter((contact) => {
+    if (!query) return true;
+    return `${contact.contact_name || ""} ${contact.contact_id || ""} ${platformName(contact.platform)}`.toLowerCase().includes(query);
+  });
+  if (!rows.length) {
+    $("bindList").innerHTML = '<div class="section-empty">没有可关联的平台账号</div>';
+    return;
+  }
+  $("bindList").innerHTML = rows.map((contact) => {
+    const key = contactKey(contact.platform, contact.contact_id);
+    return `<label class="bind-item">
+      <input type="checkbox" data-platform="${esc(contact.platform)}" data-contact-id="${esc(contact.contact_id)}" ${selectedKeys.has(key) ? "checked" : ""}>
+      ${renderPlatforms([contact.platform])}
+      <span class="bind-name">${esc(contact.contact_name || contact.contact_id)}</span>
+      <span class="small-muted">${esc(contact.contact_id)}</span>
+    </label>`;
+  }).join("");
+  $("bindList").querySelectorAll("input[data-platform][data-contact-id]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const key = contactKey(input.dataset.platform, input.dataset.contactId);
+      if (input.checked) state.bindingSelection.add(key);
+      else state.bindingSelection.delete(key);
+    });
+  });
+}
+
+async function saveBindings() {
+  const group = state.selected;
+  if (!group) return;
+  const selectedContacts = state.contacts.filter((contact) =>
+    state.bindingSelection.has(contactKey(contact.platform, contact.contact_id))
+  );
+  if (!selectedContacts.length) {
+    showToast("至少选择一个平台账号", "error");
+    return;
+  }
+  $("saveBindButton").disabled = true;
+  try {
+    const data = await api("POST", "/customer-groups/bind", {
+      token: group.token,
+      group_id: group.id.startsWith("single:") ? "" : group.id,
+      display_name: $("bindNameInput").value.trim() || group.display_name,
+      replace_aliases: true,
+      contacts: selectedContacts.map((contact) => ({
+        platform: contact.platform,
+        contact_id: contact.contact_id,
+        contact_name: contact.contact_name,
+      })),
+    });
+    $("bindModal").hidden = true;
+    state.selected = {
+      ...group,
+      ...data.group,
+      platforms: data.group.aliases.map((alias) => alias.platform),
+      last_message: group.last_message,
+      last_at: group.last_at,
+      message_count: group.message_count,
+    };
+    state.targetAlias = state.selected.aliases?.[0] || null;
+    await loadCustomers();
+    updateChatHeader();
+    showToast("跨平台账号已关联，记忆将合并");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    $("saveBindButton").disabled = false;
+  }
+}
+
+async function openPersonaModal() {
+  $("personaModal").hidden = false;
+  $("personaList").innerHTML = '<div class="section-empty">读取中...</div>';
+  try {
+    const data = await api("GET", "/persona");
+    const personas = data.personas || [];
+    $("personaList").innerHTML = personas.map((persona) => `
+      <div class="persona-card ${persona.is_active ? "active" : ""}">
+        <h3>${esc(persona.name)}${persona.is_active ? " · 当前使用" : ""}</h3>
+        <p>${esc((persona.system_prompt || "").slice(0, 160))}</p>
+        ${persona.is_active ? "" : `<div class="persona-actions"><button class="primary-button" data-persona-id="${esc(persona.id)}">启用</button></div>`}
+      </div>`).join("");
+    $("personaList").querySelectorAll("[data-persona-id]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await api("PUT", "/persona/activate", { id: button.dataset.personaId });
+          showToast("人设已切换");
+          openPersonaModal();
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      });
+    });
+  } catch (error) {
+    $("personaList").innerHTML = `<div class="section-empty">${esc(error.message)}</div>`;
+  }
+}
+
+async function openTokenModal() {
+  $("tokenModal").hidden = false;
+  $("tokenList").innerHTML = '<div class="section-empty">读取中...</div>';
+  try {
+    await loadTokens();
+    $("tokenList").innerHTML = `<table><thead><tr><th>设备名称</th><th>设备密钥</th><th>月上限</th><th>已使用</th><th>状态</th><th>最后使用</th></tr></thead><tbody>` +
+      state.tokens.map((token) => {
+        const lastUsed = token.last_used_at ? new Date(token.last_used_at * 1000).toLocaleString("zh-CN") : "从未";
+        return `<tr><td>${esc(token.name || "未命名")}</td><td>${esc(token.token)}</td><td>¥${Number(token.monthly_limit || 0)}</td><td>¥${Number(token.spent || 0).toFixed(2)}</td><td>${token.is_active ? "启用" : "停用"}</td><td>${esc(lastUsed)}</td></tr>`;
+      }).join("") + `</tbody></table>`;
+  } catch (error) {
+    $("tokenList").innerHTML = `<div class="section-empty">${esc(error.message)}</div>`;
+  }
+}
+
+function formatShortTime(epochSeconds) {
+  const date = new Date(epochSeconds * 1000);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatFullTime(epochSeconds) {
+  if (!epochSeconds) return "";
+  return new Date(epochSeconds * 1000).toLocaleString("zh-CN", {
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function refreshVisibleData() {
+  if ($("appView").hidden || document.hidden) return;
+  loadCustomers();
+  if (state.selected) refreshMessages();
+}
+
+let searchTimer = null;
+$("loginButton").addEventListener("click", login);
+$("passwordInput").addEventListener("keydown", (event) => { if (event.key === "Enter") login(); });
+$("logoutButton").addEventListener("click", logout);
+$("refreshButton").addEventListener("click", () => { loadCustomers(); if (state.selected) refreshMessages(); });
+$("deviceSelect").addEventListener("change", () => { state.selected = null; loadCustomers(false); });
+$("platformSelect").addEventListener("change", () => { state.selected = null; loadCustomers(false); });
+$("searchInput").addEventListener("input", () => {
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => loadCustomers(false), 260);
+});
+$("manualSendButton").addEventListener("click", enqueueManualMessage);
+$("manualInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    enqueueManualMessage();
+  }
+});
+$("priorityButton").addEventListener("click", togglePriority);
+$("bindButton").addEventListener("click", openBindModal);
+$("saveBindButton").addEventListener("click", saveBindings);
+$("bindSearchInput").addEventListener("input", renderBindContacts);
+$("personaButton").addEventListener("click", openPersonaModal);
+$("tokenButton").addEventListener("click", openTokenModal);
+document.querySelectorAll("[data-close]").forEach((button) => {
+  button.addEventListener("click", () => { $(button.dataset.close).hidden = true; });
+});
+document.querySelectorAll(".modal-layer").forEach((layer) => {
+  layer.addEventListener("click", (event) => { if (event.target === layer) layer.hidden = true; });
+});

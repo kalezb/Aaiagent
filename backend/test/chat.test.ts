@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { onRequest } from "../functions/api/[[route]]";
 
 class MockD1 {
@@ -12,6 +13,12 @@ class MockD1 {
     this.contactsRows = contactsRows;
     this.batchCalls = [];
     this.locationRows = new Map();
+    this.options = {};
+  }
+
+  withOptions(options) {
+    this.options = options || {};
+    return this;
   }
 
   prepare(sql: string) {
@@ -35,15 +42,46 @@ class MockD1 {
           if (sql.includes("FROM user_locations")) {
             return this.locationRows.get(params[0]) ?? null;
           }
+          if (sql.includes("FROM customer_groups g JOIN contact_links")) {
+            return this.options.priorityTask ?? null;
+          }
+          if (sql.includes("FROM manual_replies")) {
+            const task = this.options.manualTask ?? null;
+            if (!task) return null;
+            return sql.includes("WHERE id = ?") && params[0] !== task.id ? null : task;
+          }
+          if (sql.includes("FROM customer_summaries")) {
+            return this.options.customerSummary ?? null;
+          }
+          if (sql.includes("FROM session_summary")) {
+            return this.options.sessionSummary ?? null;
+          }
+          if (sql.includes("FROM customer_groups")) {
+            return (this.options.groups ?? []).find((group) => group.id === params[0]) ?? null;
+          }
+          if (sql.includes("FROM contact_links")) {
+            const links = this.options.contactLinks ?? [];
+            if (params.length === 3) {
+              return links.find((link) =>
+                link.token === params[0] && link.platform === params[1] && link.contact_id === params[2]
+              ) ?? null;
+            }
+            return links[0] ?? null;
+          }
           return null;
         },
-        all: async () => ({
-          results: sql.includes("FROM contacts")
-            ? this.contactsRows
-            : sql.includes("FROM chat_history")
-              ? this.historyRows
-              : [],
-        }),
+        all: async () => {
+          if (sql.includes("FROM customer_groups g JOIN contact_links")) {
+            return { results: this.options.priorityTask ? [this.options.priorityTask] : [] };
+          }
+          if (sql.includes("FROM customer_groups")) return { results: this.options.groups ?? [] };
+          if (sql.includes("FROM contact_links")) return { results: this.options.contactLinks ?? [] };
+          if (sql.includes("FROM customer_summaries")) return { results: this.options.customerSummaries ?? [] };
+          if (sql.includes("FROM session_summary")) return { results: this.options.sessionSummaries ?? [] };
+          if (sql.includes("FROM contacts")) return { results: this.contactsRows };
+          if (sql.includes("FROM chat_history")) return { results: this.historyRows };
+          return { results: [] };
+        },
         run: async () => {
           if (sql.includes("INSERT INTO user_locations")) {
             const [token, homeCity, homeDistrict, workCity, workDistrict, updatedAt] = params;
@@ -579,5 +617,128 @@ describe("vision API", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://vision.example.com/v1/chat/completions");
     expect(JSON.parse(String(init.body)).model).toBe("custom-flash");
+  });
+});
+
+describe("customer dashboard and cross-platform memory", () => {
+  it("returns unified customers and marks every bound platform", async () => {
+    const contacts = [
+      { token: "test-token", platform: "soul", contact_id: "soul-a", contact_name: "梦想", is_whitelisted: 1, notes: "", created_at: 1 },
+      { token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极", is_whitelisted: 1, notes: "", created_at: 2 },
+    ];
+    const history = [
+      { id: 1, token: "test-token", platform: "soul", contact_id: "soul-a", contact_name: "梦想", role: "user", content: "高跟鞋那张很有气质", created_at: 10 },
+      { id: 2, token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极", role: "assistant", content: "谢谢 你眼光不错", created_at: 11 },
+    ];
+    const db = new MockD1(history, [], contacts).withOptions({
+      groups: [{ id: "group:1", token: "test-token", display_name: "王先生", notes: "", priority_reply: 1, created_at: 1 }],
+      contactLinks: [
+        { group_id: "group:1", token: "test-token", platform: "soul", contact_id: "soul-a", contact_name: "梦想" },
+        { group_id: "group:1", token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极" },
+      ],
+    });
+    const env = { DB: db, KV: new MockKV(), DASHBOARD_PASSWORD: "secret" };
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/customer-groups?q=%E9%AB%98%E8%B7%9F%E9%9E%8B&token=test-token", {
+        headers: { "X-Dashboard-Password": "secret" },
+      }),
+      env,
+    } as never);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0]).toMatchObject({
+      id: "group:1",
+      display_name: "王先生",
+      priority_reply: true,
+      platforms: ["soul", "qq"],
+    });
+  });
+
+  it("uses bound platform history in the reply prompt", async () => {
+    const history = [
+      { id: 10, token: "test-token", platform: "soul", contact_id: "soul-a", contact_name: "梦想", role: "user", content: "我周末有空", created_at: 100 },
+      { id: 11, token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极", role: "assistant", content: "那就周六见", created_at: 101 },
+    ];
+    const db = new MockD1(history).withOptions({
+      contactLinks: [
+        { group_id: "group:shared", token: "test-token", platform: "soul", contact_id: "soul-a", contact_name: "梦想" },
+        { group_id: "group:shared", token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极" },
+      ],
+    });
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "周末见" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "soul-a",
+          contact_name: "梦想",
+          messages: [{ role: "user", content: "周六有空吗" }],
+        }),
+      }),
+      env: { DB: db, KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const promptMessages = JSON.parse(String(init.body)).messages;
+    expect(promptMessages[0].content).toContain("记忆必须连续");
+    expect(promptMessages.some((message) => String(message.content).includes("[qq"))).toBe(true);
+    expect(promptMessages.some((message) => String(message.content).includes("那就周六见"))).toBe(true);
+  });
+
+  it("pulls and completes dashboard manual replies", async () => {
+    const task = {
+      id: "manual-1",
+      platform: "soul",
+      contact_id: "soul-a",
+      contact_name: "梦想",
+      group_id: "group:1",
+      content: "我晚点联系你",
+      status: "pending",
+      created_at: 100,
+    };
+    const db = new MockD1().withOptions({ manualTask: task });
+    const env = { DB: db, KV: new MockKV() };
+    const nextResponse = await onRequest({
+      request: new Request("https://example.com/api/reply-tasks/next?platform=soul", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
+      env,
+    } as never);
+    await expect(nextResponse.json()).resolves.toMatchObject({
+      task: { id: "manual-1", type: "manual", content: "我晚点联系你" },
+    });
+
+    const resultResponse = await onRequest({
+      request: new Request("https://example.com/api/reply-tasks/result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({ task_id: "manual-1", status: "sent" }),
+      }),
+      env,
+    } as never);
+    expect(resultResponse.status).toBe(200);
+    await expect(resultResponse.json()).resolves.toMatchObject({ success: true, status: "sent" });
+  });
+
+  it("does not bind filtered dashboard rows by list index", () => {
+    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    expect(source).not.toContain("data-bind-index");
+    expect(source).toContain("data-contact-id");
+    expect(source).toContain("replace_aliases: true");
   });
 });

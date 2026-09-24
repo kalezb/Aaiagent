@@ -66,6 +66,12 @@ interface PlatformAdapter {
         shouldClick: Boolean = true
     ): ConversationInfo?
 
+    suspend fun clickConversationByName(
+        root: AccessibilityNodeInfo,
+        contactName: String,
+        shouldClick: Boolean = true
+    ): ConversationInfo? = null
+
     suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo)
     suspend fun bringToForeground(service: AccessibilityService)
 

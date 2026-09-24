@@ -9,6 +9,7 @@ import com.aaiagent.adapter.SoulAdapter
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.network.ApiService
 import com.aaiagent.network.ChatRequest
+import com.aaiagent.network.ReplyTask
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -152,6 +153,8 @@ class MessageEngine(
         }
         val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
 
+        if (processBackendReplyTask(svc, adapter, leaseToken)) return
+
         val activeRoot = svc.rootInActiveWindow
         if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
             val title = adapter.readChatTitle(activeRoot)
@@ -182,6 +185,99 @@ class MessageEngine(
         }
 
         processVerifiedChat(adapter, verifiedChat, info.contactId, info.contactName, leaseToken)
+    }
+
+    private suspend fun processBackendReplyTask(
+        svc: AccessibilityService,
+        adapter: PlatformAdapter,
+        leaseToken: String
+    ): Boolean {
+        val token = withContext(Dispatchers.IO) {
+            repository.getActiveToken()?.token?.trim()
+        }.orEmpty()
+        if (token.isEmpty()) return false
+        val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
+        val task = try {
+            ApiService(apiBaseUrl).getNextReplyTask(token, currentPlatform)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            android.util.Log.w("AIA", "reply task fetch failed: ${error.message}", error)
+            return false
+        } ?: return false
+
+        return when (ReplyTaskPolicy.decide(task.type, task.platform, currentPlatform)) {
+            ReplyTaskAction.SEND_EXACT -> processManualReplyTask(svc, adapter, task, leaseToken, apiBaseUrl, token)
+            ReplyTaskAction.PROCESS_AI -> processPriorityContactTask(svc, adapter, task, leaseToken)
+            ReplyTaskAction.IGNORE -> false
+        }
+    }
+
+    private suspend fun processManualReplyTask(
+        svc: AccessibilityService,
+        adapter: PlatformAdapter,
+        task: ReplyTask,
+        leaseToken: String,
+        apiBaseUrl: String,
+        deviceToken: String
+    ): Boolean {
+        val content = task.content?.trim().orEmpty()
+        if (content.isEmpty()) {
+            reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "empty_content")
+            return true
+        }
+        val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: run {
+            reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "message_list_unavailable")
+            return true
+        }
+        val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: run {
+            reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "contact_not_found")
+            return true
+        }
+        RuntimeJournal.clickConversation(conversation.contactName, true)
+        val chatRoot = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: run {
+            reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "chat_verification_failed")
+            return true
+        }
+        if (!canContinue(leaseToken, null)) return true
+
+        state = EngineState.Sending
+        val result = adapter.fillAndSend(svc, chatRoot, content, conversation.contactName)
+        val status = if (result == PlatformAdapter.SendResult.SUCCESS) "sent" else "failed"
+        val error = if (status == "sent") "" else "send_result_$result"
+        reportReplyTask(apiBaseUrl, deviceToken, task.taskId, status, error)
+        RuntimeJournal.messageSent(status == "sent", "后台人工消息 ${conversation.contactName}")
+        if (status == "sent") {
+            returnToMessageList(adapter, leaseToken, "manual reply sent")
+        }
+        return true
+    }
+
+    private suspend fun processPriorityContactTask(
+        svc: AccessibilityService,
+        adapter: PlatformAdapter,
+        task: ReplyTask,
+        leaseToken: String
+    ): Boolean {
+        val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: return true
+        val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: return false
+        RuntimeJournal.clickConversation(conversation.contactName, true)
+        val chatRoot = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: return true
+        processVerifiedChat(adapter, chatRoot, conversation.contactId, conversation.contactName, leaseToken)
+        return true
+    }
+
+    private suspend fun reportReplyTask(
+        apiBaseUrl: String,
+        token: String,
+        taskId: String?,
+        status: String,
+        error: String
+    ) {
+        if (taskId.isNullOrBlank()) return
+        withContext(Dispatchers.IO) {
+            runCatching { ApiService(apiBaseUrl).reportReplyTask(token, taskId, status, error) }
+        }
     }
 
     private suspend fun processVerifiedChat(

@@ -57,6 +57,18 @@ data class VisionResponse(
     val error: String?
 )
 
+data class ReplyTask(
+    val type: String,
+    @SerializedName("task_id") val taskId: String?,
+    @SerializedName("group_id") val groupId: String?,
+    val platform: String,
+    @SerializedName("contact_id") val contactId: String,
+    @SerializedName("contact_name") val contactName: String,
+    val content: String?
+)
+
+data class ReplyTaskResponse(val task: ReplyTask?)
+
 class ApiHttpException(
     val statusCode: Int,
     val responseBody: String
@@ -207,6 +219,46 @@ class ApiService(private val baseUrl: String) {
             )
         } catch (e: Exception) {
             ConfigSaveResult(success = false, message = "", error = e.message)
+        }
+    }
+
+    suspend fun getNextReplyTask(
+        token: String,
+        platform: String
+    ): ReplyTask? = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url(baseUrl.trimEnd('/') + "/api/reply-tasks/next?platform=" + platform)
+            .header("Authorization", "Bearer " + token)
+            .get()
+            .build()
+        client.newCall(req).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw ApiHttpException(response.code, responseBody)
+            gson.fromJson(responseBody, ReplyTaskResponse::class.java)?.task
+        }
+    }
+
+    suspend fun reportReplyTask(
+        token: String,
+        taskId: String,
+        status: String,
+        error: String = ""
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = mapOf(
+                "task_id" to taskId,
+                "status" to status,
+                "error" to error
+            )
+            val body = gson.toJson(payload).toRequestBody(jsonMediaType)
+            val req = Request.Builder()
+                .url(baseUrl.trimEnd('/') + "/api/reply-tasks/result")
+                .header("Authorization", "Bearer " + token)
+                .post(body)
+                .build()
+            client.newCall(req).execute().use { response -> response.isSuccessful }
+        } catch (e: Exception) {
+            false
         }
     }
 

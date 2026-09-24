@@ -7,6 +7,7 @@ const SENSITIVE_WORDS = [
 const PLATFORM_STYLE_HINTS = {
   soul: "偏文艺、走心", qq: "偏年轻、活泼", immomo: "直接、不绕弯", lianxin: "自然、日常",
 };
+const SUPPORTED_PLATFORMS = ["soul", "qq", "immomo", "lianxin"];
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {
@@ -162,6 +163,239 @@ async function loadDeviceLocation(db, token) {
   return formatLocation(row);
 }
 
+function makeContactKey(token, platform, contactId) {
+  return `${token}\u0000${platform}\u0000${contactId}`;
+}
+
+function makeSingleGroupId(token, platform, contactId) {
+  return `single:${encodeURIComponent(token)}:${encodeURIComponent(platform)}:${encodeURIComponent(contactId)}`;
+}
+
+function parseSingleGroupId(groupId) {
+  if (!String(groupId || "").startsWith("single:")) return null;
+  const parts = String(groupId).slice(7).split(":");
+  if (parts.length !== 3) return null;
+  try {
+    return {
+      token: decodeURIComponent(parts[0]),
+      platform: decodeURIComponent(parts[1]),
+      contactId: decodeURIComponent(parts[2]),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function loadGroupIdentity(db, groupId, token) {
+  const single = parseSingleGroupId(groupId);
+  if (single) {
+    if (token && token !== single.token) return null;
+    const contact = await db.prepare(
+      "SELECT contact_name FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?"
+    ).bind(single.token, single.platform, single.contactId).first();
+    return {
+      id: groupId,
+      token: single.token,
+      display_name: contact?.contact_name || single.contactId,
+      notes: "",
+      priority_reply: 0,
+      aliases: [{
+        platform: single.platform,
+        contact_id: single.contactId,
+        contact_name: contact?.contact_name || single.contactId,
+      }],
+    };
+  }
+
+  const group = await db.prepare(
+    "SELECT id, token, display_name, notes, priority_reply FROM customer_groups WHERE id = ?"
+  ).bind(groupId).first();
+  if (!group || (token && group.token !== token)) return null;
+  const { results } = await db.prepare(
+    "SELECT platform, contact_id, contact_name FROM contact_links WHERE token = ? AND group_id = ? ORDER BY created_at"
+  ).bind(group.token, groupId).all();
+  return { ...group, aliases: results || [] };
+}
+
+async function listCustomerGroups(db, token, platformFilter, searchQuery) {
+  const contactQuery = token
+    ? "SELECT token, platform, contact_id, contact_name, is_whitelisted, notes, created_at FROM contacts WHERE token = ? ORDER BY created_at DESC"
+    : "SELECT token, platform, contact_id, contact_name, is_whitelisted, notes, created_at FROM contacts ORDER BY created_at DESC";
+  const contactStmt = db.prepare(contactQuery);
+  const contacts = (await (token ? contactStmt.bind(token) : contactStmt).all()).results || [];
+
+  const groupQuery = token
+    ? "SELECT id, token, display_name, notes, priority_reply, created_at FROM customer_groups WHERE token = ?"
+    : "SELECT id, token, display_name, notes, priority_reply, created_at FROM customer_groups";
+  const groupStmt = db.prepare(groupQuery);
+  const groups = (await (token ? groupStmt.bind(token) : groupStmt).all()).results || [];
+
+  const linkQuery = token
+    ? "SELECT group_id, token, platform, contact_id, contact_name FROM contact_links WHERE token = ?"
+    : "SELECT group_id, token, platform, contact_id, contact_name FROM contact_links";
+  const linkStmt = db.prepare(linkQuery);
+  const links = (await (token ? linkStmt.bind(token) : linkStmt).all()).results || [];
+
+  const historyQuery = token
+    ? "SELECT id, token, platform, contact_id, contact_name, role, content, created_at FROM chat_history WHERE token = ? ORDER BY created_at DESC LIMIT 10000"
+    : "SELECT id, token, platform, contact_id, contact_name, role, content, created_at FROM chat_history ORDER BY created_at DESC LIMIT 10000";
+  const historyStmt = db.prepare(historyQuery);
+  const histories = (await (token ? historyStmt.bind(token) : historyStmt).all()).results || [];
+
+  const groupRecords = new Map();
+  const groupMeta = new Map(groups.map((group) => [group.id, group]));
+  const linkMap = new Map(links.map((link) => [
+    makeContactKey(link.token, link.platform, link.contact_id),
+    link,
+  ]));
+  const aliasToGroup = new Map();
+
+  function ensureGroup(record) {
+    let group = groupRecords.get(record.id);
+    if (!group) {
+      group = {
+        id: record.id,
+        token: record.token,
+        display_name: record.display_name || record.contact_name || "未命名客户",
+        notes: record.notes || "",
+        priority_reply: Boolean(record.priority_reply),
+        aliases: [],
+        platforms: [],
+        message_count: 0,
+        last_message: null,
+        last_at: 0,
+      };
+      groupRecords.set(record.id, group);
+    }
+    return group;
+  }
+
+  function addAlias(tokenValue, platform, contactId, contactName) {
+    const key = makeContactKey(tokenValue, platform, contactId);
+    const link = linkMap.get(key);
+    const groupId = link?.group_id || makeSingleGroupId(tokenValue, platform, contactId);
+    const meta = groupMeta.get(groupId);
+    const group = ensureGroup({
+      id: groupId,
+      token: tokenValue,
+      display_name: meta?.display_name || contactName || link?.contact_name,
+      notes: meta?.notes,
+      priority_reply: meta?.priority_reply,
+    });
+    if (!group.aliases.some((alias) => alias.platform === platform && alias.contact_id === contactId)) {
+      group.aliases.push({ platform, contact_id: contactId, contact_name: contactName || contactId });
+    }
+    if (!group.platforms.includes(platform)) group.platforms.push(platform);
+    aliasToGroup.set(key, groupId);
+  }
+
+  for (const contact of contacts) {
+    if (platformFilter && contact.platform !== platformFilter) continue;
+    addAlias(contact.token, contact.platform, contact.contact_id, contact.contact_name);
+  }
+  for (const link of links) {
+    if (platformFilter && link.platform !== platformFilter) continue;
+    addAlias(link.token, link.platform, link.contact_id, link.contact_name);
+  }
+
+  for (const message of histories) {
+    if (platformFilter && message.platform !== platformFilter) continue;
+    const key = makeContactKey(message.token, message.platform, message.contact_id);
+    if (!aliasToGroup.has(key)) addAlias(message.token, message.platform, message.contact_id, message.contact_name);
+    const group = groupRecords.get(aliasToGroup.get(key));
+    if (!group) continue;
+    group.message_count += 1;
+    if (message.created_at >= group.last_at) {
+      group.last_at = message.created_at;
+      group.last_message = {
+        role: message.role,
+        content: message.content,
+        platform: message.platform,
+        contact_name: message.contact_name,
+        created_at: message.created_at,
+      };
+    }
+  }
+
+  const query = String(searchQuery || "").trim().toLowerCase();
+  const rows = [...groupRecords.values()].filter((group) => {
+    if (!query) return true;
+    const aliasHit = group.aliases.some((alias) => String(alias.contact_name || "").toLowerCase().includes(query));
+    const contentHit = histories.some((message) =>
+      aliasToGroup.get(makeContactKey(message.token, message.platform, message.contact_id)) === group.id &&
+      String(message.content || "").toLowerCase().includes(query)
+    );
+    return String(group.display_name || "").toLowerCase().includes(query) || aliasHit || contentHit;
+  });
+  rows.sort((a, b) => (b.last_at || 0) - (a.last_at || 0));
+  return rows;
+}
+
+async function loadCustomerMessages(db, identity, limit = 500) {
+  if (!identity || !identity.aliases.length) return [];
+  const clauses = identity.aliases.map(() => "(platform = ? AND contact_id = ?)");
+  const params = [identity.token, ...identity.aliases.flatMap((alias) => [alias.platform, alias.contact_id])];
+  params.push(Math.min(Math.max(Number(limit) || 500, 1), 1000));
+  const query = "SELECT id, platform, contact_id, contact_name, role, content, created_at FROM (SELECT id, platform, contact_id, contact_name, role, content, created_at FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") ORDER BY created_at DESC LIMIT ?) ORDER BY created_at ASC";
+  const { results } = await db.prepare(query).bind(...params).all();
+  return results || [];
+}
+
+function formatMemoryLines(messages, maxChars = 1800) {
+  const lines = [];
+  let used = 0;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    const speaker = message.role === "user" ? "对方" : "你";
+    const line = `[${message.platform || "未知"} ${formatChinaMessageTime(message.created_at)}] ${speaker}：${String(message.content || "").slice(0, 160)}`;
+    if (used + line.length > maxChars) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  return lines.reverse().join("\n");
+}
+
+function mergeMemorySummary(existingSummary, messages, maxChars = 2400) {
+  const addition = formatMemoryLines(messages);
+  const merged = [String(existingSummary || "").trim(), addition].filter(Boolean).join("\n");
+  return merged.length <= maxChars ? merged : merged.slice(merged.length - maxChars);
+}
+
+async function loadMemorySummary(db, token, groupId, aliases) {
+  if (groupId) {
+    const shared = await db.prepare(
+      "SELECT summary, summarized_up_to_id FROM customer_summaries WHERE token = ? AND group_id = ?"
+    ).bind(token, groupId).first();
+    if (shared) return { summary: shared.summary || "", summarizedUpToId: Number(shared.summarized_up_to_id || 0), shared: true };
+  }
+  if (!aliases.length) return { summary: "", summarizedUpToId: 0, shared: false };
+  const clauses = aliases.map(() => "(platform = ? AND contact_id = ?)");
+  const { results } = await db.prepare(
+    "SELECT summary, summarized_up_to_id FROM session_summary WHERE token = ? AND (" + clauses.join(" OR ") + ")"
+  ).bind(token, ...aliases.flatMap((alias) => [alias.platform, alias.contact_id])).all();
+  const rows = results || [];
+  return {
+    summary: rows.map((row) => row.summary).filter(Boolean).join("\n"),
+    summarizedUpToId: Math.max(0, ...rows.map((row) => Number(row.summarized_up_to_id || 0))),
+    shared: false,
+  };
+}
+
+async function persistMemorySummary(db, token, groupId, aliases, summary, summarizedUpToId) {
+  const now = Math.floor(Date.now() / 1000);
+  if (groupId) {
+    await db.prepare(
+      "INSERT INTO customer_summaries (token, group_id, summary, summarized_up_to_id, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(token, group_id) DO UPDATE SET summary = excluded.summary, summarized_up_to_id = excluded.summarized_up_to_id, updated_at = excluded.updated_at"
+    ).bind(token, groupId, summary, summarizedUpToId, now).run();
+    return;
+  }
+  for (const alias of aliases) {
+    await db.prepare(
+      "INSERT INTO session_summary (token, platform, contact_id, summary, summarized_up_to_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT(token, platform, contact_id) DO UPDATE SET summary = excluded.summary, summarized_up_to_id = excluded.summarized_up_to_id"
+    ).bind(token, alias.platform, alias.contact_id, summary, summarizedUpToId).run();
+  }
+}
+
 export const onRequest = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -252,6 +486,218 @@ export const onRequest = async (context) => {
       query += " ORDER BY created_at DESC";
       const { results } = await env.DB.prepare(query).bind(...params).all();
       return json({ contacts: results || [] });
+    }
+
+    // GET /api/customer-groups - unified customers across bound platforms
+    if (path === "/api/customer-groups" && method === "GET") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const token = url.searchParams.get("token") || "";
+      const platform = url.searchParams.get("platform") || "";
+      const query = url.searchParams.get("q") || "";
+      const groups = await listCustomerGroups(env.DB, token, platform, query);
+      return json({ groups });
+    }
+
+    // POST /api/customer-groups/bind - bind multiple platform accounts to one person
+    if (path === "/api/customer-groups/bind" && method === "POST") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const body = await request.json();
+      const token = String(body.token || "").trim();
+      const displayName = String(body.display_name || "").trim();
+      const contacts = Array.isArray(body.contacts) ? body.contacts : [];
+      const normalized = contacts
+        .map((contact) => ({
+          platform: String(contact.platform || "").trim(),
+          contactId: String(contact.contact_id || "").trim(),
+          contactName: String(contact.contact_name || "").trim(),
+        }))
+        .filter((contact) => SUPPORTED_PLATFORMS.includes(contact.platform) && contact.contactId);
+      if (!token || !displayName || normalized.length < 1) return json({ error: "缺少必要参数" }, 400);
+
+      let groupId = String(body.group_id || "").trim();
+      if (!groupId) {
+        for (const contact of normalized) {
+          const existing = await env.DB.prepare(
+            "SELECT group_id FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
+          ).bind(token, contact.platform, contact.contactId).first();
+          if (existing?.group_id) {
+            groupId = existing.group_id;
+            break;
+          }
+        }
+      }
+      if (!groupId || parseSingleGroupId(groupId)) groupId = "group:" + crypto.randomUUID();
+
+      const existingGroup = await env.DB.prepare(
+        "SELECT id, token FROM customer_groups WHERE id = ?"
+      ).bind(groupId).first();
+      if (existingGroup && existingGroup.token !== token) return json({ error: "身份组不属于该设备" }, 400);
+
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        "INSERT INTO customer_groups (id, token, display_name, notes, priority_reply, priority_last_used_at, created_at, updated_at) VALUES (?, ?, ?, '', 0, 0, ?, ?) ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, updated_at = excluded.updated_at"
+      ).bind(groupId, token, displayName, now, now).run();
+
+      const statements = [];
+      for (const contact of normalized) {
+        statements.push(env.DB.prepare(
+          "INSERT INTO contacts (token, platform, contact_id, contact_name, is_whitelisted, notes, created_at) VALUES (?, ?, ?, ?, 1, '', ?) ON CONFLICT(token, platform, contact_id) DO UPDATE SET contact_name = excluded.contact_name"
+        ).bind(token, contact.platform, contact.contactId, contact.contactName || contact.contactId, now));
+        statements.push(env.DB.prepare(
+          "INSERT INTO contact_links (group_id, token, platform, contact_id, contact_name, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(token, platform, contact_id) DO UPDATE SET group_id = excluded.group_id, contact_name = excluded.contact_name"
+        ).bind(groupId, token, contact.platform, contact.contactId, contact.contactName || contact.contactId, now));
+      }
+      await env.DB.batch(statements);
+      if (body.replace_aliases === true) {
+        const keepClauses = normalized.map(() => "(platform = ? AND contact_id = ?)");
+        const keepParams = normalized.flatMap((contact) => [contact.platform, contact.contactId]);
+        await env.DB.prepare(
+          "DELETE FROM contact_links WHERE token = ? AND group_id = ? AND NOT (" + keepClauses.join(" OR ") + ")"
+        ).bind(token, groupId, ...keepParams).run();
+      }
+      const identity = await loadGroupIdentity(env.DB, groupId, token);
+      return json({ success: true, group: identity });
+    }
+
+    // DELETE /api/customer-groups/unbind - detach one platform account
+    if (path === "/api/customer-groups/unbind" && method === "DELETE") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const body = await request.json();
+      const token = String(body.token || "").trim();
+      const platform = String(body.platform || "").trim();
+      const contactId = String(body.contact_id || "").trim();
+      if (!token || !platform || !contactId) return json({ error: "缺少必要参数" }, 400);
+      await env.DB.prepare(
+        "DELETE FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
+      ).bind(token, platform, contactId).run();
+      return json({ success: true });
+    }
+
+    // PUT /api/customer-groups/priority - place this customer before normal unread scans
+    if (path === "/api/customer-groups/priority" && method === "PUT") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const body = await request.json();
+      const token = String(body.token || "").trim();
+      const groupId = String(body.group_id || "").trim();
+      const enabled = body.enabled ? 1 : 0;
+      if (!token || !groupId) return json({ error: "缺少必要参数" }, 400);
+
+      let identity = await loadGroupIdentity(env.DB, groupId, token);
+      if (!identity) return json({ error: "客户不存在" }, 404);
+      if (parseSingleGroupId(groupId)) {
+        const alias = identity.aliases[0];
+        const persistentId = "group:" + crypto.randomUUID();
+        const now = Math.floor(Date.now() / 1000);
+        await env.DB.batch([
+          env.DB.prepare(
+            "INSERT INTO customer_groups (id, token, display_name, notes, priority_reply, priority_last_used_at, created_at, updated_at) VALUES (?, ?, ?, '', ?, 0, ?, ?)"
+          ).bind(persistentId, token, identity.display_name || alias.contact_name || alias.contact_id, enabled, now, now),
+          env.DB.prepare(
+            "INSERT INTO contact_links (group_id, token, platform, contact_id, contact_name, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(token, platform, contact_id) DO UPDATE SET group_id = excluded.group_id, contact_name = excluded.contact_name"
+          ).bind(persistentId, token, alias.platform, alias.contact_id, alias.contact_name || alias.contact_id, now),
+        ]);
+        identity = await loadGroupIdentity(env.DB, persistentId, token);
+      } else {
+        await env.DB.prepare(
+          "UPDATE customer_groups SET priority_reply = ?, priority_last_used_at = 0, updated_at = ? WHERE id = ? AND token = ?"
+        ).bind(enabled, Math.floor(Date.now() / 1000), groupId, token).run();
+        identity = await loadGroupIdentity(env.DB, groupId, token);
+      }
+      return json({ success: true, group: identity });
+    }
+
+    // GET /api/customer-messages - full conversation for a unified customer
+    if (path === "/api/customer-messages" && method === "GET") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const groupId = url.searchParams.get("group_id") || "";
+      const token = url.searchParams.get("token") || "";
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "500"), 1000);
+      const identity = await loadGroupIdentity(env.DB, groupId, token);
+      if (!identity) return json({ error: "客户不存在" }, 404);
+      const messages = await loadCustomerMessages(env.DB, identity, limit);
+      return json({ identity, messages });
+    }
+
+    // POST /api/manual-replies - enqueue an exact message from the dashboard
+    if (path === "/api/manual-replies" && method === "POST") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const body = await request.json();
+      const token = String(body.token || "").trim();
+      const groupId = String(body.group_id || "").trim();
+      const platform = String(body.platform || "").trim();
+      const contactId = String(body.contact_id || "").trim();
+      const content = String(body.content || "").trim();
+      if (!token || !platform || !contactId || !content) return json({ error: "缺少必要参数" }, 400);
+
+      let contactName = String(body.contact_name || contactId).trim();
+      if (groupId) {
+        const identity = await loadGroupIdentity(env.DB, groupId, token);
+        const alias = identity?.aliases.find((item) => item.platform === platform && item.contact_id === contactId);
+        if (!alias) return json({ error: "目标账号不属于该客户" }, 400);
+        contactName = alias.contact_name || contactName;
+      }
+
+      const taskId = crypto.randomUUID();
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        "INSERT INTO manual_replies (id, token, platform, contact_id, contact_name, group_id, content, status, priority, created_at, claimed_at, sent_at, error) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, ?, NULL, NULL, '')"
+      ).bind(taskId, token, platform, contactId, contactName, groupId, content, now).run();
+      return json({ success: true, task_id: taskId, status: "pending" }, 201);
+    }
+
+    // GET /api/reply-tasks/next - Android pulls manual messages first, then priority customers
+    if (path === "/api/reply-tasks/next" && method === "GET") {
+      const authHeader = request.headers.get("Authorization") || "";
+      const tokenRow = await validateToken(env.DB, authHeader);
+      if (!tokenRow) return json({ error: "无效的设备密钥" }, 401);
+      const platform = url.searchParams.get("platform") || "";
+      if (!SUPPORTED_PLATFORMS.includes(platform)) return json({ error: "不支持的平台" }, 400);
+      const now = Math.floor(Date.now() / 1000);
+      const staleBefore = now - 120;
+      const manual = await env.DB.prepare(
+        "SELECT id, platform, contact_id, contact_name, group_id, content, status, created_at FROM manual_replies WHERE token = ? AND platform = ? AND (status = 'pending' OR (status = 'claimed' AND claimed_at < ?)) ORDER BY priority DESC, created_at ASC LIMIT 1"
+      ).bind(tokenRow.token, platform, staleBefore).first();
+      if (manual) {
+        await env.DB.prepare(
+          "UPDATE manual_replies SET status = 'claimed', claimed_at = ?, error = '' WHERE id = ? AND token = ?"
+        ).bind(now, manual.id, tokenRow.token).run();
+        return json({ task: { ...manual, type: "manual" } });
+      }
+
+      const priority = await env.DB.prepare(
+        "SELECT g.id AS group_id, g.display_name, l.platform, l.contact_id, l.contact_name FROM customer_groups g JOIN contact_links l ON l.token = g.token AND l.group_id = g.id WHERE g.token = ? AND g.priority_reply = 1 AND l.platform = ? AND (g.priority_last_used_at = 0 OR g.priority_last_used_at < ?) ORDER BY g.priority_last_used_at ASC, g.updated_at ASC LIMIT 1"
+      ).bind(tokenRow.token, platform, now - 15).first();
+      if (!priority) return json({ task: null });
+      await env.DB.prepare(
+        "UPDATE customer_groups SET priority_last_used_at = ? WHERE id = ? AND token = ?"
+      ).bind(now, priority.group_id, tokenRow.token).run();
+      return json({ task: { type: "priority_contact", task_id: "", group_id: priority.group_id, platform: priority.platform, contact_id: priority.contact_id, contact_name: priority.contact_name || priority.display_name, content: "" } });
+    }
+
+    // POST /api/reply-tasks/result - Android reports whether a manual message was sent
+    if (path === "/api/reply-tasks/result" && method === "POST") {
+      const authHeader = request.headers.get("Authorization") || "";
+      const tokenRow = await validateToken(env.DB, authHeader);
+      if (!tokenRow) return json({ error: "无效的设备密钥" }, 401);
+      const body = await request.json();
+      const taskId = String(body.task_id || "").trim();
+      const status = body.status === "sent" ? "sent" : "failed";
+      const error = String(body.error || "").slice(0, 300);
+      if (!taskId) return json({ error: "缺少 task_id" }, 400);
+      const task = await env.DB.prepare(
+        "SELECT id, platform, contact_id, contact_name, group_id, content FROM manual_replies WHERE id = ? AND token = ?"
+      ).bind(taskId, tokenRow.token).first();
+      if (!task) return json({ error: "任务不存在" }, 404);
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        "UPDATE manual_replies SET status = ?, sent_at = CASE WHEN ? = 'sent' THEN ? ELSE sent_at END, error = ? WHERE id = ? AND token = ?"
+      ).bind(status, status, now, error, taskId, tokenRow.token).run();
+      if (status === "sent") {
+        await env.DB.prepare(
+          "INSERT INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at) VALUES (?, ?, ?, ?, 'assistant', ?, ?)"
+        ).bind(tokenRow.token, task.platform, task.contact_id, task.contact_name, task.content, now).run();
+      }
+      return json({ success: true, status });
     }
 
     // POST /api/contacts
@@ -432,13 +878,39 @@ export const onRequest = async (context) => {
 
       // history
       const MAX_MSGS = 40;
-      const summaryRow = await env.DB.prepare("SELECT summary, summarized_up_to_id FROM session_summary WHERE token = ? AND platform = ? AND contact_id = ?").bind(tokenRow.token, platform, contact_id).first();
-      const summary = summaryRow?.summary || "";
-      const { results: allMsgs } = await env.DB.prepare("SELECT id, role, content, created_at FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? ORDER BY created_at DESC LIMIT ?").bind(tokenRow.token, platform, contact_id, MAX_MSGS + 10).all();
+      const currentLink = await env.DB.prepare(
+        "SELECT group_id FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
+      ).bind(tokenRow.token, platform, contact_id).first();
+      let historyStatement;
+      let historyAliases = [{ platform, contact_id }];
+      if (currentLink?.group_id) {
+        const { results: linkedAliases } = await env.DB.prepare(
+          "SELECT platform, contact_id FROM contact_links WHERE token = ? AND group_id = ?"
+        ).bind(tokenRow.token, currentLink.group_id).all();
+        const aliases = linkedAliases?.length ? linkedAliases : [{ platform, contact_id }];
+        if (aliases.length) historyAliases = aliases;
+        const clauses = aliases.map(() => "(platform = ? AND contact_id = ?)");
+        historyStatement = env.DB.prepare(
+          "SELECT id, platform, role, content, created_at FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") ORDER BY created_at DESC LIMIT ?"
+        ).bind(tokenRow.token, ...aliases.flatMap((alias) => [alias.platform, alias.contact_id]), MAX_MSGS + 80);
+      } else {
+        historyStatement = env.DB.prepare(
+          "SELECT id, platform, role, content, created_at FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? ORDER BY created_at DESC LIMIT ?"
+        ).bind(tokenRow.token, platform, contact_id, MAX_MSGS + 80);
+      }
+      const memoryRow = await loadMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases);
+      const { results: allMsgs } = await historyStatement.all();
       const allMessages = (allMsgs || []).reverse();
       let hoursAgo = 0;
       for (let i = allMessages.length - 1; i >= 0; i--) { if (allMessages[i].role === "user") { hoursAgo = Math.floor((Date.now() / 1000 - allMessages[i].created_at) / 3600); break; } }
       const historyMessages = allMessages.length <= MAX_MSGS ? allMessages : allMessages.slice(allMessages.length - MAX_MSGS);
+      const olderMessages = allMessages.slice(0, Math.max(0, allMessages.length - MAX_MSGS))
+        .filter((message) => Number(message.id || 0) > memoryRow.summarizedUpToId);
+      const summary = mergeMemorySummary(memoryRow.summary, olderMessages);
+      const summarizedUpToId = olderMessages.reduce((max, message) => Math.max(max, Number(message.id || 0)), memoryRow.summarizedUpToId);
+      if (olderMessages.length > 0) {
+        await persistMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases, summary, summarizedUpToId);
+      }
 
       // weather
       const homeCity = location?.home?.city || "\u91cd\u5e86";
@@ -473,6 +945,8 @@ export const onRequest = async (context) => {
         "4. 内容要直接回应对方最后一条消息，像熟人随口聊天，允许轻微口语和情绪，但不要油腻、不要暧昧、不要夸张共情。\n" +
         "5. 输出里除 ||| 外，不要使用句号、逗号、问号、感叹号等标点；需要停顿时用空格。只输出回复正文，不要加引号、标题、序号或解释。";
 
+      systemPrompt += "\n\n同一客户可能绑定 Soul、QQ、陌陌、连信上的多个账号，历史中的不同平台昵称都视为同一个人，记忆必须连续。";
+
       // build llm messages
       systemPrompt += "\n\n对方夸奖外貌、穿搭、身材、照片或动态时，直接自然接住夸奖，然后正常继续聊天。";
       const llmMessages = [{ role: "system", content: systemPrompt }];
@@ -480,7 +954,8 @@ export const onRequest = async (context) => {
       for (const msg of historyMessages) {
         const timeStr = formatChinaMessageTime(msg.created_at);
         const roleLabel = msg.role === "user" ? "\u5bf9\u65b9\u8bf4" : "\u4f60\u8bf4";
-        llmMessages.push({ role: "user", content: "[" + timeStr + "] " + roleLabel + "\uff1a" + msg.content });
+        const platformLabel = PLATFORM_STYLE_HINTS[msg.platform] ? msg.platform : "未知平台";
+        llmMessages.push({ role: "user", content: "[" + platformLabel + " " + timeStr + "] " + roleLabel + "\uff1a" + msg.content });
       }
       for (const msg of messages) { llmMessages.push({ role: msg.role, content: msg.content }); }
 

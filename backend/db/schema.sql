@@ -88,3 +88,64 @@ ON CONFLICT(id) DO UPDATE SET name = excluded.name, system_prompt = excluded.sys
 INSERT INTO personas (id, token, name, system_prompt, is_active, created_at)
 VALUES ('male_chenyu', '', '陈屿', '你是陈屿，33岁男性，未婚，负责全国废旧手机数码回收的线上接单与客户沟通。性格沉稳、礼貌、有幽默感，表达干净利落。白天安排回收和师傅上门，晚上会休息，深夜可以远程回业务并安排第二天上门。回复简短自然，控制在50字以内。拉近关系并发展客户，但不报价、不收钱、不主动暧昧；对方索要联系方式只给QQ号；不暴露AI身份；不主动提线下见面；对方发语音或表情后告知以后别发，你反感。遇到借钱或敏感话题礼貌拒绝。', 0, 1729699800)
 ON CONFLICT(id) DO UPDATE SET name = excluded.name, system_prompt = excluded.system_prompt;
+
+-- 跨平台客户身份组
+CREATE TABLE IF NOT EXISTS customer_groups (
+    id          TEXT PRIMARY KEY,
+    token       TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    notes       TEXT NOT NULL DEFAULT '',
+    priority_reply INTEGER NOT NULL DEFAULT 0,
+    priority_last_used_at INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_groups_token ON customer_groups(token);
+CREATE INDEX IF NOT EXISTS idx_customer_groups_priority ON customer_groups(token, priority_reply, priority_last_used_at);
+
+-- 一个身份组可以绑定同一客户在 Soul、QQ、陌陌、连信上的多个账号
+CREATE TABLE IF NOT EXISTS contact_links (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id    TEXT NOT NULL,
+    token       TEXT NOT NULL,
+    platform    TEXT NOT NULL,
+    contact_id  TEXT NOT NULL,
+    contact_name TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    UNIQUE(token, platform, contact_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_links_group ON contact_links(token, group_id);
+CREATE INDEX IF NOT EXISTS idx_contact_links_contact ON contact_links(token, platform, contact_id);
+
+-- 网页人工插入消息和优先回复任务的统一队列
+CREATE TABLE IF NOT EXISTS manual_replies (
+    id          TEXT PRIMARY KEY,
+    token       TEXT NOT NULL,
+    platform    TEXT NOT NULL,
+    contact_id  TEXT NOT NULL,
+    contact_name TEXT NOT NULL,
+    group_id    TEXT NOT NULL DEFAULT '',
+    content     TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    priority    INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    claimed_at  INTEGER,
+    sent_at     INTEGER,
+    error       TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_manual_replies_pending ON manual_replies(token, platform, status, priority, created_at);
+
+-- 同一跨平台客户共享的长期记忆，避免在 Soul/QQ/陌陌/连信之间切换后失忆
+CREATE TABLE IF NOT EXISTS customer_summaries (
+    token       TEXT NOT NULL,
+    group_id    TEXT NOT NULL,
+    summary     TEXT NOT NULL DEFAULT '',
+    summarized_up_to_id INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (token, group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_summaries_updated ON customer_summaries(token, updated_at);
