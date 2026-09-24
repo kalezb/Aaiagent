@@ -20,6 +20,15 @@ interface PlatformAdapter {
     fun readVisualTargetBounds(root: AccessibilityNodeInfo): android.graphics.Rect? = null
 
     /**
+     * Opens a protected visual message when the platform requires an explicit reveal.
+     * Returning null means the target cannot be prepared and must not be captured.
+     */
+    suspend fun prepareVisualCapture(root: AccessibilityNodeInfo): AccessibilityNodeInfo? = root
+
+    /** Restores the chat view after a prepared visual capture. */
+    suspend fun finishVisualCapture(root: AccessibilityNodeInfo) = Unit
+
+    /**
      * Lightweight list fingerprint used to wait for list animations to settle.
      */
     fun listSnapshot(root: AccessibilityNodeInfo): ListSnapshot = ListSnapshot()

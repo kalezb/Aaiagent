@@ -453,7 +453,16 @@ class MessageEngine(
             "voice" -> "这是社交聊天语音消息附近的截图。只描述能确认的文字或界面内容，不要猜测语音内容。"
             else -> "简要描述这张聊天截图中的消息内容。"
         }
-        val imageBase64 = ScreenCapture.captureJpegBase64(svc, adapter.readVisualTargetBounds(root))
+        val preparedRoot = adapter.prepareVisualCapture(root)
+        if (preparedRoot == null) {
+            RuntimeJournal.recovery("隐私图片展开失败 type=${latestOther.type}")
+            return MediaUnderstanding(messages, fallbackFor(latestOther.type))
+        }
+        val imageBase64 = try {
+            ScreenCapture.captureJpegBase64(svc, adapter.readVisualTargetBounds(preparedRoot))
+        } finally {
+            adapter.finishVisualCapture(preparedRoot)
+        }
         if (imageBase64.isNullOrEmpty()) {
             RuntimeJournal.recovery("视觉识别跳过: 截图失败 type=${latestOther.type}")
             return MediaUnderstanding(messages, fallbackFor(latestOther.type))

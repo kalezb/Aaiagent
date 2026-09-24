@@ -22,7 +22,7 @@ class SoulMediaTypeTest {
 
     @Test
     fun `snap photo is treated as image instead of being skipped`() {
-        assertEquals("image", resolve(hasSnapPhoto = true))
+        assertEquals("image", resolve(hasSnapPhoto = true, hasText = true))
     }
 
     @Test

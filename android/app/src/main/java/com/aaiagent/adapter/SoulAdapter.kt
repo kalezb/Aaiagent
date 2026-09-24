@@ -131,6 +131,38 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     override fun readVisualTargetBounds(root: AccessibilityNodeInfo): Rect? {
+        val item = findLatestIncomingVisualItem(root) ?: return null
+        for (target in VISUAL_TARGET_IDS) {
+            val node = item.findAccessibilityNodeInfosByViewId(prefix + target)
+                .firstOrNull { it.isVisibleToUser }
+                ?: continue
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            if (rect.width() > 0 && rect.height() > 0) return rect
+        }
+        return null
+    }
+
+    override suspend fun prepareVisualCapture(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val item = findLatestIncomingVisualItem(root) ?: return root
+        val snapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root")
+            .firstOrNull { it.isVisibleToUser }
+            ?: return root
+
+        if (!tapNode(snapPhoto)) return null
+        delay(1_200)
+        return service.rootInActiveWindow
+    }
+
+    override suspend fun finishVisualCapture(root: AccessibilityNodeInfo) {
+        val activeRoot = service.rootInActiveWindow ?: return
+        if (isPrivacyPreview(activeRoot)) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            delay(600)
+        }
+    }
+
+    private fun findLatestIncomingVisualItem(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
         for (item in items.asReversed()) {
             if (!item.isVisibleToUser) continue
@@ -143,27 +175,19 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
             if (readMessageSender(item, service.resources.displayMetrics.widthPixels) == "self") continue
 
-            val targets = listOf(
-                "image",
-                "image_content",
-                "chat_image_url",
-                "gif_intimacy",
-                "iv_emoji",
-                "la_light_interaction",
-                "img_back_poke",
-                "item_snap_pic_receive_root",
-                "voice_bubble"
-            )
-            for (target in targets) {
-                val node = item.findAccessibilityNodeInfosByViewId(prefix + target)
-                    .firstOrNull { it.isVisibleToUser }
-                    ?: continue
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                if (rect.width() > 0 && rect.height() > 0) return rect
+            val hasVisualTarget = VISUAL_TARGET_IDS.any { target ->
+                item.findAccessibilityNodeInfosByViewId(prefix + target).any { it.isVisibleToUser }
             }
+            if (hasVisualTarget) return item
         }
         return null
+    }
+
+    private fun isPrivacyPreview(root: AccessibilityNodeInfo): Boolean {
+        return root.packageName?.toString() == packageName && (
+            root.findAccessibilityNodeInfosByViewId(prefix + "snap_chat_view").isNotEmpty() ||
+                root.findAccessibilityNodeInfosByViewId(prefix + "preview_vp").isNotEmpty()
+            )
     }
 
     private fun fallbackReadTextViews(
@@ -738,5 +762,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         private const val FULL_PATROL_AFTER_EMPTY_SCANS = 3
         private const val MAX_PATROL_SCROLLS = 3
         private const val MAX_TOP_REWIND_SCROLLS = 3
+        private val VISUAL_TARGET_IDS = listOf(
+            "image",
+            "image_content",
+            "chat_image_url",
+            "gif_intimacy",
+            "iv_emoji",
+            "la_light_interaction",
+            "img_back_poke",
+            "item_snap_pic_receive_root",
+            "voice_bubble"
+        )
     }
 }
