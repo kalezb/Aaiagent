@@ -133,9 +133,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return messages
     }
 
-    override fun readVisualTargetBounds(root: AccessibilityNodeInfo): Rect? {
-        val item = findLatestIncomingVisualItem(root) ?: return null
-        for (target in VISUAL_TARGET_IDS) {
+    override fun readVisualTargetBounds(
+        root: AccessibilityNodeInfo,
+        targetType: String?
+    ): Rect? {
+        val item = findLatestIncomingVisualItem(root, targetType = targetType) ?: return null
+        for (target in targetIdsFor(targetType)) {
             val node = item.findAccessibilityNodeInfosByViewId(prefix + target)
                 .firstOrNull { it.isVisibleToUser }
                 ?: continue
@@ -147,9 +150,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     override suspend fun prepareVisualCapture(
-        root: AccessibilityNodeInfo
+        root: AccessibilityNodeInfo,
+        targetType: String?
     ): PlatformAdapter.VisualCapturePreparation? {
-        val item = findLatestIncomingVisualItem(root)
+        val item = findLatestIncomingVisualItem(root, targetType = targetType)
             ?: return PlatformAdapter.VisualCapturePreparation(root)
         if (isExchangeItem(item)) {
             return completeExchangeAndOpenIncoming(item)
@@ -425,7 +429,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private fun findLatestIncomingVisualItem(
         root: AccessibilityNodeInfo,
-        includeExchange: Boolean = true
+        includeExchange: Boolean = true,
+        targetType: String? = null
     ): AccessibilityNodeInfo? {
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
         for (item in items.asReversed()) {
@@ -440,12 +445,31 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             if (readMessageSender(item, service.resources.displayMetrics.widthPixels) == "self") continue
             if (!includeExchange && isExchangeItem(item)) continue
 
-            val hasVisualTarget = VISUAL_TARGET_IDS.any { target ->
-                item.findAccessibilityNodeInfosByViewId(prefix + target).any { it.isVisibleToUser }
-            }
-            if (hasVisualTarget) return item
+            if (matchesVisualTarget(item, targetType)) return item
         }
         return null
+    }
+
+    private fun matchesVisualTarget(item: AccessibilityNodeInfo, targetType: String?): Boolean {
+        if (targetType == "exchange") return isExchangeItem(item)
+        if (targetType == "image" && isExchangeItem(item)) return false
+        return isExchangeItem(item) || hasAnyVisibleId(item, targetIdsFor(targetType))
+    }
+
+    private fun targetIdsFor(targetType: String?): List<String> {
+        return when (targetType) {
+            "image" -> IMAGE_TARGET_IDS
+            "sticker" -> STICKER_TARGET_IDS
+            "interaction" -> INTERACTION_TARGET_IDS
+            "voice" -> VOICE_TARGET_IDS
+            else -> VISUAL_TARGET_IDS
+        }
+    }
+
+    private fun hasAnyVisibleId(item: AccessibilityNodeInfo, targetIds: List<String>): Boolean {
+        return targetIds.any { target ->
+            item.findAccessibilityNodeInfosByViewId(prefix + target).any { it.isVisibleToUser }
+        }
     }
 
     private fun isPrivacyPreview(root: AccessibilityNodeInfo): Boolean {
@@ -1038,6 +1062,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "image_content",
             "chat_image_url"
         )
+        private val IMAGE_TARGET_IDS = INCOMING_IMAGE_TARGET_IDS + "item_snap_pic_receive_root"
+        private val STICKER_TARGET_IDS = listOf("gif_intimacy", "iv_emoji")
+        private val INTERACTION_TARGET_IDS = listOf("la_light_interaction", "img_back_poke")
+        private val VOICE_TARGET_IDS = listOf("voice_bubble")
         private val VISUAL_TARGET_IDS = listOf(
             "image",
             "image_content",

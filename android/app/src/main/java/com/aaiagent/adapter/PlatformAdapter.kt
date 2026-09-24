@@ -17,13 +17,18 @@ interface PlatformAdapter {
     fun readChatTitle(root: AccessibilityNodeInfo): String? = null
 
     /** Returns the on-screen bounds of the latest visual message, if any. */
-    fun readVisualTargetBounds(root: AccessibilityNodeInfo): android.graphics.Rect? = null
-
+    fun readVisualTargetBounds(
+        root: AccessibilityNodeInfo,
+        targetType: String? = null
+    ): android.graphics.Rect? = null
     /**
      * Opens a protected visual message when the platform requires an explicit reveal.
      * Returning null means the target cannot be prepared and must not be captured.
      */
-    suspend fun prepareVisualCapture(root: AccessibilityNodeInfo): VisualCapturePreparation? {
+    suspend fun prepareVisualCapture(
+        root: AccessibilityNodeInfo,
+        targetType: String? = null
+    ): VisualCapturePreparation? {
         return VisualCapturePreparation(root)
     }
 

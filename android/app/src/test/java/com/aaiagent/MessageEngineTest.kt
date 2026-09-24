@@ -84,6 +84,20 @@ class MessageEngineTest {
     }
 
     @Test
+    fun `lease heartbeats keep a long model and media step alive`() {
+        var now = 20_000L
+        val lease = AutomationLease(clock = { now }, tokenFactory = { "long-step" })
+        val token = lease.acquire(ttlMs = 30_000L)
+
+        now += 25_000L
+        assertTrue(lease.renew(token, ttlMs = 30_000L))
+        now += 25_000L
+        assertTrue(lease.renew(token, ttlMs = 30_000L))
+        now += 20_000L
+        assertTrue(lease.owns(token))
+    }
+
+    @Test
     fun `automation events do not count as manual takeover`() {
         var now = 5_000L
         val gate = UserInteractionGate(clock = { now })

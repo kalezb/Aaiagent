@@ -293,9 +293,14 @@ class MessageEngine(
                 android.util.Log.d("AIA", "conversation has no unanswered incoming message")
                 return
             }
-            val latestOther = messages.lastOrNull { it.sender != "self" } ?: return
-            RuntimeJournal.readMessages(messages.size, latestOther.content)
-            val incomingBatchFingerprint = incomingConversationFingerprint(messages)
+            val incomingBatch = IncomingMessageBatch.select(messages) ?: return
+            val latestIncoming = incomingBatch.latestIncoming
+            android.util.Log.d(
+                "AIA",
+                "incoming batch size=${incomingBatch.incoming.size} media=${incomingBatch.mediaTarget?.type ?: "text"} latest=${latestIncoming.content}"
+            )
+            RuntimeJournal.readMessages(messages.size, latestIncoming.content)
+            val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
             if (IncomingConversationTracker.isAlreadyHandled(
                 handledFingerprint = context.lastRepliedIncomingFingerprint,
                 currentFingerprint = incomingBatchFingerprint
@@ -304,10 +309,9 @@ class MessageEngine(
                 return
             }
             synchronized(context) {
-                context.lastIncomingFingerprint = incomingFingerprint(latestOther)
+                context.lastIncomingFingerprint = incomingFingerprint(latestIncoming)
             }
-            if (SensitiveWords.isHit(latestOther.content)) return
-
+            if (incomingBatch.incoming.any { SensitiveWords.isHit(it.content) }) return
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 syncMessages(context, messages)
                 synchronized(context) {
@@ -315,7 +319,6 @@ class MessageEngine(
                 }
                 return
             }
-
             val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token?.trim() }.orEmpty()
             val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
             val api = ApiService(apiBaseUrl)
@@ -324,12 +327,11 @@ class MessageEngine(
                 state = EngineState.Error
                 return
             }
-
-            val understanding = understandLatestMedia(
+            val understanding = understandIncomingBatch(
                 adapter = adapter,
                 root = root,
                 messages = messages,
-                latestOther = latestOther,
+                incomingBatch = incomingBatch,
                 api = api,
                 token = token,
                 leaseToken = leaseToken,
@@ -419,34 +421,36 @@ class MessageEngine(
         return emptyList()
     }
 
-    private suspend fun understandLatestMedia(
+    private suspend fun understandIncomingBatch(
         adapter: PlatformAdapter,
         root: AccessibilityNodeInfo,
         messages: List<PlatformAdapter.ChatMessage>,
-        latestOther: PlatformAdapter.ChatMessage,
+        incomingBatch: IncomingMessageBatch.Selection,
         api: ApiService,
         token: String,
         leaseToken: String,
         interactionEpoch: Long
     ): MediaUnderstanding {
-        if (latestOther.type == "text" || latestOther.type == "unknown") {
+        val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages, null)
+        if (mediaTarget.type == "text" || mediaTarget.type == "unknown") {
             return MediaUnderstanding(messages, null)
         }
 
-        val svc = service ?: return MediaUnderstanding(messages, fallbackFor(latestOther.type))
+        val svc = service ?: return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
         if (!canContinue(leaseToken, interactionEpoch)) return MediaUnderstanding(messages, null)
+        android.util.Log.d("AIA", "media understanding start type=${mediaTarget.type}")
 
-        if (latestOther.type == "voice") {
+        if (mediaTarget.type == "voice") {
             val transcribed = VoiceHandler.tryTranscribe(svc, root, currentPlatform)
             if (!transcribed.isNullOrBlank()) {
                 return MediaUnderstanding(
-                    replaceLatest(messages, latestOther, "对方语音转文字：$transcribed"),
+                    replaceLatest(messages, mediaTarget, "对方语音转文字：$transcribed"),
                     null
                 )
             }
         }
 
-        val prompt = when (latestOther.type) {
+        val prompt = when (mediaTarget.type) {
             "exchange" -> "这是社交聊天中的以图换图照片。请先识别图片主体、人物状态、生活场景和可聊话题，忽略截图方向与界面元素，用一到三句中文描述。"
             "image" -> "这是社交聊天中的图片。请识别图片里可见的文字、物体、场景和可能表达的情绪，用一句到三句话描述。"
             "sticker" -> "这是社交聊天中的表情包。请描述表情、动作、文字和它可能表达的聊天含义。"
@@ -454,16 +458,20 @@ class MessageEngine(
             "voice" -> "这是社交聊天语音消息附近的截图。只描述能确认的文字或界面内容，不要猜测语音内容。"
             else -> "简要描述这张聊天截图中的消息内容。"
         }
-        val preparation = adapter.prepareVisualCapture(root)
+        val preparation = adapter.prepareVisualCapture(root, mediaTarget.type)
         if (preparation == null) {
-            RuntimeJournal.recovery("隐私图片展开失败 type=${latestOther.type}")
-            return MediaUnderstanding(messages, fallbackFor(latestOther.type))
+            RuntimeJournal.recovery("隐私图片展开失败 type=${mediaTarget.type}")
+            return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
         }
         val preparedRoot = preparation.root
+        android.util.Log.d(
+            "AIA",
+            "visual page prepared type=${mediaTarget.type} privacy=${preparation.privacyProtected}"
+        )
         val imageBase64 = try {
             ScreenCapture.captureJpegBase64(
                 service = svc,
-                targetBounds = adapter.readVisualTargetBounds(preparedRoot),
+                targetBounds = adapter.readVisualTargetBounds(preparedRoot, mediaTarget.type),
                 rejectMostlyBlack = preparation.privacyProtected
             )
         } finally {
@@ -476,21 +484,25 @@ class MessageEngine(
                 )
             ) {
                 return MediaUnderstanding(
-                    replaceLatest(messages, latestOther, PrivacyPhotoPolicy.MODEL_CONTEXT),
+                    replaceLatest(messages, mediaTarget, PrivacyPhotoPolicy.MODEL_CONTEXT),
                     null
                 )
             }
-            RuntimeJournal.recovery("视觉识别跳过: 截图失败 type=${latestOther.type}")
-            return MediaUnderstanding(messages, fallbackFor(latestOther.type))
+            RuntimeJournal.recovery("视觉识别跳过: 截图失败 type=${mediaTarget.type}")
+            return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
         }
 
         val vision = api.describeVision(token, imageBase64, prompt = prompt)
         if (!vision.success || vision.description.isNullOrBlank()) {
             RuntimeJournal.recovery("视觉识别不可用: ${vision.error ?: "empty"}")
-            return MediaUnderstanding(messages, fallbackFor(latestOther.type))
+            return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
         }
+        android.util.Log.d(
+            "AIA",
+            "vision result type=${mediaTarget.type} length=${vision.description.length}"
+        )
 
-        val label = when (latestOther.type) {
+        val label = when (mediaTarget.type) {
             "exchange" -> "对方发来了以图换图照片，视觉识别："
             "image" -> "对方发送了图片，视觉识别："
             "sticker" -> "对方发送了表情，视觉识别："
@@ -499,7 +511,7 @@ class MessageEngine(
             else -> "对方发送了媒体消息，识别结果："
         }
         return MediaUnderstanding(
-            replaceLatest(messages, latestOther, label + vision.description.trim()),
+            replaceLatest(messages, mediaTarget, label + vision.description.trim()),
             null
         )
     }
@@ -730,8 +742,9 @@ class MessageEngine(
             val adapter = adapterRegistry?.getByPlatform(platform) ?: return
             val root = service?.rootInActiveWindow ?: return
             if (!adapter.isInChat(root) || !ConversationIdentity.matches(context.contactName, adapter.readChatTitle(root))) return
-            val latestOther = adapter.readMessages(root).lastOrNull { it.sender != "self" } ?: return
-            val fingerprint = incomingFingerprint(latestOther)
+            val incomingBatch = IncomingMessageBatch.select(adapter.readMessages(root)) ?: return
+            val latestIncoming = incomingBatch.latestIncoming
+            val fingerprint = incomingFingerprint(latestIncoming)
             synchronized(context) {
                 if (fingerprint != context.lastIncomingFingerprint) {
                     context.lastIncomingFingerprint = fingerprint
@@ -759,16 +772,6 @@ class MessageEngine(
         }
     }
 
-    private fun incomingConversationFingerprint(
-        messages: List<PlatformAdapter.ChatMessage>
-    ): String {
-        return IncomingConversationTracker.fingerprint(
-            messages
-                .filter { it.sender != "self" }
-                .map { "${it.type}:${it.content}" }
-        )
-    }
-
     private fun incomingFingerprint(message: PlatformAdapter.ChatMessage): String {
         return IncomingMessageTracker.fingerprint(message.content)
     }
@@ -778,7 +781,7 @@ class MessageEngine(
     }
 
     private fun canContinue(leaseToken: String, interactionEpoch: Long?): Boolean {
-        if (!hostingEnabled || !lease.owns(leaseToken)) return false
+        if (!hostingEnabled || !lease.renew(leaseToken)) return false
         if (interactionEpoch != null && GestureMonitor.interactionEpoch() != interactionEpoch) return false
         return !GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)
     }
