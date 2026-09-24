@@ -368,11 +368,26 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val contactName = name ?: preview ?: "unknown"
 
             if (shouldClick) {
+                // ??? name ??????? bounds ??????????/????
+                val nameNode = conversationItem.findAccessibilityNodeInfosByViewId(PREFIX + "name").firstOrNull()
                 val rect = android.graphics.Rect()
-                conversationItem.getBoundsInScreen(rect)
-                val cx = rect.centerX().toFloat()
-                val cy = rect.centerY().toFloat()
-                android.util.Log.d("AIA", "Soul tryFindAndUnread: gesture tap at (" + cx + ", " + cy + ") name='$contactName'")
+                var picked = "item"
+                if (nameNode != null && nameNode.isVisibleToUser) {
+                    nameNode.getBoundsInScreen(rect)
+                    if (rect.width() >= 80 && rect.height() >= 20 && rect.left < 1000 && rect.right > 80) {
+                        picked = "name"
+                    }
+                }
+                if (picked == "item") {
+                    conversationItem.getBoundsInScreen(rect)
+                }
+                if (rect.width() < 80 || rect.height() < 20 || rect.left >= 1000 || rect.right <= 80) {
+                    android.util.Log.w("AIA", "Soul tryFindAndUnread: invalid bounds " + rect.toShortString() + ", fallback to safe center")
+                    rect.set(0, 400, 1080, 600)
+                }
+                val cx = rect.centerX().toFloat().coerceIn(60f, 1020f)
+                val cy = rect.centerY().toFloat().coerceIn(200f, 2200f)
+                android.util.Log.d("AIA", "Soul tap: picked=" + picked + " bounds=" + rect.toShortString() + " -> (" + cx + "," + cy + ") name='" + contactName + "'")
                 val gesture = android.accessibilityservice.GestureDescription.Builder()
                     .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
                         android.graphics.Path().apply { moveTo(cx, cy) },

@@ -8,11 +8,14 @@ import com.aaiagent.data.db.entity.UserLocationEntity
 
 class AppRepository(private val db: AppDatabase) {
 
-    // Token
-    fun getActiveToken(): TokenEntity? = db.tokenDao().getActiveToken()
+    // Token ?? ??? trim??????????? token ???
+    fun getActiveToken(): TokenEntity? = db.tokenDao().getActiveToken()?.let {
+        val trimmed = it.token.trim()
+        if (trimmed != it.token) it.copy(token = trimmed) else it
+    }
     fun getAllTokens(): List<TokenEntity> = db.tokenDao().getAll()
-    fun saveToken(token: TokenEntity) = db.tokenDao().insert(token)
-    fun setTokenActive(token: String, active: Boolean) = db.tokenDao().setActive(token, active)
+    fun saveToken(token: TokenEntity) = db.tokenDao().insert(token.copy(token = token.token.trim()))
+    fun setTokenActive(token: String, active: Boolean) = db.tokenDao().setActive(token.trim(), active)
 
     // Config
     fun getConfig(key: String): String? = db.configDao().getValue(key)
