@@ -24,13 +24,18 @@ class MockD1 {
       }),
     };
   }
+
+  async batch(statements: unknown[]) {
+    return statements.map(() => ({ success: true }));
+  }
 }
 
 class MockKV {
   private store = new Map<string, string>();
 
-  async get(key: string): Promise<string | null> {
-    return this.store.get(key) ?? null;
+  async get(key: string, type?: string): Promise<unknown> {
+    const value = this.store.get(key) ?? null;
+    return type === "json" && value ? JSON.parse(value) : value;
   }
 
   async put(key: string, value: string): Promise<void> {
@@ -79,6 +84,41 @@ describe("chat logic", () => {
     }));
     expect(messages.slice(-40)[0].content).toBe("message-10");
     expect(messages.slice(-40).at(-1)?.content).toBe("message-49");
+  });
+
+  it("asks the model for short natural chat messages", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "在的 刚忙完|||你先忙你的|||晚点聊" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "期待下一步的我们",
+        contact_name: "期待下一步的我们",
+        messages: [{ role: "user", content: "今天忙不忙" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ action: "send" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.max_tokens).toBe(160);
+    expect(payload.messages[0].content).toContain("短句聊天风格");
+    expect(payload.messages[0].content).toContain("用 ||| 分隔");
   });
 });
 

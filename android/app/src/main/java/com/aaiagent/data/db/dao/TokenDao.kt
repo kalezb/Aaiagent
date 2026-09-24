@@ -17,6 +17,9 @@ interface TokenDao {
     @Query("UPDATE tokens SET isActive = :active WHERE token = :token")
     fun setActive(token: String, active: Boolean)
 
+    @Query("UPDATE tokens SET isActive = 0")
+    fun clearActive()
+
     @Query("DELETE FROM tokens WHERE token = :token")
     fun delete(token: String)
 }

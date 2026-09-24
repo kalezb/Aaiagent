@@ -11,6 +11,7 @@ import com.aaiagent.network.ApiService
 import com.aaiagent.network.ChatRequest
 import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -121,6 +122,8 @@ class MessageEngine(
             if (state == EngineState.Idle) {
                 try {
                     scanAndProcess(leaseToken)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (error: Exception) {
                     android.util.Log.e("AIA", "hosting loop crashed", error)
                     RuntimeJournal.recovery("托管循环异常: ${error.message}")
@@ -170,7 +173,9 @@ class MessageEngine(
             it.contactName = info.contactName
             synchronized(it) {
                 it.llmRequestId++
-                if (it.firstMessageAt == 0L) it.firstMessageAt = System.currentTimeMillis()
+                it.firstMessageAt = System.currentTimeMillis()
+                it.recalcCount = 0
+                it.lastIncomingFingerprint = ""
             }
             activeContext = it
         }
@@ -265,6 +270,9 @@ class MessageEngine(
 
             val latestOther = messages.lastOrNull { it.sender != "self" } ?: return
             RuntimeJournal.readMessages(messages.size, latestOther.content)
+            synchronized(context) {
+                context.lastIncomingFingerprint = incomingFingerprint(latestOther)
+            }
             if (SensitiveWords.isHit(latestOther.content)) return
 
             if (hostingMode == HostingMode.MONITOR_ONLY) {
@@ -316,6 +324,8 @@ class MessageEngine(
                 }
                 HostingMode.MONITOR_ONLY -> Unit
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             RuntimeJournal.recovery("处理会话异常: ${error.message}")
             android.util.Log.e("AIA", "processConversation failed", error)
@@ -445,11 +455,17 @@ class MessageEngine(
         runCatching {
             api.registerContact(token, currentPlatform, context.contactId, context.contactName)
         }
+            .onSuccess { android.util.Log.d("AIA", "contact sync result=$it") }
+            .onFailure { android.util.Log.w("AIA", "contact sync failed: ${it.message}", it) }
 
         repeat(MAX_LLM_RETRIES) {
             if (!canContinue(leaseToken, interactionEpoch)) return null
             val requestId = synchronized(context) { context.llmRequestId }
-            val response = runCatching {
+            android.util.Log.d(
+                "AIA",
+                "chat request attempt=${it + 1}/$MAX_LLM_RETRIES contact=${context.contactName} messages=${requestMessages.size}"
+            )
+            val response = try {
                 api.chat(
                     ChatRequest(
                         token = token,
@@ -465,17 +481,25 @@ class MessageEngine(
                         location = location
                     )
                 )
-            }.getOrNull()
-
-            if (response == null) {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                android.util.Log.e("AIA", "chat request failed attempt=${it + 1}", error)
+                RuntimeJournal.recovery("调用回复接口失败: ${error.message}")
                 delay(900)
                 return@repeat
             }
+            android.util.Log.d(
+                "AIA",
+                "chat response action=${response.action} replyLength=${response.reply?.length ?: 0} error=${response.error.orEmpty()}"
+            )
+
             if (response.action == "skip") {
                 RuntimeJournal.recovery("后端跳过联系人 ${context.contactName}")
                 return null
             }
             if (!response.error.isNullOrBlank() || response.reply.isNullOrBlank()) {
+                RuntimeJournal.recovery("回复接口未返回有效内容: ${response.error ?: "empty_reply"}")
                 delay(900)
                 return@repeat
             }
@@ -487,6 +511,7 @@ class MessageEngine(
                 firstMessageAtMs = context.firstMessageAt,
                 nowMs = System.currentTimeMillis()
             )
+            android.util.Log.d("AIA", "reply freshness=$decision recalc=$recalcCount")
             when (decision) {
                 ReplyFreshnessDecision.KEEP -> return response.reply.trim()
                 ReplyFreshnessDecision.FORCE_SEND -> {
@@ -593,15 +618,32 @@ class MessageEngine(
                 synchronized(context) { context.llmRequestId++ }
             }
         }
+        activeContext?.let { context ->
+            if (context.platform == platform) {
+                synchronized(context) {
+                    context.lastIncomingFingerprint = incomingFingerprint(message.content)
+                }
+            }
+        }
         wakeSignal.trySend(Unit)
     }
 
     fun onContentChanged(platform: String) {
         if (!hostingEnabled || GestureMonitor.isAutomationActionActive()) return
         if (platform != currentPlatform) return
-        activeContext?.let { context ->
-            if (state == EngineState.WaitingLLM || state == EngineState.AboutToSend || state == EngineState.Sending) {
-                synchronized(context) { context.llmRequestId++ }
+        if (state == EngineState.WaitingLLM || state == EngineState.AboutToSend || state == EngineState.Sending) {
+            val context = activeContext ?: return
+            val adapter = adapterRegistry?.getByPlatform(platform) ?: return
+            val root = service?.rootInActiveWindow ?: return
+            if (!adapter.isInChat(root) || !ConversationIdentity.matches(context.contactName, adapter.readChatTitle(root))) return
+            val latestOther = adapter.readMessages(root).lastOrNull { it.sender != "self" } ?: return
+            val fingerprint = incomingFingerprint(latestOther)
+            synchronized(context) {
+                if (fingerprint != context.lastIncomingFingerprint) {
+                    context.lastIncomingFingerprint = fingerprint
+                    context.llmRequestId++
+                    android.util.Log.d("AIA", "new incoming message invalidated current LLM reply")
+                }
             }
         }
         wakeSignal.trySend(Unit)
@@ -623,6 +665,14 @@ class MessageEngine(
         }
     }
 
+    private fun incomingFingerprint(message: PlatformAdapter.ChatMessage): String {
+        return IncomingMessageTracker.fingerprint(message.content)
+    }
+
+    private fun incomingFingerprint(content: String): String {
+        return IncomingMessageTracker.fingerprint(content)
+    }
+
     private fun canContinue(leaseToken: String, interactionEpoch: Long?): Boolean {
         if (!hostingEnabled || !lease.owns(leaseToken)) return false
         if (interactionEpoch != null && GestureMonitor.interactionEpoch() != interactionEpoch) return false
@@ -630,21 +680,10 @@ class MessageEngine(
     }
 
     private fun clearInputField() {
-        try {
-            val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
-            if (adapter !is SoulAdapter) return
-            val root = service?.rootInActiveWindow ?: return
-            if (!adapter.isInChat(root)) return
-            val input = root.findAccessibilityNodeInfosByViewId(adapter.packageName + ":id/et_sendmessage")
-                .firstOrNull { it.isEditable }
-                ?: return
-            GestureMonitor.onAutomationActionStarted()
-            val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
-            }
-            input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            GestureMonitor.onAutomationActionFinished()
-        } catch (_: Exception) {
+        val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
+        if (adapter !is SoulAdapter) return
+        scope.launch {
+            runCatching { adapter.clearInput() }
         }
     }
 

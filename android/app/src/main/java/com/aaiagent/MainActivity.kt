@@ -13,7 +13,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import com.aaiagent.data.db.AppDatabase
-import com.aaiagent.data.db.entity.TokenEntity
 import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.engine.HostingMode
@@ -41,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private var engineState by mutableStateOf("IDLE")
     private var lastReply by mutableStateOf<String?>(null)
     private var token by mutableStateOf("")
+    private var tokenVerified by mutableStateOf(false)
     private var apiBase by mutableStateOf("https://ai-agent-api.pages.dev")
     private var enabledPlatforms by mutableStateOf(setOf("soul"))
     private var personas by mutableStateOf<List<PersonaItem>>(emptyList())
@@ -78,6 +78,11 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             val t = withContext(Dispatchers.IO) { repository.getActiveToken() }; if (t != null) token = t.token
+            if (t != null) {
+                token = t.token
+                tokenVerified = true
+                tokenVerifyStatus = "✓ 钥匙已保存"
+            }
             val u = withContext(Dispatchers.IO) { repository.getConfig("api_base_url") }; if (u != null) apiBase = u
             val loc = withContext(Dispatchers.IO) { repository.getLocation() }
             homeCity = loc["home"]?.get("city") ?: "重庆"; homeDistrict = loc["home"]?.get("district") ?: "两江新区"
@@ -102,7 +107,7 @@ class MainActivity : ComponentActivity() {
                     personas = personas, activePersonaId = activePersonaId,
                     onPersonaChange = { id -> activePersonaId = id; lifecycleScope.launch { withContext(Dispatchers.IO) { repository.setConfig("persona_id", id) } } },
                     token = token, apiBase = apiBase,
-                    onTokenChange = { token = it; lifecycleScope.launch { withContext(Dispatchers.IO) { repository.saveToken(TokenEntity(token = it)) } } },
+                    onTokenChange = { token = it.trim(); tokenVerified = false; tokenVerifyStatus = "" },
                     onApiBaseChange = { apiBase = it },
                     location = UserLocationEntity(homeCity = homeCity, homeDistrict = homeDistrict, workCity = workCity, workDistrict = workDistrict),
                     onLocationSave = { hc, hd, wc, wd -> homeCity = hc; homeDistrict = hd; workCity = wc; workDistrict = wd },
@@ -133,10 +138,28 @@ class MainActivity : ComponentActivity() {
     // ═══ 验证函数 ═══
 
     private fun verifyToken() {
-        if (token.isEmpty()) return; tokenVerifyStatus = "验证中..."
+        val candidate = token.trim()
+        if (candidate.isEmpty()) {
+            tokenVerified = false
+            tokenVerifyStatus = "✗ 请先输入设备钥匙"
+            return
+        }
+        token = candidate
+        tokenVerified = false
+        tokenVerifyStatus = "验证中..."
         lifecycleScope.launch {
-            try { val r = ApiService(apiBase).saveConfig(token, mapOf("action" to "verify_token")); tokenVerifyStatus = if (r.success) "✓ 钥匙有效" else "✗ ${r.error ?: "钥匙无效"}" }
-            catch (_: Exception) { tokenVerifyStatus = "✗ 验证失败" }
+            try {
+                val r = ApiService(apiBase).saveConfig(candidate, mapOf("action" to "verify_token"))
+                if (r.success) {
+                    withContext(Dispatchers.IO) { repository.activateVerifiedToken(candidate) }
+                    tokenVerified = true
+                    tokenVerifyStatus = "✓ 钥匙有效，已保存"
+                } else {
+                    tokenVerifyStatus = "✗ ${r.error ?: "钥匙无效"}"
+                }
+            } catch (_: Exception) {
+                tokenVerifyStatus = "✗ 验证失败"
+            }
         }
     }
 
@@ -187,6 +210,13 @@ class MainActivity : ComponentActivity() {
     private fun toggleHosting(enable: Boolean) {
         isHosting = enable; floatingWindow?.updateHostingState(enable)
         if (enable) {
+            if (!tokenVerified) {
+                isHosting = false
+                floatingWindow?.updateHostingState(false)
+                engineState = "请先验证设备钥匙"
+                tokenVerifyStatus = "✗ 请先验证设备钥匙"
+                return
+            }
             startForegroundService(); val platform = enabledPlatforms.firstOrNull() ?: "soul"; platformsStatus[platform] = true
             lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "true")) } catch (_: Exception) {} } }
             val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine

@@ -46,6 +46,11 @@ data class VisionResponse(
     val error: String?
 )
 
+class ApiHttpException(
+    val statusCode: Int,
+    val responseBody: String
+) : IllegalStateException("HTTP $statusCode: ${responseBody.take(300)}")
+
 class ApiService(private val baseUrl: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -64,9 +69,14 @@ class ApiService(private val baseUrl: String) {
             .header("Authorization", "Bearer " + request.token)
             .post(body)
             .build()
-        val response = client.newCall(req).execute()
-        val responseBody = response.body?.string() ?: "{}"
-        gson.fromJson(responseBody, ChatResponse::class.java)
+        client.newCall(req).execute().use { response ->
+            val responseBody = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw ApiHttpException(response.code, responseBody)
+            }
+            gson.fromJson(responseBody, ChatResponse::class.java)
+                ?: throw IllegalStateException("deepseek_empty_response")
+        }
     }
 
     suspend fun syncMessages(
@@ -86,7 +96,7 @@ class ApiService(private val baseUrl: String) {
                 .post(body)
                 .build()
             val response = client.newCall(req).execute()
-            response.isSuccessful
+            response.use { it.isSuccessful }
         } catch (e: Exception) {
             false
         }
@@ -99,8 +109,12 @@ class ApiService(private val baseUrl: String) {
             .get()
             .build()
         val response = client.newCall(req).execute()
-        val responseBody = response.body?.string() ?: "{}"
-        gson.fromJson(responseBody, ConfigResponse::class.java)
+        response.use {
+            val responseBody = it.body?.string() ?: "{}"
+            if (!it.isSuccessful) throw ApiHttpException(it.code, responseBody)
+            gson.fromJson(responseBody, ConfigResponse::class.java)
+                ?: throw IllegalStateException("config_empty_response")
+        }
     }
 
     suspend fun registerToken(token: String, name: String): Boolean = withContext(Dispatchers.IO) {
@@ -111,7 +125,7 @@ class ApiService(private val baseUrl: String) {
             .post(body)
             .build()
         val response = client.newCall(req).execute()
-        response.isSuccessful
+        response.use { it.isSuccessful }
     }
 
     
@@ -126,7 +140,7 @@ class ApiService(private val baseUrl: String) {
                 .post(body)
                 .build()
             val response = client.newCall(req).execute()
-            response.isSuccessful
+            response.use { it.isSuccessful }
         } catch (e: Exception) {
             false
         }

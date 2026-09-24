@@ -13,6 +13,12 @@ class AppRepository(private val db: AppDatabase) {
         val trimmed = it.token.trim()
         if (trimmed != it.token) it.copy(token = trimmed) else it
     }
+    fun activateVerifiedToken(token: String) {
+        val normalized = token.trim()
+        require(normalized.isNotEmpty())
+        db.tokenDao().clearActive()
+        db.tokenDao().insert(TokenEntity(token = normalized, isActive = true))
+    }
     fun getAllTokens(): List<TokenEntity> = db.tokenDao().getAll()
     fun saveToken(token: TokenEntity) = db.tokenDao().insert(token.copy(token = token.token.trim()))
     fun setTokenActive(token: String, active: Boolean) = db.tokenDao().setActive(token.trim(), active)

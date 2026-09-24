@@ -6,5 +6,6 @@ data class ConversationContext(
     var contactName: String = "",
     var firstMessageAt: Long = 0L,
     var llmRequestId: Int = 0,
-    var recalcCount: Int = 0
+    var recalcCount: Int = 0,
+    var lastIncomingFingerprint: String = ""
 )
