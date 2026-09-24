@@ -2,9 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { onRequest } from "../functions/api/[[route]]";
 
 class MockD1 {
-  constructor(historyRows = [], personas = [{ id: "female", name: "星暮" }]) {
+  constructor(
+    historyRows = [],
+    personas = [{ id: "female", name: "星暮" }],
+    contactsRows = [],
+  ) {
     this.historyRows = historyRows;
     this.personas = personas;
+    this.contactsRows = contactsRows;
     this.batchCalls = [];
     this.locationRows = new Map();
   }
@@ -33,7 +38,11 @@ class MockD1 {
           return null;
         },
         all: async () => ({
-          results: sql.includes("FROM chat_history") ? this.historyRows : [],
+          results: sql.includes("FROM contacts")
+            ? this.contactsRows
+            : sql.includes("FROM chat_history")
+              ? this.historyRows
+              : [],
         }),
         run: async () => {
           if (sql.includes("INSERT INTO user_locations")) {
@@ -431,6 +440,60 @@ describe("vision API", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ tokens: [] });
+  });
+
+  it("returns all contacts for the dashboard when no device token is selected", async () => {
+    const contact = {
+      id: 1,
+      platform: "soul",
+      contact_id: "contact-1",
+      contact_name: "期待下一步的我们",
+      is_whitelisted: 1,
+      notes: "",
+      created_at: 1790281839,
+    };
+    const env = {
+      DB: new MockD1([], [{ id: "female", name: "星暮" }], [contact]),
+      KV: new MockKV(),
+      DASHBOARD_PASSWORD: "secret",
+    };
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/contacts?token=", {
+        headers: { "X-Dashboard-Password": "secret" },
+      }),
+      env,
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ contacts: [contact] });
+  });
+
+  it("returns all chat history for the dashboard when no device token is selected", async () => {
+    const message = {
+      id: 1,
+      platform: "soul",
+      contact_id: "contact-1",
+      contact_name: "期待下一步的我们",
+      role: "user",
+      content: "腿真好看",
+      created_at: 1790281839,
+    };
+    const env = {
+      DB: new MockD1([message]),
+      KV: new MockKV(),
+      DASHBOARD_PASSWORD: "secret",
+    };
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat/history?token=&limit=50", {
+        headers: { "X-Dashboard-Password": "secret" },
+      }),
+      env,
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ history: [message] });
   });
 
   it("sends image content to deepseek-flash with thinking disabled", async () => {

@@ -220,16 +220,18 @@ export const onRequest = async (context) => {
     // GET /api/chat/history
     if (path === "/api/chat/history" && method === "GET") {
       if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
-      const token = url.searchParams.get("token");
-      if (!token) return json({ error: "\u7f3a\u5c11 token" }, 400);
+      const token = url.searchParams.get("token") || "";
       const platform = url.searchParams.get("platform") || "";
       const contactId = url.searchParams.get("contact_id") || "";
       const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
       const offset = parseInt(url.searchParams.get("offset") || "0");
-      let query = "SELECT id, platform, contact_id, contact_name, role, content, created_at FROM chat_history WHERE token = ?";
-      const params = [token];
-      if (platform) { query += " AND platform = ?"; params.push(platform); }
-      if (contactId) { query += " AND contact_id = ?"; params.push(contactId); }
+      let query = "SELECT id, platform, contact_id, contact_name, role, content, created_at FROM chat_history";
+      const conditions = [];
+      const params = [];
+      if (token) { conditions.push("token = ?"); params.push(token); }
+      if (platform) { conditions.push("platform = ?"); params.push(platform); }
+      if (contactId) { conditions.push("contact_id = ?"); params.push(contactId); }
+      if (conditions.length > 0) query += " WHERE " + conditions.join(" AND ");
       query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
       params.push(limit, offset);
       const { results } = await env.DB.prepare(query).bind(...params).all();
@@ -239,12 +241,14 @@ export const onRequest = async (context) => {
     // GET /api/contacts
     if (path === "/api/contacts" && method === "GET") {
       if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
-      const token = url.searchParams.get("token");
-      if (!token) return json({ error: "\u7f3a\u5c11 token" }, 400);
+      const token = url.searchParams.get("token") || "";
       const platform = url.searchParams.get("platform") || "";
-      let query = "SELECT id, token, platform, contact_id, contact_name, is_whitelisted, notes, created_at FROM contacts WHERE token = ?";
-      const params = [token];
-      if (platform) { query += " AND platform = ?"; params.push(platform); }
+      let query = "SELECT id, token, platform, contact_id, contact_name, is_whitelisted, notes, created_at FROM contacts";
+      const conditions = [];
+      const params = [];
+      if (token) { conditions.push("token = ?"); params.push(token); }
+      if (platform) { conditions.push("platform = ?"); params.push(platform); }
+      if (conditions.length > 0) query += " WHERE " + conditions.join(" AND ");
       query += " ORDER BY created_at DESC";
       const { results } = await env.DB.prepare(query).bind(...params).all();
       return json({ contacts: results || [] });

@@ -6,7 +6,7 @@
     "dev": "wrangler pages dev src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy": "wrangler pages deploy src"
+    "deploy": "wrangler pages deploy src --branch main"
   },
   "dependencies": {
     "hono": "^4.0.0"
