@@ -323,17 +323,48 @@ class MessageEngine(
                 ctx.contactName = info.contactName
                 ctx.contactId = info.contactId
                 RuntimeJournal.clickConversation(info.contactName, true)
-                delay(1000)
+                // ??????????Soul ???????? 5 ??
+                delay(1500)
+                var chatWaitRetries = 0
+                var chatRoot = service?.rootInActiveWindow
+                while (chatWaitRetries < 5 && chatRoot != null && !adapter.isInChat(chatRoot)) {
+                    android.util.Log.d("AIA", "processConversation: waiting for chat... attempt " + (chatWaitRetries + 1) + "/5")
+                    kotlinx.coroutines.delay(1000)
+                    chatRoot = service.rootInActiveWindow
+                    if (chatRoot != null && !adapter.isInMessageList(chatRoot)) {
+                        android.util.Log.w("AIA", "processConversation: lost message list while waiting, navigating back")
+                        try { adapter.navigateToMessageList(service!!, chatRoot) } catch (_: Exception) {}
+                        kotlinx.coroutines.delay(1000)
+                        chatRoot = service.rootInActiveWindow
+                    }
+                    chatWaitRetries++
+                }
+                if (chatRoot != null) root = chatRoot
             }
 
-            // 补充页 §五: 读消息前检测页面, 不对就恢复
+            // ??? ??: ????????, ?????
             root = ErrorRecovery.recoverReadMessages(adapter, service!!)
                 ?: service.rootInActiveWindow
                 ?: run { state = EngineState.Idle; return }
 
-            val messages = adapter.readMessages(root)
+            // ?????Soul ????????? 3 ??
+            var messages = adapter.readMessages(root)
+            var readRetries = 0
+            while (messages.isEmpty() && readRetries < 3) {
+                android.util.Log.d("AIA", "processConversation: readMessages empty, retry " + (readRetries + 1) + "/3")
+                kotlinx.coroutines.delay(1500)
+                root = service.rootInActiveWindow ?: run { state = EngineState.Idle; return }
+                if (!adapter.isInChat(root)) {
+                    android.util.Log.w("AIA", "processConversation: lost chat page during read retry")
+                    state = EngineState.Idle
+                    return
+                }
+                messages = adapter.readMessages(root)
+                readRetries++
+            }
             if (messages.isEmpty()) {
                 RuntimeJournal.readMessages(0, "")
+                android.util.Log.w("AIA", "processConversation: readMessages still empty after retries")
                 state = EngineState.Idle
                 return
             }
