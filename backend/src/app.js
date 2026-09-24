@@ -48,7 +48,7 @@ function platformName(id) {
 function renderPlatforms(platforms, className = "platforms") {
   const active = new Set(Array.isArray(platforms) ? platforms : []);
   return `<span class="${className}">` + PLATFORMS.map((platform) =>
-    `<span class="platform-dot ${active.has(platform.id) ? "on " + platform.id : ""}" title="${platform.label}">${platform.short}</span>`
+    `<span class="pf ${active.has(platform.id) ? "on " + platform.id : ""}" title="${platform.label}">${platform.short}</span>`
   ).join("") + `</span>`;
 }
 
@@ -187,6 +187,7 @@ function renderCustomers() {
 
 async function openCustomer(group) {
   state.selected = group;
+  $("sidebar").classList.remove("mobile-open");
   state.targetAlias = group.aliases?.[0] || null;
   renderCustomers();
   updateChatHeader();
@@ -196,6 +197,7 @@ async function openCustomer(group) {
 
 function updateChatHeader() {
   const group = state.selected;
+  renderProfilePanel(group);
   const title = group?.display_name || "请选择客户";
   $("chatTitle").textContent = title;
   $("chatPlatforms").innerHTML = renderPlatforms(group?.platforms || []);
@@ -225,6 +227,37 @@ function updateChatHeader() {
   $("composerNote").textContent = state.targetAlias
     ? `将发送到 ${platformName(state.targetAlias.platform)} · ${state.targetAlias.contact_name || state.targetAlias.contact_id}`
     : "请选择发送目标平台账号";
+}
+
+function renderProfilePanel(group) {
+  const name = group?.display_name || "请选择客户";
+  const token = group ? (state.tokens.find((item) => item.token === group.token)?.name || group.token) : "未选择设备";
+  const alias = state.targetAlias || group?.aliases?.[0] || null;
+  $("profileAvatar").textContent = Array.from(name)[0] || "客";
+  $("profileName").textContent = name;
+  $("profileSubtitle").textContent = group
+    ? `${token} · ${alias ? `${platformName(alias.platform)} · ${alias.contact_name || alias.contact_id}` : "未绑定平台账号"}`
+    : "选择后查看客户资料";
+  $("profileMessageCount").textContent = Number(group?.message_count || 0).toLocaleString("zh-CN");
+  $("profilePlatformCount").textContent = String(group?.platforms?.length || 0);
+  $("profilePriority").textContent = group?.priority_reply ? "已开启" : "普通";
+  $("profilePriority").className = group?.priority_reply ? "status-priority" : "";
+  $("profileLastMessage").textContent = group?.last_at ? formatShortTime(group.last_at) : "--";
+
+  const active = new Set(group?.platforms || []);
+  $("profilePlatformLinks").innerHTML = PLATFORMS.map((platform) => {
+    const enabled = active.has(platform.id);
+    const account = group?.aliases?.find((item) => item.platform === platform.id);
+    return `<button class="platform-link ${enabled ? "on" : ""}" ${enabled ? "" : "disabled"} data-profile-platform="${esc(platform.id)}" title="${esc(account?.contact_name || platform.label)}">`
+      + `<b>${platform.short}</b>${platform.label}</button>`;
+  }).join("");
+  $("profilePlatformLinks").querySelectorAll("[data-profile-platform]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!group) return;
+      state.targetAlias = group.aliases.find((item) => item.platform === button.dataset.profilePlatform) || null;
+      updateChatHeader();
+    });
+  });
 }
 
 async function refreshMessages(forceBottom = false) {
@@ -497,6 +530,7 @@ let searchTimer = null;
 $("loginButton").addEventListener("click", login);
 $("passwordInput").addEventListener("keydown", (event) => { if (event.key === "Enter") login(); });
 $("logoutButton").addEventListener("click", logout);
+$("mobileSidebarButton").addEventListener("click", () => $("sidebar").classList.toggle("mobile-open"));
 $("refreshButton").addEventListener("click", () => { loadCustomers(); if (state.selected) refreshMessages(); });
 $("deviceSelect").addEventListener("change", () => { state.selected = null; loadCustomers(false); });
 $("platformSelect").addEventListener("change", () => { state.selected = null; loadCustomers(false); });

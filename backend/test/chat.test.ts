@@ -741,4 +741,16 @@ describe("customer dashboard and cross-platform memory", () => {
     expect(source).toContain("data-contact-id");
     expect(source).toContain("replace_aliases: true");
   });
+
+  it("ships the sky-blue customer dashboard layout and profile panel", () => {
+    const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    expect(html).toContain("grid-template-columns: 360px minmax(0, 1fr) 310px");
+    expect(html).toContain("--sky: #42a5f5");
+    expect(html).toContain('id="profilePlatformLinks"');
+    expect(html).toContain('id="mobileSidebarButton"');
+    expect(html).toContain("同一客户在 Soul、QQ、陌陌、连信上的聊天会合并为同一段记忆");
+    expect(source).toContain("function renderProfilePanel(group)");
+    expect(source).toContain('class="pf ${active.has(platform.id)');
+  });
 });
