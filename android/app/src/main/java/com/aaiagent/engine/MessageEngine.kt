@@ -149,6 +149,15 @@ class MessageEngine(
         }
         val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
 
+        val activeRoot = svc.rootInActiveWindow
+        if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
+            val title = adapter.readChatTitle(activeRoot)
+            if (!title.isNullOrBlank()) {
+                processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
+                return
+            }
+        }
+
         state = EngineState.ScanningConversations
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: run {
             state = EngineState.Idle
@@ -169,8 +178,18 @@ class MessageEngine(
             return
         }
 
-        val context = getOrCreateContext(currentPlatform, info.contactId).also {
-            it.contactName = info.contactName
+        processVerifiedChat(adapter, verifiedChat, info.contactId, info.contactName, leaseToken)
+    }
+
+    private suspend fun processVerifiedChat(
+        adapter: PlatformAdapter,
+        chatRoot: AccessibilityNodeInfo,
+        contactId: String,
+        contactName: String,
+        leaseToken: String
+    ) {
+        val context = getOrCreateContext(currentPlatform, contactId).also {
+            it.contactName = contactName
             synchronized(it) {
                 it.llmRequestId++
                 it.firstMessageAt = System.currentTimeMillis()
@@ -180,7 +199,7 @@ class MessageEngine(
         }
 
         try {
-            processConversation(adapter, context, verifiedChat, leaseToken)
+            processConversation(adapter, context, chatRoot, leaseToken)
         } finally {
             activeContext = null
         }
@@ -267,6 +286,11 @@ class MessageEngine(
                 return
             }
 
+            val lastMessage = messages.lastOrNull() ?: return
+            if (!ConversationReplyPolicy.shouldReply(lastMessage.sender)) {
+                android.util.Log.d("AIA", "conversation has no unanswered incoming message")
+                return
+            }
             val latestOther = messages.lastOrNull { it.sender != "self" } ?: return
             RuntimeJournal.readMessages(messages.size, latestOther.content)
             val incomingBatchFingerprint = incomingConversationFingerprint(messages)
