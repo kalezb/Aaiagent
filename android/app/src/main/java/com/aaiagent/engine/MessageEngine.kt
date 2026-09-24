@@ -328,6 +328,7 @@ class MessageEngine(
 
         RuntimeJournal.stateChange("Idle", "ReadingMessages")
         state = EngineState.ReadingMessages
+        android.util.Log.d("AIA", "pc: ENTER platform=" + platform + " mode=" + hostingMode.toString())
 
         try {
             var root = service?.rootInActiveWindow
@@ -405,6 +406,7 @@ class MessageEngine(
                 return
             }
             RuntimeJournal.readMessages(messages.size, messages.lastOrNull()?.content ?: "")
+            android.util.Log.d("AIA", "pc: read " + messages.size + " msgs, last=" + (messages.lastOrNull()?.content?.take(50) ?: "none"))
 
             val lastUserMsg = messages.lastOrNull { it.sender != "self" }
             if (lastUserMsg != null && SensitiveWords.isHit(lastUserMsg.content)) {
@@ -438,6 +440,7 @@ class MessageEngine(
 
             var recalcCount = 0
             var reply: String? = null
+            val requestIdAtCall = ctx.llmRequestId
 
             while (recalcCount < MAX_RECALC) {
                 try {
@@ -446,6 +449,15 @@ class MessageEngine(
                             "role" to (if (it.sender == "self") "assistant" else "user"),
                             "content" to it.content
                         )
+                    }
+                    android.util.Log.d("AIA", "pc: calling LLM for contact=" + contactName + " msgs=" + requestMessages.size)
+
+                    // ????????????????? skip
+                    try {
+                        val regOk = apiService.registerContact(token, platform, contactId, contactName)
+                        android.util.Log.d("AIA", "pc: registerContact result=" + regOk)
+                    } catch (e: Exception) {
+                        android.util.Log.w("AIA", "pc: registerContact failed: " + e.message)
                     }
 
                     val response = apiService.chat(
@@ -460,6 +472,7 @@ class MessageEngine(
                     )
 
                     if (response.action == "skip") {
+                        android.util.Log.w("AIA", "pc: backend returned skip for " + contactName)
                         state = EngineState.Idle
                         return
                     }
@@ -470,7 +483,28 @@ class MessageEngine(
                         continue
                     }
 
+                    // === 4.5 ?????LLM???????????????? ===
+                    if (ctx.llmRequestId != requestIdAtCall) {
+                        val elapsed = System.currentTimeMillis() - ctx.firstMessageAt
+                        android.util.Log.d("AIA", "pc: new msg during LLM (id " + requestIdAtCall + "->" + ctx.llmRequestId + ", elapsed=" + elapsed + "ms)")
+                        if (recalcCount < MAX_RECALC && elapsed < MAX_WAIT_MS) {
+                            recalcCount++
+                            val freshRoot = service?.rootInActiveWindow
+                            if (freshRoot != null && adapter.isInChat(freshRoot)) {
+                                val newMsgs = adapter.readMessages(freshRoot)
+                                if (newMsgs.isNotEmpty()) {
+                                    messages = newMsgs
+                                    android.util.Log.d("AIA", "pc: re-read " + newMsgs.size + " msgs, recomputing")
+                                }
+                            }
+                            delay(300)
+                            continue
+                        }
+                        android.util.Log.w("AIA", "pc: force send (recalc=" + recalcCount + " elapsed=" + elapsed + "ms)")
+                    }
+
                     reply = response.reply
+                    android.util.Log.d("AIA", "pc: LLM reply len=" + (reply?.length ?: 0) + " action=" + response.action)
                     break
                 } catch (e: Exception) {
                     recalcCount++
@@ -518,6 +552,8 @@ class MessageEngine(
 
     private suspend fun sendSplitReply(adapter: PlatformAdapter, text: String) {
         val sentences = splitSentences(text)
+            .map { normalizeReply(it) }
+            .filter { it.isNotEmpty() }
 
         for ((index, sentence) in sentences.withIndex()) {
             delay(PRE_SEND_CHECK_MS)
@@ -528,6 +564,7 @@ class MessageEngine(
             }
 
             state = EngineState.Sending
+            android.util.Log.d("AIA", "sendSplit: sending sentence idx=" + index + " len=" + sentence.length)
 
             val root = service?.rootInActiveWindow ?: return
             val result = adapter.fillAndSend(service!!, root, sentence)
@@ -543,6 +580,16 @@ class MessageEngine(
             }
         }
         RuntimeJournal.messageSent(true)
+    }
+
+    // ?????????????????????????
+    private fun normalizeReply(text: String): String {
+        var t = text
+        t = t.replace(Regex("[?,??;?:]"), " ")
+        t = t.replace(Regex("[?.]"), "")
+        t = t.replace(Regex("[??\"\'??]"), "")
+        t = t.replace(Regex("[ \t]+"), " ")
+        return t.trim()
     }
 
     private fun splitSentences(text: String): List<String> {

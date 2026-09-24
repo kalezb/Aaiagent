@@ -1,4 +1,4 @@
-package com.aaiagent.network
+﻿package com.aaiagent.network
 
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
@@ -108,7 +108,25 @@ class ApiService(private val baseUrl: String) {
         response.isSuccessful
     }
 
-    // 统一配置保存接口 POST /api/config/save
+    
+    // 自注册联系人（调用后 chat API 才不会 skip）
+    suspend fun registerContact(token: String, platform: String, contactId: String, contactName: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val map = mapOf("token" to token, "platform" to platform, "contact_id" to contactId, "contact_name" to contactName)
+            val json = gson.toJson(map)
+            val body = json.toRequestBody(jsonMediaType)
+            val req = Request.Builder()
+                .url(baseUrl + "/api/contacts")
+                .post(body)
+                .build()
+            val response = client.newCall(req).execute()
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // 缁熶竴閰嶇疆淇濆瓨鎺ュ彛 POST /api/config/save
     suspend fun saveConfig(deviceKey: String, params: Map<String, String>): ConfigSaveResult = withContext(Dispatchers.IO) {
         try {
             val map = mutableMapOf("device_key" to deviceKey)

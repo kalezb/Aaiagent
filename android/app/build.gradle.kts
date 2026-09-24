@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.aaiagent"
         minSdk = 26
         targetSdk = 34
-       versionCode = 1
-       versionName = "20260924-200800"
+       versionCode = 216700
+       versionName = "20260924-232336"
     }
 
     buildTypes {

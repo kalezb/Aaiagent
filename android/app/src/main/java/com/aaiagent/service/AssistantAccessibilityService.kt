@@ -95,8 +95,7 @@ class AssistantAccessibilityService : AccessibilityService() {
         if (engine.hostingEnabled && !isInChatRoom && engine.currentState() == EngineState.Idle) {
             val isInMsgList = adapter.isInMessageList(root)
             if (isInMsgList) {
-                android.util.Log.d("AIA", "Auto-triggering scan for $platform")
-                engine.startHosting(platform)
+                android.util.Log.d("AIA", "WindowStateChanged: on msg list, polling handles it")
             }
         }
     }
