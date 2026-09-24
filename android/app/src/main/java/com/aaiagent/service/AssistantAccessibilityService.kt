@@ -1,4 +1,4 @@
-package com.aaiagent.service
+﻿package com.aaiagent.service
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
@@ -20,19 +20,35 @@ class AssistantAccessibilityService : AccessibilityService() {
         private set
 
     override fun onCreate() {
-        android.util.Log.d("AIA", "AccessibilityService onCreate")
-        super.onCreate()
-        val db = AppDatabase.getInstance(this)
-        repository = AppRepository(db)
-        engine = MessageEngine(this, repository)
-        setSharedEngine(engine)
-        adapterRegistry = AdapterRegistry(this)
+        android.util.Log.d("AIA", "AccessibilityService onCreate START")
+        try {
+            super.onCreate()
+            android.util.Log.d("AIA", "AccessibilityService super.onCreate OK")
+            val db = AppDatabase.getInstance(this)
+            android.util.Log.d("AIA", "AccessibilityService DB OK")
+            repository = AppRepository(db)
+            android.util.Log.d("AIA", "AccessibilityService repository OK")
+            engine = MessageEngine(this, repository)
+            android.util.Log.d("AIA", "AccessibilityService engine OK")
+            setSharedEngine(engine)
+            adapterRegistry = AdapterRegistry(this)
+            android.util.Log.d("AIA", "AccessibilityService onCreate DONE")
+        } catch (e: Exception) {
+            android.util.Log.e("AIA", "AccessibilityService onCreate CRASHED", e)
+            throw e
+        }
     }
 
     override fun onServiceConnected() {
-        android.util.Log.d("AIA", "AccessibilityService onServiceConnected")
-        super.onServiceConnected()
-        isEnabled = true
+        android.util.Log.d("AIA", "AccessibilityService onServiceConnected START")
+        try {
+            super.onServiceConnected()
+            isEnabled = true
+            android.util.Log.d("AIA", "AccessibilityService onServiceConnected DONE, isEnabled=$isEnabled")
+        } catch (e: Exception) {
+            android.util.Log.e("AIA", "AccessibilityService onServiceConnected CRASHED", e)
+            throw e
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

@@ -284,45 +284,43 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     // 从当前root查找并点击未读会话
     // 从当前root查找并点击未读会话
+    // Soul badge ??? ImageView???? TextView?????? = ???
     private fun tryFindAndUnread(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
-        // 找所有 unread_msg_number 的 FrameLayout
         val badges = root.findAccessibilityNodeInfosByViewId(PREFIX + "unread_msg_number")
+        android.util.Log.d("AIA", "Soul tryFindAndUnread: found " + badges.size + " unread_msg_number nodes")
         if (badges.isEmpty()) return null
 
-        // 遍历badge，找第一个有数字子节点的（数字在子TextView里，不在父FrameLayout）
+        var checkedBadges = 0
+        var skippedNotVisible = 0
+        var skippedNoChild = 0
         for (badge in badges) {
-            if (!badge.isVisibleToUser) continue
-            // 检查子节点中是否有数字文本
-            var unreadCount = 0
-            for (i in 0 until badge.childCount) {
-                val child = badge.getChild(i) ?: continue
-                val t = child.text?.toString()?.trim() ?: ""
-                val n = t.toIntOrNull()
-                if (n != null && n > 0) {
-                    unreadCount = n
-                    break
-                }
-            }
-            if (unreadCount == 0) continue
+            if (!badge.isVisibleToUser) { skippedNotVisible++; continue }
+            val hasRedDot = badge.childCount > 0
+            checkedBadges++
+            if (!hasRedDot) { skippedNoChild++; continue }
 
-            android.util.Log.d("AIA", "Soul tryFindAndUnread: found badge with count=$unreadCount")
+            android.util.Log.d("AIA", "Soul tryFindAndUnread: found badge with red dot")
 
-            // 找到父级会话项
             val conversationItem = findAncestorByViewId(badge, "item_content_root")
                 ?: badge.parent?.parent?.parent ?: continue
 
-            // 读取联系人信息
             val name = readChildText(conversationItem, "name")
             val preview = readChildText(conversationItem, "message")
             val contactName = name ?: preview ?: "unknown"
 
             if (shouldClick) {
-                try {
-                    conversationItem.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                } catch (_: Exception) {
-                    // Fallback: click the badge's grandparent
-                    badge.parent?.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }
+                val rect = android.graphics.Rect()
+                conversationItem.getBoundsInScreen(rect)
+                val cx = rect.centerX().toFloat()
+                val cy = rect.centerY().toFloat()
+                android.util.Log.d("AIA", "Soul tryFindAndUnread: gesture tap at (" + cx + ", " + cy + ")")
+                val gesture = android.accessibilityservice.GestureDescription.Builder()
+                    .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
+                        android.graphics.Path().apply { moveTo(cx, cy) },
+                        0, 1
+                    ))
+                    .build()
+                service.dispatchGesture(gesture, null, null)
             }
 
             return ConversationInfo(
@@ -331,34 +329,39 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 preview = preview ?: ""
             )
         }
+        android.util.Log.d("AIA", "Soul tryFindAndUnread: checked=" + checkedBadges + " skippedNotVisible=" + skippedNotVisible + " skippedNoChild=" + skippedNoChild)
         return null
     }
 
 
+
     // 滚动会话列表
     private fun scrollConversationList(root: AccessibilityNodeInfo): Boolean {
-        // 尝试在 conversation_list 或 RecyclerView 上执行滚动
-        val scrollableNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "conversation_list")
-        if (scrollableNodes.isNotEmpty()) {
-            val node = scrollableNodes.first { it.isScrollable }
-            if (node != null) {
+        // Soul ?????????? recycler_view??? conversation_list?FrameLayout ?????
+        val recyclerNodes = root.findAccessibilityNodeInfosByViewId(PREFIX + "recycler_view")
+        for (node in recyclerNodes) {
+            if (node.isScrollable && node.isVisibleToUser) {
+                android.util.Log.d("AIA", "Soul scroll: using recycler_view")
                 return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
             }
         }
-        // Fallback: 找任何可滚动的容器
+        // Fallback: ???????????
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         while (queue.isNotEmpty()) {
             val n = queue.removeFirst()
-            if (n.isScrollable) {
+            if (n.isScrollable && n.isVisibleToUser) {
+                android.util.Log.d("AIA", "Soul scroll: fallback " + (n.className?.toString() ?: "unknown"))
                 return n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
             }
             for (i in 0 until n.childCount) {
                 n.getChild(i)?.let { queue.add(it) }
             }
         }
+        android.util.Log.w("AIA", "Soul scroll: no scrollable node found")
         return false
     }
+
 
     // 获取最新的root节点
     private fun getFreshRoot(): AccessibilityNodeInfo? {
@@ -386,72 +389,68 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     // Soul 导航到消息列表
     // Soul 默认进入广场页，需要点底部"消息"栏目（图标无文字，需位置兜底）
     override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
-        if (isInMessageList(root)) {
-            android.util.Log.d("AIA", "Soul navigateToMessageList: already in message list")
-            return
-        }
+        if (isInMessageList(root)) return
 
-        // 方法1：找底部导航栏中的"消息"或"聊天"标签（可能没有文字）
-        android.util.Log.d("AIA", "Soul navigateToMessageList: searching for message tab...")
-        val keywords = listOf("消息", "聊天", "message", "chat", "IM")
-        
-        val clickableNodes = mutableListOf<AccessibilityNodeInfo>()
-        findClickableTextNodes(root, clickableNodes, keywords)
-        
-        android.util.Log.d("AIA", "Soul navigateToMessageList: found ${clickableNodes.size} keyword nodes")
-        for (node in clickableNodes) {
-            val text = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
-            android.util.Log.d("AIA", "Soul navigateToMessageList: trying '$text'")
+        // Method 0: BACK x5
+        for (i in 1..5) {
             try {
-                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                kotlinx.coroutines.delay(800)
-                val newRoot = service.rootInActiveWindow
-                if (newRoot != null && isInMessageList(newRoot)) {
-                    android.util.Log.d("AIA", "Soul navigateToMessageList: success via '$text'")
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                kotlinx.coroutines.delay(400)
+                val r = service.rootInActiveWindow
+                if (r != null && isInMessageList(r)) {
+                    android.util.Log.d("AIA", "Soul nav: BACK x" + i + " success")
                     return
                 }
             } catch (_: Exception) {}
         }
 
-        // 方法2：位置估算点击底部"消息"tab（第4个，约75%位置，1080宽*0.7≈756, 2400高一带底部≈2320）
-        android.util.Log.d("AIA", "Soul navigateToMessageList: position-based fallback tap")
-        try {
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            kotlinx.coroutines.delay(300)
-        } catch (_: Exception) {}
-        
-        for (attempt in 1..3) {
-            android.util.Log.d("AIA", "Soul navigateToMessageList: position tap attempt $attempt")
-            // 底部5个tab：广场(108) 推荐(324) +(540) 消息(756) 我(972)
-            // Y: 屏幕底部上约100px = 2300
-            val displayMetrics = service.resources.displayMetrics
-            val msgX = (displayMetrics.widthPixels * 0.70).toInt()
-            val msgY = displayMetrics.heightPixels - 100
-            // 使用adb-style坐标（需要root权限？不，我们用performGlobalAction不能tap坐标）
-            // 改用：找底部所有可点击元素，按位置点第4个
-            val clickableBottom = mutableListOf<AccessibilityNodeInfo>()
-            findBottomNavItems(root, clickableBottom, displayMetrics.heightPixels)
-            // 按x坐标排序
-            val sorted = clickableBottom.sortedBy { 
-                val b = android.graphics.Rect(); it.getBoundsInScreen(b); b.centerX() 
-            }
-            android.util.Log.d("AIA", "Soul navigateToMessageList: found ${sorted.size} bottom nav items")
-            if (sorted.size >= 4) {
-                try {
-                    sorted[3].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    kotlinx.coroutines.delay(800)
-                    val newRoot = service.rootInActiveWindow
-                    if (newRoot != null && isInMessageList(newRoot)) {
-                        android.util.Log.d("AIA", "Soul navigateToMessageList: success via position (4th tab)")
-                        return
-                    }
-                } catch (_: Exception) {}
-            }
-            kotlinx.coroutines.delay(500)
+        // Method 1: click main_tab_msg by ID
+        val freshRoot = service.rootInActiveWindow ?: return
+        val tabNodes = freshRoot.findAccessibilityNodeInfosByViewId(PREFIX + "main_tab_msg")
+        for (tab in tabNodes) {
+            if (!tab.isClickable || !tab.isVisibleToUser) continue
+            try {
+                android.util.Log.d("AIA", "Soul nav: clicking main_tab_msg")
+                tab.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                kotlinx.coroutines.delay(800)
+                val r = service.rootInActiveWindow
+                if (r != null && isInMessageList(r)) {
+                    android.util.Log.d("AIA", "Soul nav: main_tab_msg success")
+                    return
+                }
+            } catch (_: Exception) {}
         }
-        
-        android.util.Log.w("AIA", "Soul navigateToMessageList: FAILED - could not find message list")
+
+        // Method 2: single-point gesture tap at message tab center
+        try {
+            val cx = 756f
+            val cy = 2244f
+            android.util.Log.d("AIA", "Soul nav: gesture tap message tab")
+            val gesture = android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(
+                    android.graphics.Path().apply { moveTo(cx, cy) },
+                    0, 1
+                ))
+                .build()
+            service.dispatchGesture(gesture, null, null)
+            kotlinx.coroutines.delay(1000)
+            val r = service.rootInActiveWindow
+            if (r != null && isInMessageList(r)) {
+                android.util.Log.d("AIA", "Soul nav: gesture tap success")
+                return
+            }
+        } catch (_: Exception) {}
+
+        // Method 3: restart Soul
+        try {
+            android.util.Log.d("AIA", "Soul nav: restarting Soul")
+            bringToForeground(service)
+            kotlinx.coroutines.delay(2000)
+        } catch (_: Exception) {}
+
+        android.util.Log.w("AIA", "Soul nav: FAILED")
     }
+
     
     // 找底部导航栏项目
     private fun findBottomNavItems(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>, screenHeight: Int) {
