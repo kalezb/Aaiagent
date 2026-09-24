@@ -88,7 +88,10 @@ class MainActivity : ComponentActivity() {
             val loc = withContext(Dispatchers.IO) { repository.getLocation() }
             homeCity = loc["home"]?.get("city") ?: "重庆"; homeDistrict = loc["home"]?.get("district") ?: "两江新区"
             workCity = loc["work"]?.get("city") ?: "重庆"; workDistrict = loc["work"]?.get("district") ?: "两江新区"
-            try { loadPersonas() } catch (_: Exception) {}
+            try {
+                loadPersonas()
+                loadServerConfig()
+            } catch (_: Exception) {}
         }
 
         // 检查引擎是否正在托管，提前设置状态（避免UI先显示灰色再变绿）
@@ -106,7 +109,7 @@ class MainActivity : ComponentActivity() {
                     platformsStatus = platformsStatus, enabledPlatforms = enabledPlatforms,
                     onTogglePlatform = { p, en -> enabledPlatforms = if (en) setOf(p) else enabledPlatforms },
                     personas = personas, activePersonaId = activePersonaId,
-                    onPersonaChange = { id -> activePersonaId = id; lifecycleScope.launch { withContext(Dispatchers.IO) { repository.setConfig("persona_id", id) } } },
+                    onPersonaChange = { id -> activatePersona(id) },
                     token = token, apiBase = apiBase,
                     onTokenChange = { token = it.trim(); tokenVerified = false; tokenVerifyStatus = "" },
                     onApiBaseChange = { apiBase = it },
@@ -130,9 +133,58 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun loadPersonas() {
         try {
-            val data = withContext(Dispatchers.IO) { okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url("$apiBase/api/persona").get().build()).execute().body?.string() ?: "{}" }
+            val data = withContext(Dispatchers.IO) {
+                okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url("$apiBase/api/persona").get().build()).execute().body?.string() ?: "{}"
+            }
             val list = com.google.gson.Gson().fromJson(data, Map::class.java)?.get("personas") as? List<*>
-            if (list != null) { personas = list.mapNotNull { val o = it as? Map<*, *> ?: return@mapNotNull null; PersonaItem(o["id"] as? String ?: "", o["name"] as? String ?: "") }; if (personas.isNotEmpty() && personas.none { it.id == activePersonaId }) activePersonaId = personas.first().id }
+            if (list != null) {
+                personas = list.mapNotNull {
+                    val item = it as? Map<*, *> ?: return@mapNotNull null
+                    PersonaItem(
+                        id = item["id"] as? String ?: "",
+                        name = item["name"] as? String ?: "",
+                        systemPrompt = item["system_prompt"] as? String ?: "",
+                        gender = item["gender"] as? String ?: "",
+                        isActive = (item["is_active"] as? Number)?.toInt() == 1
+                    )
+                }
+                val savedPersonaId = withContext(Dispatchers.IO) { repository.getPersonaId() }
+                activePersonaId = personas.firstOrNull { it.isActive }?.id
+                    ?: personas.firstOrNull { it.id == savedPersonaId }?.id
+                    ?: personas.firstOrNull()?.id
+                    ?: activePersonaId
+                withContext(Dispatchers.IO) { repository.setConfig("persona_id", activePersonaId) }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private suspend fun loadServerConfig() {
+        if (token.isBlank()) return
+        try {
+            val config = ApiService(apiBase).getConfig(token)
+            val serverPersonaId = config.activePersonaId?.takeIf { it.isNotBlank() }
+            if (serverPersonaId != null && personas.any { it.id == serverPersonaId }) {
+                activePersonaId = serverPersonaId
+                personas = personas.map { it.copy(isActive = it.id == serverPersonaId) }
+                withContext(Dispatchers.IO) { repository.setConfig("persona_id", serverPersonaId) }
+            }
+            val home = config.location?.home
+            val work = config.location?.work
+            val serverHomeCity = home?.city?.takeIf { it.isNotBlank() }
+            val serverHomeDistrict = home?.district?.takeIf { it.isNotBlank() }
+            val serverWorkCity = work?.city?.takeIf { it.isNotBlank() }
+            val serverWorkDistrict = work?.district?.takeIf { it.isNotBlank() }
+            if (serverHomeCity != null && serverHomeDistrict != null) {
+                homeCity = serverHomeCity
+                homeDistrict = serverHomeDistrict
+            }
+            if (serverWorkCity != null && serverWorkDistrict != null) {
+                workCity = serverWorkCity
+                workDistrict = serverWorkDistrict
+            }
+            withContext(Dispatchers.IO) {
+                repository.setLocation(homeCity, homeDistrict, workCity, workDistrict)
+            }
         } catch (_: Exception) {}
     }
 
@@ -155,6 +207,7 @@ class MainActivity : ComponentActivity() {
                     withContext(Dispatchers.IO) { repository.activateVerifiedToken(candidate) }
                     tokenVerified = true
                     tokenVerifyStatus = "✓ 钥匙有效，已保存"
+                    loadServerConfig()
                 } else {
                     tokenVerifyStatus = "✗ ${r.error ?: "钥匙无效"}"
                 }
@@ -164,21 +217,65 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun verifyPersona() {
-        personaVerifyStatus = "验证中..."
+    private fun activatePersona(id: String) {
+        if (token.isBlank()) {
+            personaVerifyStatus = "✗ 请先验证设备钥匙"
+            return
+        }
+        val previous = activePersonaId
+        activePersonaId = id
+        personas = personas.map { it.copy(isActive = it.id == id) }
+        personaVerifyStatus = "切换中..."
         lifecycleScope.launch {
-            try { val r = ApiService(apiBase).saveConfig(token, mapOf("action" to "verify_persona", "persona_id" to activePersonaId)); personaVerifyStatus = if (r.success) "✓ 人设已同步" else "✗ 同步失败" }
-            catch (_: Exception) { personaVerifyStatus = "✗ 同步失败" }
+            try {
+                val result = ApiService(apiBase).saveConfig(
+                    token,
+                    mapOf("action" to "activate_persona", "persona_id" to id)
+                )
+                if (result.success) {
+                    withContext(Dispatchers.IO) { repository.setConfig("persona_id", id) }
+                    personaVerifyStatus = "✓ 已切换"
+                } else {
+                    activePersonaId = previous
+                    personas = personas.map { it.copy(isActive = it.id == previous) }
+                    personaVerifyStatus = "✗ ${result.error ?: "切换失败"}"
+                }
+            } catch (_: Exception) {
+                activePersonaId = previous
+                personas = personas.map { it.copy(isActive = it.id == previous) }
+                personaVerifyStatus = "✗ 切换失败"
+            }
         }
     }
 
+    private fun verifyPersona() {
+        activatePersona(activePersonaId)
+    }
+
     private fun saveLocation() {
+        if (token.isBlank()) {
+            locationSaveStatus = "✗ 请先验证设备钥匙"
+            return
+        }
         locationSaveStatus = "保存中..."
         lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) { repository.setLocation(homeCity, homeDistrict, workCity, workDistrict) }
-                val r = ApiService(apiBase).saveConfig(token, mapOf("action" to "save_location", "home_city" to homeCity, "home_district" to homeDistrict, "work_city" to workCity, "work_district" to workDistrict))
-                locationSaveStatus = if (r.success) "✓ 位置已保存" else "✗ ${r.error ?: "保存失败"}"
+                val r = ApiService(apiBase).saveConfig(
+                    token,
+                    mapOf(
+                        "action" to "save_location",
+                        "home_city" to homeCity,
+                        "home_district" to homeDistrict,
+                        "work_city" to workCity,
+                        "work_district" to workDistrict
+                    )
+                )
+                if (r.success) {
+                    withContext(Dispatchers.IO) { repository.setLocation(homeCity, homeDistrict, workCity, workDistrict) }
+                    locationSaveStatus = "✓ 位置已同步"
+                } else {
+                    locationSaveStatus = "✗ ${r.error ?: "保存失败"}"
+                }
             } catch (_: Exception) { locationSaveStatus = "✗ 保存失败" }
         }
     }

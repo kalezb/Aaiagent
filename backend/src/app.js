@@ -168,7 +168,7 @@ async function loadPersonas() {
 }
 
 async function activatePersona(id) {
-  await api("PUT", "/persona", { token: "", id: id, name: "", system_prompt: "", is_active: 1 });
+  await api("PUT", "/persona/activate", { id: id });
   showToast("人设已切换");
   loadPersonas();
   loadOverview();

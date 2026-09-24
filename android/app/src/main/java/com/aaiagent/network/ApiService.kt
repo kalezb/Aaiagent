@@ -28,7 +28,18 @@ data class ChatResponse(
 data class ConfigResponse(
     @SerializedName("active_persona_id") val activePersonaId: String?,
     @SerializedName("active_persona_name") val activePersonaName: String?,
-    @SerializedName("platform_style_hints") val platformStyleHints: Map<String, String>?
+    @SerializedName("platform_style_hints") val platformStyleHints: Map<String, String>?,
+    val location: ConfigLocation? = null
+)
+
+data class ConfigLocation(
+    val home: ConfigAddress? = null,
+    val work: ConfigAddress? = null
+)
+
+data class ConfigAddress(
+    val city: String? = null,
+    val district: String? = null
 )
 
 data class SyncMessagesRequest(

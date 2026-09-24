@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { onRequest } from "../functions/api/[[route]]";
 
 class MockD1 {
-  constructor(historyRows = []) {
+  constructor(historyRows = [], personas = [{ id: "female", name: "星暮" }]) {
     this.historyRows = historyRows;
+    this.personas = personas;
+    this.batchCalls = [];
+    this.locationRows = new Map();
   }
 
   prepare(sql: string) {
@@ -21,17 +24,36 @@ class MockD1 {
               spent: 0,
             };
           }
+          if (sql.includes("FROM personas")) {
+            return this.personas.find((persona) => persona.id === params[0]) ?? null;
+          }
+          if (sql.includes("FROM user_locations")) {
+            return this.locationRows.get(params[0]) ?? null;
+          }
           return null;
         },
         all: async () => ({
           results: sql.includes("FROM chat_history") ? this.historyRows : [],
         }),
-        run: async () => ({ success: true }),
+        run: async () => {
+          if (sql.includes("INSERT INTO user_locations")) {
+            const [token, homeCity, homeDistrict, workCity, workDistrict, updatedAt] = params;
+            this.locationRows.set(token, {
+              home_city: homeCity,
+              home_district: homeDistrict,
+              work_city: workCity,
+              work_district: workDistrict,
+              updated_at: updatedAt,
+            });
+          }
+          return { success: true };
+        },
       }),
     };
   }
 
   async batch(statements: unknown[]) {
+    this.batchCalls.push(statements);
     return statements.map(() => ({ success: true }));
   }
 }
@@ -208,6 +230,109 @@ describe("chat logic", () => {
     expect(historyMessage.content).toContain("09/25 03:40");
     expect(historyMessage.content).not.toContain("19:40");
   });
+  it("activates the selected persona with a valid device key", async () => {
+    const db = new MockD1([], [
+      { id: "female", name: "星暮" },
+      { id: "male_chenyu", name: "陈屿" },
+    ]);
+    const request = new Request("https://example.com/api/config/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        device_key: "test-token",
+        action: "activate_persona",
+        persona_id: "male_chenyu",
+      }),
+    });
+
+    const response = await onRequest({
+      request,
+      env: { DB: db, KV: new MockKV() },
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      active_persona_id: "male_chenyu",
+      active_persona_name: "陈屿",
+    });
+    expect(db.batchCalls).toHaveLength(1);
+    expect(db.batchCalls[0]).toHaveLength(2);
+  });
+
+  it("persists multiple device locations and returns the latest one from config", async () => {
+    const db = new MockD1();
+    const saveLocation = (homeCity: string, homeDistrict: string, workCity: string, workDistrict: string) =>
+      onRequest({
+        request: new Request("https://example.com/api/config/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_key: "test-token",
+            action: "save_location",
+            home_city: homeCity,
+            home_district: homeDistrict,
+            work_city: workCity,
+            work_district: workDistrict,
+          }),
+        }),
+        env: { DB: db, KV: new MockKV() },
+      } as never);
+
+    const firstResponse = await saveLocation("重庆", "渝北区", "成都", "高新区");
+    await expect(firstResponse.json()).resolves.toMatchObject({
+      success: true,
+      location: {
+        home: { city: "重庆", district: "渝北区" },
+        work: { city: "成都", district: "高新区" },
+      },
+    });
+
+    const secondResponse = await saveLocation("北京", "朝阳区", "上海", "浦东新区");
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      success: true,
+      location: {
+        home: { city: "北京", district: "朝阳区" },
+        work: { city: "上海", district: "浦东新区" },
+      },
+    });
+
+    const configResponse = await onRequest({
+      request: new Request("https://example.com/api/config", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
+      env: { DB: db, KV: new MockKV() },
+    } as never);
+
+    await expect(configResponse.json()).resolves.toMatchObject({
+      location: {
+        home: { city: "北京", district: "朝阳区" },
+        work: { city: "上海", district: "浦东新区" },
+      },
+    });
+  });
+
+  it("rejects incomplete location updates", async () => {
+    const response = await onRequest({
+      request: new Request("https://example.com/api/config/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          device_key: "test-token",
+          action: "save_location",
+          home_city: "重庆",
+          home_district: "",
+          work_city: "重庆",
+          work_district: "两江新区",
+        }),
+      }),
+      env: { DB: new MockD1(), KV: new MockKV() },
+    } as never);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ success: false });
+  });
+
 describe("vision API", () => {
   it("rejects an invalid device key", async () => {
     const env = {

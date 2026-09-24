@@ -46,7 +46,13 @@ data class PermissionStatus(
     val overlay: Boolean = false
 )
 
-data class PersonaItem(val id: String, val name: String, val systemPrompt: String = "")
+data class PersonaItem(
+    val id: String,
+    val name: String,
+    val systemPrompt: String = "",
+    val gender: String = "",
+    val isActive: Boolean = false
+)
 
 fun checkPermissionStatus(context: Context): PermissionStatus {
     val acc = try { Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.contains(context.packageName) == true } catch (_: Exception) { false }
@@ -272,14 +278,14 @@ private fun Card2PlatformPersona(
                         border = BorderStroke(1.dp, Divider)
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(active?.name ?: "未选择", Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
+                            Text(active?.let { PersonaPresentation.displayName(it) } ?: "未选择", Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
                             Text(text = "▼", fontSize = 10.sp, color = TextSecondary)
                         }
                     }
                     DropdownMenu(expanded = exp, onDismissRequest = { exp = false }) {
                         personas.forEach { p ->
                             DropdownMenuItem(
-                                text = { Text(p.name, fontSize = 14.sp) },
+                                text = { Text(PersonaPresentation.displayName(p), fontSize = 14.sp) },
                                 onClick = { onPersonaChange(p.id); exp = false }
                             )
                         }
@@ -287,7 +293,7 @@ private fun Card2PlatformPersona(
                 }
                 Spacer(Modifier.width(8.dp))
                 VerifyButton(
-                    label = "验证",
+                    label = "确认切换",
                     status = personaVerifyStatus,
                     onClick = onVerifyPersona
                 )
@@ -313,13 +319,13 @@ private fun Card2PlatformPersona(
             }
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SaveButton("保存位置", locationSaveStatus, onSaveLocation, Modifier.weight(1f))
+                SaveButton("确认保存", locationSaveStatus, onSaveLocation, Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
             // Current status
             Surface(Modifier.fillMaxWidth(), RoundedCornerShape(8.dp), color = GreenLight) {
                 Text(
-                    "当前：${platformDisplayName(enabledPlatforms.firstOrNull() ?: "soul")} | ${active?.name ?: "未选"}·${if (activePersonaId == "female") "女·29岁" else "男·30岁"}\n家：${location.homeCity}${location.homeDistrict} | 班：${location.workCity}${location.workDistrict}",
+                    "当前：${platformDisplayName(enabledPlatforms.firstOrNull() ?: "soul")} | ${active?.let { PersonaPresentation.displayName(it) } ?: "未选择"}\n家：${location.homeCity}${location.homeDistrict} | 班：${location.workCity}${location.workDistrict}",
                     Modifier.padding(10.dp), fontSize = 12.sp, color = TextPrimary, lineHeight = 18.sp
                 )
             }

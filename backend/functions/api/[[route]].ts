@@ -105,6 +105,31 @@ function formatChinaMessageTime(epochSeconds) {
   }).format(new Date(epochSeconds * 1000));
 }
 
+async function activatePersona(db, personaId) {
+  const persona = await db.prepare("SELECT id, name FROM personas WHERE id = ?").bind(personaId).first();
+  if (!persona) return null;
+  await db.batch([
+    db.prepare("UPDATE personas SET is_active = 0"),
+    db.prepare("UPDATE personas SET is_active = 1 WHERE id = ?").bind(personaId),
+  ]);
+  return persona;
+}
+
+function formatLocation(row) {
+  if (!row) return null;
+  return {
+    home: { city: row.home_city, district: row.home_district },
+    work: { city: row.work_city, district: row.work_district },
+  };
+}
+
+async function loadDeviceLocation(db, token) {
+  const row = await db.prepare(
+    "SELECT home_city, home_district, work_city, work_district FROM user_locations WHERE token = ?"
+  ).bind(token).first();
+  return formatLocation(row);
+}
+
 export const onRequest = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -149,10 +174,14 @@ export const onRequest = async (context) => {
     // GET /api/config — App startup config
     if (path === "/api/config" && method === "GET") {
       const persona = await env.DB.prepare("SELECT id, name FROM personas WHERE is_active = 1 LIMIT 1").first();
+      const authHeader = request.headers.get("Authorization") || "";
+      const tokenRow = authHeader ? await validateToken(env.DB, authHeader) : null;
+      const location = tokenRow ? await loadDeviceLocation(env.DB, tokenRow.token) : null;
       return json({
         active_persona_id: persona?.id || "female",
         active_persona_name: persona?.name || "\u2606\u2622",
         platform_style_hints: PLATFORM_STYLE_HINTS,
+        location,
       });
     }
 
@@ -233,8 +262,21 @@ export const onRequest = async (context) => {
 
     // GET /api/persona
     if (path === "/api/persona" && method === "GET") {
-      const { results } = await env.DB.prepare("SELECT id, name, system_prompt, is_active, created_at FROM personas ORDER BY created_at").all();
-      return json({ personas: results || [] });
+      const { results } = await env.DB.prepare("SELECT id, name, system_prompt, is_active, created_at FROM personas ORDER BY CASE WHEN id LIKE 'female%' THEN 0 WHEN id LIKE 'male%' THEN 1 ELSE 2 END, created_at, id").all();
+      const personas = (results || []).map((persona) => ({
+        ...persona,
+        gender: String(persona.id).startsWith("female") ? "female" : "male",
+      }));
+      return json({ personas });
+    }
+
+    // PUT /api/persona/activate - Dashboard persona activation
+    if (path === "/api/persona/activate" && method === "PUT") {
+      if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+      const body = await request.json();
+      const persona = await activatePersona(env.DB, String(body.id || ""));
+      if (!persona) return json({ success: false, error: "人设不存在" }, 404);
+      return json({ success: true, active_persona_id: persona.id, active_persona_name: persona.name });
     }
 
     // DELETE /api/persona ? delete a persona (Dashboard)
@@ -489,6 +531,13 @@ export const onRequest = async (context) => {
       // Verify token
       if (action === "verify_token") return json({ success: true, message: "钥匙有效" });
 
+      // Activate persona
+      if (action === "activate_persona") {
+        const persona = await activatePersona(env.DB, String(body.persona_id || ""));
+        if (!persona) return json({ success: false, error: "人设不存在" });
+        return json({ success: true, message: "已切换到" + persona.name, active_persona_id: persona.id, active_persona_name: persona.name });
+      }
+
       // Verify persona
       if (action === "verify_persona") {
         const personaId = body.persona_id || "female";
@@ -499,7 +548,22 @@ export const onRequest = async (context) => {
 
       // Save location
       if (action === "save_location") {
-        return json({ success: true, message: "位置已保存" });
+        const values = [body.home_city, body.home_district, body.work_city, body.work_district]
+          .map((value) => typeof value === "string" ? value.trim() : "");
+        if (values.some((value) => !value || value.length > 64)) {
+          return json({ success: false, error: "位置参数无效" }, 400);
+        }
+        const [homeCity, homeDistrict, workCity, workDistrict] = values;
+        const updatedAt = Math.floor(Date.now() / 1000);
+        await env.DB.prepare(
+          "INSERT INTO user_locations (token, home_city, home_district, work_city, work_district, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
+          + "ON CONFLICT(token) DO UPDATE SET home_city = excluded.home_city, home_district = excluded.home_district, work_city = excluded.work_city, work_district = excluded.work_district, updated_at = excluded.updated_at"
+        ).bind(tokenRow.token, homeCity, homeDistrict, workCity, workDistrict, updatedAt).run();
+        return json({
+          success: true,
+          message: "位置已同步",
+          location: formatLocation({ home_city: homeCity, home_district: homeDistrict, work_city: workCity, work_district: workDistrict }),
+        });
       }
 
       // Switch platform

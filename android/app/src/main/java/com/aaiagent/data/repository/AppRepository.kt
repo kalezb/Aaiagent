@@ -28,7 +28,7 @@ class AppRepository(private val db: AppDatabase) {
     fun setConfig(key: String, value: String) = db.configDao().set(ConfigEntity(key, value))
 
     fun getApiBaseUrl(): String = getConfig("api_base_url") ?: "https://ai-agent-api.pages.dev"
-    fun getPersonaId(): String = getConfig("persona_id") ?: "male"
+    fun getPersonaId(): String = getConfig("persona_id") ?: "female"
 
     // Location
     fun getLocation(): Map<String, Map<String, String>> {
