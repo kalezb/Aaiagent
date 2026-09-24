@@ -108,14 +108,15 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 .filter { it.isNotEmpty() }
                 .joinToString(" ")
 
-            val hasVoice = item.findAccessibilityNodeInfosByViewId(prefix + "voice_bubble").isNotEmpty()
+            val hasVoice = hasAnyVisibleViewId(item, VOICE_TARGET_IDS) ||
+                hasDescendantViewIdFragment(item, VOICE_ID_FRAGMENTS)
             val hasImage = item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty()
-            val hasSticker = item.findAccessibilityNodeInfosByViewId(prefix + "gif_intimacy").isNotEmpty() ||
-                item.findAccessibilityNodeInfosByViewId(prefix + "iv_emoji").isNotEmpty()
-            val hasInteraction = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction").isNotEmpty() ||
-                item.findAccessibilityNodeInfosByViewId(prefix + "img_back_poke").isNotEmpty()
+            val hasSticker = hasAnyVisibleViewId(item, STICKER_TARGET_IDS) ||
+                hasDescendantViewIdFragment(item, STICKER_ID_FRAGMENTS) ||
+                hasDescendantContentDescription(item, STICKER_CONTENT_DESCRIPTIONS)
+            val hasInteraction = hasAnyVisibleViewId(item, INTERACTION_TARGET_IDS)
             val hasExchange = isExchangeItem(item)
             val type = SoulMediaType.resolve(
                 hasVoice = hasVoice,
@@ -1043,6 +1044,54 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             targetViewId = prefix + targetId
         )
     }
+    private fun hasAnyVisibleViewId(
+        item: AccessibilityNodeInfo,
+        ids: List<String>
+    ): Boolean {
+        return ids.any { id ->
+            item.findAccessibilityNodeInfosByViewId(prefix + id).any { it.isVisibleToUser }
+        }
+    }
+
+    private fun hasDescendantViewIdFragment(
+        item: AccessibilityNodeInfo,
+        fragments: List<String>
+    ): Boolean {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(item)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.isVisibleToUser) {
+                val id = node.viewIdResourceName?.substringAfterLast('/')?.lowercase().orEmpty()
+                if (fragments.any(id::contains)) return true
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::add)
+            }
+        }
+        return false
+    }
+
+    private fun hasDescendantContentDescription(
+        item: AccessibilityNodeInfo,
+        expected: List<String>
+    ): Boolean {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(item)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val description = node.contentDescription?.toString()?.trim().orEmpty()
+            if (node.isVisibleToUser && node.className?.toString()?.contains("ImageView") == true &&
+                expected.any(description::contains)
+            ) {
+                return true
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::add)
+            }
+        }
+        return false
+    }
 
     private fun readMessageSender(item: AccessibilityNodeInfo, screenWidth: Int): String {
         val hasSelfAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "meAvatar").isNotEmpty()
@@ -1093,19 +1142,47 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "chat_image_url"
         )
         private val IMAGE_TARGET_IDS = INCOMING_IMAGE_TARGET_IDS + "item_snap_pic_receive_root"
-        private val STICKER_TARGET_IDS = listOf("gif_intimacy", "iv_emoji")
+        private val STICKER_TARGET_IDS = listOf(
+            "gif_intimacy",
+            "iv_emoji",
+            "fl_reflect_emoji",
+            "iv_sticker",
+            "sticker_view",
+            "iv_gif",
+            "gif_view"
+        )
+        private val STICKER_ID_FRAGMENTS = listOf("emoji", "sticker", "gif_intimacy")
+        private val STICKER_CONTENT_DESCRIPTIONS = listOf("表情", "表情包", "贴纸")
         private val INTERACTION_TARGET_IDS = listOf("la_light_interaction", "img_back_poke")
-        private val VOICE_TARGET_IDS = listOf("voice_bubble")
+        private val VOICE_TARGET_IDS = listOf(
+            "voice_bubble",
+            "iv_voice",
+            "layout_voice_play",
+            "voice_action_button",
+            "audioContent",
+            "audioContentLayout"
+        )
+        private val VOICE_ID_FRAGMENTS = listOf("voice", "audiocontent")
         private val VISUAL_TARGET_IDS = listOf(
             "image",
             "image_content",
             "chat_image_url",
             "gif_intimacy",
             "iv_emoji",
+            "fl_reflect_emoji",
+            "iv_sticker",
+            "sticker_view",
+            "iv_gif",
+            "gif_view",
             "la_light_interaction",
             "img_back_poke",
             "item_snap_pic_receive_root",
-            "voice_bubble"
+            "voice_bubble",
+            "iv_voice",
+            "layout_voice_play",
+            "voice_action_button",
+            "audioContent",
+            "audioContentLayout"
         )
     }
 }

@@ -9,6 +9,12 @@ object IncomingMessageBatch {
         )
     }
 
+    fun visibleFingerprint(messages: List<ChatMessage>): String {
+        return IncomingConversationTracker.fingerprint(
+            messages.map { "${it.sender}:${it.type}:${it.content}" }
+        )
+    }
+
     fun select(messages: List<ChatMessage>): Selection? {
         val lastSelfIndex = messages.indexOfLast { it.sender == "self" }
         val incoming = messages

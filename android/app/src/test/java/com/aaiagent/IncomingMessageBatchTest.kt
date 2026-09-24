@@ -83,4 +83,31 @@ class IncomingMessageBatchTest {
 
         assertEquals(IncomingMessageBatch.fingerprint(newBatch), IncomingMessageBatch.fingerprint(fullBatch))
     }
+
+    @Test
+    fun `visible fingerprint distinguishes a repeated interaction after our reply`() {
+        val firstPoke = ChatMessage("other", "[拍一拍]", "interaction")
+        val selfReply = ChatMessage("self", "别拍啦 打字说吧", "text")
+        val secondPoke = ChatMessage("other", "[拍一拍]", "interaction")
+
+        val firstEvent = IncomingMessageBatch.visibleFingerprint(listOf(firstPoke))
+        val secondEvent = IncomingMessageBatch.visibleFingerprint(
+            listOf(firstPoke, selfReply, secondPoke)
+        )
+
+        org.junit.Assert.assertNotEquals(firstEvent, secondEvent)
+    }
+
+    @Test
+    fun `identical visible sequence remains stable when stale unread is reread`() {
+        val messages = listOf(
+            ChatMessage("other", "[拍一拍]", "interaction"),
+            ChatMessage("self", "别拍啦 打字说吧", "text")
+        )
+
+        assertEquals(
+            IncomingMessageBatch.visibleFingerprint(messages),
+            IncomingMessageBatch.visibleFingerprint(messages)
+        )
+    }
 }

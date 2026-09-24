@@ -50,6 +50,7 @@ class MessageEngine(
     private val lease = AutomationLease()
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     private val contexts = mutableMapOf<String, ConversationContext>()
+    private val mediaNudgeStore = MediaNudgeStore(repository)
 
     private var hostingJob: Job? = null
 
@@ -300,12 +301,13 @@ class MessageEngine(
                 "incoming batch size=${incomingBatch.incoming.size} media=${incomingBatch.mediaTarget?.type ?: "text"} latest=${latestIncoming.content}"
             )
             RuntimeJournal.readMessages(messages.size, latestIncoming.content)
-            val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
+            val visibleFingerprint = eventFingerprint(context, messages)
             if (IncomingConversationTracker.isAlreadyHandled(
                 handledFingerprint = context.lastRepliedIncomingFingerprint,
-                currentFingerprint = incomingBatchFingerprint
+                currentFingerprint = visibleFingerprint
             )) {
                 android.util.Log.d("AIA", "conversation already handled, skip duplicate reply")
+                returnToMessageList(adapter, leaseToken, "duplicate batch")
                 return
             }
             synchronized(context) {
@@ -315,39 +317,75 @@ class MessageEngine(
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 syncMessages(context, messages)
                 synchronized(context) {
-                    context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                    context.lastRepliedIncomingFingerprint = visibleFingerprint
                 }
                 return
             }
-            val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token?.trim() }.orEmpty()
-            val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
-            val api = ApiService(apiBaseUrl)
-            if (token.isEmpty()) {
-                RuntimeJournal.recovery("设备密钥为空，停止处理")
-                state = EngineState.Error
-                return
-            }
-            val understanding = understandIncomingBatch(
-                adapter = adapter,
-                root = root,
-                messages = messages,
-                incomingBatch = incomingBatch,
-                api = api,
-                token = token,
-                leaseToken = leaseToken,
-                interactionEpoch = interactionEpoch
-            )
-            messages = understanding.messages
 
-            val reply = understanding.fallbackReply ?: requestReply(
-                adapter = adapter,
-                context = context,
-                messages = messages,
-                api = api,
-                token = token,
-                leaseToken = leaseToken,
-                interactionEpoch = interactionEpoch
-            ) ?: return
+            val nudgeState = withContext(Dispatchers.IO) {
+                mediaNudgeStore.load(currentPlatform, context.contactId)
+            }
+            val nudge = MediaNudgePolicy.evaluate(
+                mediaType = incomingBatch.mediaTarget?.type,
+                visibleFingerprint = visibleFingerprint,
+                state = nudgeState
+            )
+            when (nudge.decision) {
+                MediaNudgeDecision.DUPLICATE -> {
+                    android.util.Log.d("AIA", "media nudge duplicate, skip without model")
+                    returnToMessageList(adapter, leaseToken, "duplicate media event")
+                    return
+                }
+                MediaNudgeDecision.STOP -> {
+                    val stopped = MediaNudgePolicy.markHandled(nudge.nextState, visibleFingerprint)
+                    withContext(Dispatchers.IO) {
+                        mediaNudgeStore.save(currentPlatform, context.contactId, stopped)
+                    }
+                    android.util.Log.d("AIA", "media nudge limit reached contact=${context.contactName}")
+                    returnToMessageList(adapter, leaseToken, "media nudge limit")
+                    return
+                }
+                MediaNudgeDecision.NORMAL, MediaNudgeDecision.FIXED_REPLY -> Unit
+            }
+            val reply = if (nudge.decision == MediaNudgeDecision.FIXED_REPLY) {
+                android.util.Log.d(
+                    "AIA",
+                    "media nudge fixed reply type=${incomingBatch.mediaTarget?.type} count=${nudge.nextState.consecutiveCount}"
+                )
+                nudge.reply ?: return
+            } else {
+                val token = withContext(Dispatchers.IO) {
+                    repository.getActiveToken()?.token?.trim()
+                }.orEmpty()
+                val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
+                val api = ApiService(apiBaseUrl)
+                if (token.isEmpty()) {
+                    RuntimeJournal.recovery("设备密钥为空，停止处理")
+                    state = EngineState.Error
+                    return
+                }
+                val understanding = understandIncomingBatch(
+                    adapter = adapter,
+                    root = root,
+                    messages = messages,
+                    incomingBatch = incomingBatch,
+                    api = api,
+                    token = token,
+                    leaseToken = leaseToken,
+                    interactionEpoch = interactionEpoch
+                )
+                messages = understanding.messages
+
+                understanding.fallbackReply ?: requestReply(
+                    adapter = adapter,
+                    context = context,
+                    messages = messages,
+                    api = api,
+                    token = token,
+                    leaseToken = leaseToken,
+                    interactionEpoch = interactionEpoch
+                ) ?: return
+            }
 
             if (!canContinue(leaseToken, interactionEpoch)) return
             when (hostingMode) {
@@ -355,8 +393,9 @@ class MessageEngine(
                     state = EngineState.AboutToSend
                     val sentAny = sendReply(adapter, context, reply, leaseToken, interactionEpoch)
                     if (sentAny) {
+                        persistHandledNudge(context, nudge.nextState, visibleFingerprint)
                         synchronized(context) {
-                            context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                            context.lastRepliedIncomingFingerprint = visibleFingerprint
                         }
                         if (HostingCompletionPolicy.shouldReturnToMessageList(
                                 mode = hostingMode,
@@ -364,21 +403,17 @@ class MessageEngine(
                                 automationStillOwned = canContinue(leaseToken, interactionEpoch)
                             )
                         ) {
-                            val svc = service
-                            val currentRoot = svc?.rootInActiveWindow
-                            if (svc != null && currentRoot != null) {
-                                state = EngineState.ScanningConversations
-                                adapter.navigateToMessageList(svc, currentRoot)
-                                android.util.Log.d("AIA", "full auto returned to message list")
-                            }
+                            state = EngineState.ScanningConversations
+                            returnToMessageList(adapter, leaseToken, "reply sent")
                         }
                     }
                 }
                 HostingMode.SEMI_AUTO -> {
                     if (adapter is SoulAdapter) {
                         if (adapter.fillInputOnly(reply, context.contactName)) {
+                            persistHandledNudge(context, nudge.nextState, visibleFingerprint)
                             synchronized(context) {
-                                context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                                context.lastRepliedIncomingFingerprint = visibleFingerprint
                             }
                         }
                     }
@@ -784,6 +819,41 @@ class MessageEngine(
 
     private fun incomingFingerprint(content: String): String {
         return IncomingMessageTracker.fingerprint(content)
+    }
+
+    private fun eventFingerprint(
+        context: ConversationContext,
+        messages: List<PlatformAdapter.ChatMessage>
+    ): String {
+        return Deduplicator.fingerprint(
+            platform = context.platform,
+            contactId = context.contactId,
+            content = IncomingMessageBatch.visibleFingerprint(messages)
+        )
+    }
+
+    private suspend fun persistHandledNudge(
+        context: ConversationContext,
+        state: MediaNudgeState,
+        visibleFingerprint: String
+    ) {
+        val handled = MediaNudgePolicy.markHandled(state, visibleFingerprint)
+        withContext(Dispatchers.IO) {
+            mediaNudgeStore.save(context.platform, context.contactId, handled)
+        }
+    }
+
+    private suspend fun returnToMessageList(
+        adapter: PlatformAdapter,
+        leaseToken: String,
+        reason: String
+    ) {
+        if (hostingMode != HostingMode.FULL_AUTO || !canContinue(leaseToken, null)) return
+        val svc = service ?: return
+        val currentRoot = svc.rootInActiveWindow ?: return
+        state = EngineState.ScanningConversations
+        adapter.navigateToMessageList(svc, currentRoot)
+        android.util.Log.d("AIA", "returned to message list reason=$reason")
     }
 
     private fun canContinue(leaseToken: String, interactionEpoch: Long?): Boolean {
