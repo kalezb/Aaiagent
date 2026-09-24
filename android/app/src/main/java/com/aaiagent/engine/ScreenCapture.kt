@@ -13,7 +13,8 @@ object ScreenCapture {
     suspend fun captureJpegBase64(
         service: AccessibilityService,
         targetBounds: Rect? = null,
-        quality: Int = 72
+        quality: Int = 72,
+        rejectMostlyBlack: Boolean = false
     ): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
 
@@ -46,15 +47,41 @@ object ScreenCapture {
             val software = wrapped?.copy(Bitmap.Config.ARGB_8888, false)
             if (wrapped != null && wrapped !== software) wrapped.recycle()
             val bitmap = cropSafely(software ?: return null, targetBounds)
-            val output = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(35, 90), output)
+            val result = if (rejectMostlyBlack && isMostlyBlack(bitmap)) {
+                android.util.Log.w("AIA", "ScreenCapture rejected a mostly black privacy frame")
+                null
+            } else {
+                val output = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(35, 90), output)
+                Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            }
             if (bitmap !== software) bitmap.recycle()
-            software?.recycle()
-            Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            software.recycle()
+            result
         } catch (error: Exception) {
             android.util.Log.w("AIA", "ScreenCapture encode failed", error)
             null
         }
+    }
+
+    private fun isMostlyBlack(bitmap: Bitmap): Boolean {
+        val stepX = maxOf(1, bitmap.width / 40)
+        val stepY = maxOf(1, bitmap.height / 40)
+        val samples = ArrayList<Int>(1_600)
+        var y = 0
+        while (y < bitmap.height) {
+            var x = 0
+            while (x < bitmap.width) {
+                val color = bitmap.getPixel(x, y)
+                val red = android.graphics.Color.red(color)
+                val green = android.graphics.Color.green(color)
+                val blue = android.graphics.Color.blue(color)
+                samples.add((red * 299 + green * 587 + blue * 114) / 1_000)
+                x += stepX
+            }
+            y += stepY
+        }
+        return ScreenCapturePolicy.isMostlyBlack(samples.toIntArray())
     }
 
     private fun cropSafely(bitmap: Bitmap, targetBounds: Rect?): Bitmap {

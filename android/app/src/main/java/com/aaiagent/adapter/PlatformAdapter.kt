@@ -23,7 +23,9 @@ interface PlatformAdapter {
      * Opens a protected visual message when the platform requires an explicit reveal.
      * Returning null means the target cannot be prepared and must not be captured.
      */
-    suspend fun prepareVisualCapture(root: AccessibilityNodeInfo): AccessibilityNodeInfo? = root
+    suspend fun prepareVisualCapture(root: AccessibilityNodeInfo): VisualCapturePreparation? {
+        return VisualCapturePreparation(root)
+    }
 
     /** Restores the chat view after a prepared visual capture. */
     suspend fun finishVisualCapture(root: AccessibilityNodeInfo) = Unit
@@ -77,6 +79,11 @@ interface PlatformAdapter {
         val itemCount: Int = 0,
         val firstConversation: String = "",
         val lastConversation: String = ""
+    )
+
+    data class VisualCapturePreparation(
+        val root: AccessibilityNodeInfo,
+        val privacyProtected: Boolean = false
     )
 
     enum class ScrollDirection {

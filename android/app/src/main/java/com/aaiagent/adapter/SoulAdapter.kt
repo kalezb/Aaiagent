@@ -143,15 +143,28 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return null
     }
 
-    override suspend fun prepareVisualCapture(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val item = findLatestIncomingVisualItem(root) ?: return root
+    override suspend fun prepareVisualCapture(
+        root: AccessibilityNodeInfo
+    ): PlatformAdapter.VisualCapturePreparation? {
+        val item = findLatestIncomingVisualItem(root)
+            ?: return PlatformAdapter.VisualCapturePreparation(root)
         val snapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root")
             .firstOrNull { it.isVisibleToUser }
-            ?: return root
+            ?: return PlatformAdapter.VisualCapturePreparation(root)
 
-        if (!tapNode(snapPhoto)) return null
+        if (!tapNode(snapPhoto)) {
+            return PlatformAdapter.VisualCapturePreparation(root, privacyProtected = true)
+        }
         delay(1_200)
-        return service.rootInActiveWindow
+        val previewRoot = service.rootInActiveWindow
+        if (previewRoot == null || !isPrivacyPreview(previewRoot)) {
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            return PlatformAdapter.VisualCapturePreparation(root, privacyProtected = true)
+        }
+        return PlatformAdapter.VisualCapturePreparation(
+            root = previewRoot,
+            privacyProtected = true
+        )
     }
 
     override suspend fun finishVisualCapture(root: AccessibilityNodeInfo) {
