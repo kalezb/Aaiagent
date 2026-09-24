@@ -3,6 +3,8 @@ package com.aaiagent
 import com.aaiagent.engine.AutomationLease
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.IncomingMessageTracker
+import com.aaiagent.engine.HostingCompletionPolicy
+import com.aaiagent.engine.HostingMode
 import com.aaiagent.engine.ReplyFormatter
 import com.aaiagent.engine.ReplyFreshnessDecision
 import com.aaiagent.engine.ReplyFreshnessPolicy
@@ -13,6 +15,42 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageEngineTest {
+    @Test
+    fun `full auto returns to message list only after automation still owns control`() {
+        assertTrue(
+            HostingCompletionPolicy.shouldReturnToMessageList(
+                mode = HostingMode.FULL_AUTO,
+                sentAny = true,
+                automationStillOwned = true
+            )
+        )
+        assertFalse(
+            HostingCompletionPolicy.shouldReturnToMessageList(
+                mode = HostingMode.FULL_AUTO,
+                sentAny = true,
+                automationStillOwned = false
+            )
+        )
+    }
+
+    @Test
+    fun `semi auto and monitor only do not force navigation`() {
+        assertFalse(
+            HostingCompletionPolicy.shouldReturnToMessageList(
+                mode = HostingMode.SEMI_AUTO,
+                sentAny = true,
+                automationStillOwned = true
+            )
+        )
+        assertFalse(
+            HostingCompletionPolicy.shouldReturnToMessageList(
+                mode = HostingMode.MONITOR_ONLY,
+                sentAny = true,
+                automationStillOwned = true
+            )
+        )
+    }
+
     @Test
     fun `lease only belongs to the latest owner`() {
         var now = 1_000L

@@ -356,6 +356,20 @@ class MessageEngine(
                         synchronized(context) {
                             context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
                         }
+                        if (HostingCompletionPolicy.shouldReturnToMessageList(
+                                mode = hostingMode,
+                                sentAny = true,
+                                automationStillOwned = canContinue(leaseToken, interactionEpoch)
+                            )
+                        ) {
+                            val svc = service
+                            val currentRoot = svc?.rootInActiveWindow
+                            if (svc != null && currentRoot != null) {
+                                state = EngineState.ScanningConversations
+                                adapter.navigateToMessageList(svc, currentRoot)
+                                android.util.Log.d("AIA", "full auto returned to message list")
+                            }
+                        }
                     }
                 }
                 HostingMode.SEMI_AUTO -> {
