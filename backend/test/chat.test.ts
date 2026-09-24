@@ -148,13 +148,8 @@ describe("chat logic", () => {
     expect(payload.max_tokens).toBe(160);
     expect(payload.messages[0].content).toContain("短句聊天风格");
     expect(payload.messages[0].content).toContain("用 ||| 分隔");
-    expect(payload.messages[0].content).toContain("瞬间/动态引发的聊天规则");
-    expect(payload.messages[0].content).toContain("不判断是刚发还是旧动态");
-    expect(payload.messages[0].content).toContain("不能机械照搬");
-    expect(payload.messages[0].content).toContain("避免连续重复相同句式");
-    expect(payload.messages[0].content).toContain("不要仅因为当前时间主动说半夜");
-    expect(payload.messages[0].content).toContain("时间词硬限制");
-    expect(payload.messages[0].content).toContain("即使系统时间是凌晨也必须遵守");
+    expect(payload.messages[0].content).toContain("对方夸奖外貌、穿搭、身材、照片或动态时");
+    expect(payload.messages[0].content).toContain("直接自然接住夸奖");
   });
 
   it("removes time and sleep comments when the other person did not mention time", async () => {
