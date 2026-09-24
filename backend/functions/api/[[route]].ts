@@ -50,6 +50,61 @@ async function getWeather(city, kv, apiKey) {
   } catch (e) { return { condition: "晴", temp: 20 }; }
 }
 
+const CHINA_TIME_ZONE = "Asia/Shanghai";
+
+function getChinaTimeContext(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: CHINA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    weekday: "long",
+  }).formatToParts(date);
+  const value = (type) => parts.find((part) => part.type === type)?.value || "";
+  const hour = Number(value("hour"));
+  let period = "深夜";
+  let lifeState = "半夜在休息，可能还没睡、刚被消息吵醒或躺着刷手机；不会亲自上门，但业务消息可以远程回复，也能安排白天或明早让人去收";
+  let mood = "有点困、说话随意；聊到业务时仍然会把事情安排清楚";
+  if (hour >= 6 && hour < 9) period = "清晨";
+  else if (hour >= 9 && hour < 12) period = "上午";
+  else if (hour >= 12 && hour < 14) period = "中午";
+  else if (hour >= 14 && hour < 18) period = "下午";
+  else if (hour >= 18 && hour < 23) period = "晚上";
+  if (hour >= 6 && hour < 8) { lifeState = "刚醒，正在洗漱准备开始一天"; mood = "还没完全清醒"; }
+  else if (hour >= 8 && hour < 12) { lifeState = "上午在忙回收，可能在上门、看机器或和客户沟通"; mood = "忙但正常"; }
+  else if (hour >= 12 && hour < 14) { lifeState = "中午吃饭休息，手上的事暂时放一放"; mood = "放松、随意"; }
+  else if (hour >= 14 && hour < 18) { lifeState = "下午继续忙回收，偶尔有空看手机"; mood = "忙里有闲"; }
+  else if (hour >= 18 && hour < 21) { lifeState = "忙完回家，吃饭、收拾、放松"; mood = "轻松"; }
+  else if (hour >= 21 && hour < 23) { lifeState = "在家休息，刷手机或准备洗漱"; mood = "放松"; }
+  else if (hour >= 23) { lifeState = "准备睡觉或已经躺下了"; mood = "困、想休息"; }
+  return {
+    hour,
+    period,
+    lifeState,
+    mood,
+    isRestPeriod: hour >= 23 || hour < 7,
+    currentDatetime: value("year") + "-" + value("month") + "-" + value("day") + " " +
+      value("hour") + ":" + value("minute") + ":" + value("second"),
+    weekday: value("weekday"),
+  };
+}
+
+
+function formatChinaMessageTime(epochSeconds) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: CHINA_TIME_ZONE,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(epochSeconds * 1000));
+}
+
 export const onRequest = async (context) => {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -318,13 +373,20 @@ export const onRequest = async (context) => {
 
       // system prompt
       const now2 = new Date();
-      const currentDatetime = now2.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-      const weekdays = ["\u5468\u65e5", "\u5468\u4e00", "\u5468\u4e8c", "\u5468\u4e09", "\u5468\u56db", "\u5468\u4e94", "\u5468\u516d"];
-      const weekday = weekdays[now2.getDay()];
+      const chinaTime = getChinaTimeContext(now2);
+      const currentDatetime = chinaTime.currentDatetime;
+      const weekday = chinaTime.weekday;
       const platformStyle = PLATFORM_STYLE_HINTS[platform] || "\u81ea\u7136\u3001\u65e5\u5e38";
 
       let systemPrompt = personaPrompt + "\n\n\u5f53\u524d\u5e73\u53f0\uff1a" + platform + "\uff0c\u8bf7\u7528\u4ee5\u4e0b\u8bed\u6c14\uff1a" + platformStyle + "\n\n\u73b0\u5728\u662f " + currentDatetime + "\uff08" + weekday + "\uff09\u3002\n\u4f60\u4f4f\u5728" + (location?.home?.city || "\u91cd\u5e86") + (location?.home?.district || "") + "\uff0c\u5728" + (location?.work?.city || "\u91cd\u5e86") + (location?.work?.district || "") + "\u4e0a\u73ed\u3002\n\u4eca\u5929" + weather.condition + "\uff0c\u6c14\u6e29" + weather.temp + "\u00b0C\u3002\n\n\u56de\u590d\u89c4\u5219\uff08\u5fc5\u987b\u9075\u5b88\uff09\uff1a\n1. \"\u5bf9\u65b9\u8bf4\"\u662f\u5bf9\u65b9\u53d1\u7684\u8bdd\uff0c\"\u4f60\u8bf4\"\u662f\u4f60\uff08AI \u626e\u6f14\u7684\u4eba\u8bbe\uff09\u4e4b\u524d\u53d1\u7684\u8bdd\u3002\u4e0d\u8981\u641e\u6df7\u89d2\u8272\u3002\n2. \u6ce8\u610f\u5f53\u524d\u65f6\u95f4\u3002\u665a\u4e0a\u4e0d\u8bf4\"\u65e9\u4e0a\u597d\"\uff0c\u4e0b\u5348\u4e0d\u8bf4\"\u521a\u8d77\u5e8a\"\u3002\n3. \u6ce8\u610f\u5f53\u524d\u5929\u6c14\u3002\u51b7\u5929\u4e0d\u8bf4\u70ed\uff0c\u9634\u5929\u4e0d\u8bf4\u592a\u9633\u5927\u3002\n4. \u5bf9\u65b9\u804a\u5929\u6c14\u65f6\u4ee5\u5bf9\u65b9\u8bf4\u7684\u4e3a\u51c6\u3002\u53ea\u6709\u5bf9\u65b9\u95ee\"\u4f60\u90a3\u8fb9\u51b7\u4e0d\u51b7\"\u65f6\u624d\u8bf4\u81ea\u5df1\u8fd9\u8fb9\u3002\n5. \u5bf9\u65b9\u95ee\u4f4f\u5728\u54ea \u2192 \u8bf4\u5bb6\u5ead\u5730\u5740\uff08home\uff09\u3002\u5bf9\u65b9\u95ee\u5de5\u4f5c\u5728\u54ea \u2192 \u8bf4\u5de5\u4f5c\u5730\u5740\uff08work\uff09\u3002\n6. \u4e0d\u8981\u7f16\u9020\u4e0e\u5bf9\u65b9\u6d88\u606f\u77db\u76fe\u7684\u4e8b\u5b9e\u3002\n7. \u5982\u679c\u4f60\u5f88\u4e45\u6ca1\u56de\u5bf9\u65b9\uff0c\u6b63\u5e38\u8bf4\"\u521a\u5fd9\u5b8c\"\"\u521a\u770b\u5230\u6d88\u606f\"\u3002\u4e0d\u8981\u8bf4\u5bf9\u65b9\u6d88\u5931\u4e86\u2014\u2014\u6d88\u5931\u7684\u4eba\u662f\u4f60\u3002\n8. \u53ea\u56de\u590d\u5bf9\u65b9\u6700\u65b0\u7684\u8fd9\u6761\u6d88\u606f\uff0c\u57fa\u4e8e\u4e0a\u4e0b\u6587\u81ea\u7136\u63a5\u8bdd\u3002";
-      if (hoursAgo > 2) systemPrompt += "\n\n\u6ce8\u610f\uff1a\u5bf9\u65b9\u6700\u540e\u4e00\u6761\u6d88\u606f\u662f " + hoursAgo + " \u5c0f\u65f6\u524d\u53d1\u7684\u3002\u4f60\u4e00\u76f4\u5728\u5fd9\u6ca1\u56de\u590d\uff0c\u73b0\u5728\u521a\u770b\u5230\u3002";
+      if (hoursAgo > 2) {
+        systemPrompt += chinaTime.isRestPeriod
+          ? "\n\n\u6ce8\u610f\uff1a\u5bf9\u65b9\u6700\u540e\u4e00\u6761\u6d88\u606f\u662f " + hoursAgo + " \u5c0f\u65f6\u524d\u53d1\u7684\u3002\u5f53\u524d\u662f\u6df1\u591c\uff0c\u4e0d\u8981\u8bf4\u521a\u4e0a\u95e8\u6216\u8fd8\u5728\u5916\u9762\u8dd1\uff0c\u4f46\u53ef\u4ee5\u81ea\u7136\u56de\u590d\u4e1a\u52a1\u6d88\u606f\uff0c\u4e5f\u53ef\u4ee5\u5b89\u6392\u660e\u5929\u53bb\u6536\u3002"
+          : "\n\n\u6ce8\u610f\uff1a\u5bf9\u65b9\u6700\u540e\u4e00\u6761\u6d88\u606f\u662f " + hoursAgo + " \u5c0f\u65f6\u524d\u53d1\u7684\u3002\u4f60\u4e00\u76f4\u5728\u5fd9\u6ca1\u56de\u590d\uff0c\u73b0\u5728\u521a\u770b\u5230\u3002";
+      }
+      if (chinaTime.isRestPeriod) {
+        systemPrompt += "\n\n\u661f\u66ae\u6b64\u523b\u7684\u771f\u5b9e\u751f\u6d3b\u72b6\u6001\uff1a" + chinaTime.lifeState + "\u3002\u60c5\u7eea\uff1a" + chinaTime.mood + "\u3002\n\u4f60\u8981\u50cf\u4e00\u4e2a\u6709\u6b63\u5e38\u4f5c\u606f\u548c\u60c5\u7eea\u7684\u4eba\uff0c\u4e0d\u662f24\u5c0f\u65f6\u5f85\u547d\u5ba2\u670d\u3002\u5f53\u524d\u72b6\u6001\u53ea\u4f5c\u4e3a\u81ea\u7136\u80cc\u666f\uff0c\u6309\u771f\u5b9e\u53cd\u5e94\u8bf4\u8bdd\uff0c\u4e0d\u8981\u673a\u68b0\u6c47\u62a5\u4f5c\u606f\uff0c\u4e5f\u4e0d\u8981\u7f16\u9020\u4e0e\u5f53\u524d\u72b6\u6001\u51b2\u7a81\u7684\u5de5\u4f5c\u7ecf\u5386\u3002";
+      }
 
       systemPrompt += "\n\n短句聊天风格（必须优先遵守）：\n" +
         "1. 你是在手机上跟陌生人微信式闲聊，不是客服、助手或写作机器人。不要解释、总结、说教，也不要输出客服腔和AI腔。\n" +
@@ -337,7 +399,7 @@ export const onRequest = async (context) => {
       const llmMessages = [{ role: "system", content: systemPrompt }];
       if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
       for (const msg of historyMessages) {
-        const timeStr = new Date(msg.created_at * 1000).toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+        const timeStr = formatChinaMessageTime(msg.created_at);
         const roleLabel = msg.role === "user" ? "\u5bf9\u65b9\u8bf4" : "\u4f60\u8bf4";
         llmMessages.push({ role: "user", content: "[" + timeStr + "] " + roleLabel + "\uff1a" + msg.content });
       }

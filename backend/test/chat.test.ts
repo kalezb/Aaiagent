@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { onRequest } from "../functions/api/[[route]]";
 
 class MockD1 {
+  constructor(historyRows = []) {
+    this.historyRows = historyRows;
+  }
+
   prepare(sql: string) {
     return {
       all: async () => ({ results: [] }),
@@ -19,7 +23,9 @@ class MockD1 {
           }
           return null;
         },
-        all: async () => ({ results: [] }),
+        all: async () => ({
+          results: sql.includes("FROM chat_history") ? this.historyRows : [],
+        }),
         run: async () => ({ success: true }),
       }),
     };
@@ -59,6 +65,7 @@ function visionRequest(imageBase64 = "ZmFrZS1pbWFnZQ==") {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -122,6 +129,85 @@ describe("chat logic", () => {
   });
 });
 
+  it("treats 3am as a normal person's rest period in Beijing time", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T19:44:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "睡了 被你消息吵醒了 ||| 这么晚还没睡" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "期待下一步的我们",
+        contact_name: "期待下一步的我们",
+        messages: [{ role: "user", content: "睡了吗" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const prompt = JSON.parse(String(init.body)).messages[0].content;
+    expect(prompt).toContain("2026-09-25 03:44:00");
+    expect(prompt).toContain("03:44:00（星期五）");
+    expect(prompt).toContain("业务消息可以远程回复");
+    expect(prompt).toContain("有正常作息和情绪");
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "睡了 被你消息吵醒了 ||| 这么晚还没睡",
+    });
+  });
+
+  it("formats historical messages in China time instead of server time", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T19:44:00.000Z"));
+    const historyRows = [
+      { id: 1, role: "user", content: "昨晚在吗", created_at: Math.floor(Date.parse("2026-09-24T19:40:00.000Z") / 1000) },
+    ];
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "在的" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "期待下一步的我们",
+        contact_name: "期待下一步的我们",
+        messages: [{ role: "user", content: "在吗" }],
+      }),
+    });
+    await onRequest({
+      request,
+      env: { DB: new MockD1(historyRows), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const historyMessage = JSON.parse(String(init.body)).messages.find((message) =>
+      String(message.content).includes("昨晚在吗"),
+    );
+    expect(historyMessage.content).toContain("09/25 03:40");
+    expect(historyMessage.content).not.toContain("19:40");
+  });
 describe("vision API", () => {
   it("rejects an invalid device key", async () => {
     const env = {

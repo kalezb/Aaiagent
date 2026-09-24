@@ -1022,13 +1022,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     private fun findAncestorByViewId(node: AccessibilityNodeInfo, targetId: String): AccessibilityNodeInfo? {
-        var current = node.parent
-        while (current != null) {
-            val found = current.findAccessibilityNodeInfosByViewId(prefix + targetId)
-            if (found.isNotEmpty()) return found.first()
-            current = current.parent
-        }
-        return null
+        return SoulNodeHierarchy.findIncludingSelf(
+            start = node,
+            parentOf = { it.parent },
+            viewIdOf = { it.viewIdResourceName },
+            targetViewId = prefix + targetId
+        )
     }
 
     private fun readMessageSender(item: AccessibilityNodeInfo, screenWidth: Int): String {
