@@ -86,16 +86,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
 
-            val hasSelfAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "meAvatar").isNotEmpty()
-            val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "otherAvatar").isNotEmpty()
-            val bounds = Rect()
-            item.getBoundsInScreen(bounds)
-            val sender = when {
-                hasSelfAvatar && !hasOtherAvatar -> "self"
-                hasOtherAvatar -> "other"
-                bounds.centerX() > screenWidth / 2 -> "self"
-                else -> "other"
-            }
+            val sender = readMessageSender(item, screenWidth)
 
             val text = item.findAccessibilityNodeInfosByViewId(prefix + "content_text")
                 .mapNotNull { it.text?.toString()?.trim() }
@@ -133,9 +124,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
-            val hasSelfAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "meAvatar").isNotEmpty()
-            val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "otherAvatar").isNotEmpty()
-            if (hasSelfAvatar && !hasOtherAvatar) continue
+            if (readMessageSender(item, service.resources.displayMetrics.widthPixels) == "self") continue
 
             val targets = listOf("image", "image_content", "chat_image_url", "gif_intimacy", "voice_bubble")
             for (target in targets) {
@@ -684,6 +673,29 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             current = current.parent
         }
         return null
+    }
+
+    private fun readMessageSender(item: AccessibilityNodeInfo, screenWidth: Int): String {
+        val hasSelfAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "meAvatar").isNotEmpty()
+        val hasOtherAvatar = item.findAccessibilityNodeInfosByViewId(prefix + "otherAvatar").isNotEmpty()
+        val hasReadReceipt = item.findAccessibilityNodeInfosByViewId(prefix + "message_read").isNotEmpty()
+        val avatarCenterX = centerX(item.findAccessibilityNodeInfosByViewId(prefix + "chat_avatar").firstOrNull())
+        val contentCenterX = centerX(item.findAccessibilityNodeInfosByViewId(prefix + "content_text_container").firstOrNull())
+        return SoulMessageDirection.resolve(
+            isSelfAvatar = hasSelfAvatar,
+            isOtherAvatar = hasOtherAvatar,
+            hasReadReceipt = hasReadReceipt,
+            avatarCenterX = avatarCenterX,
+            contentCenterX = contentCenterX,
+            screenWidth = screenWidth
+        )
+    }
+
+    private fun centerX(node: AccessibilityNodeInfo?): Int? {
+        val target = node ?: return null
+        val bounds = Rect()
+        target.getBoundsInScreen(bounds)
+        return if (bounds.width() > 0) bounds.centerX() else null
     }
 
     private fun readChildText(parent: AccessibilityNodeInfo, viewId: String): String? {
