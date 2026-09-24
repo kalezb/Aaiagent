@@ -60,7 +60,7 @@ class AssistantAccessibilityService : AccessibilityService() {
                 handleWindowStateChanged(event)
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                handleContentChanged(event)
+                // 不再调用 onUserInteraction，内容变化不是用户触摸
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED,
             AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> {

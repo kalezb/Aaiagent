@@ -1,4 +1,4 @@
-package com.aaiagent.engine
+﻿package com.aaiagent.engine
 
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityNodeInfo
@@ -8,23 +8,20 @@ import kotlinx.coroutines.delay
 /**
  * 错误恢复机制 (补充页 §五)
  * 任何一步失败, 先截图看当前在哪, 再决定怎么办
+ * ═══ P2-问题10: MAX_RETRY 从 2 改为 3 ═══
  */
 object ErrorRecovery {
 
-    private const val MAX_RETRY = 2
+    private const val MAX_RETRY = 3
 
-    /**
-     * 点未读会话失败 → 退回消息列表重试
-     */
     suspend fun retryClickConversation(
         adapter: PlatformAdapter,
         service: AccessibilityService,
         root: AccessibilityNodeInfo
     ): PlatformAdapter.ConversationInfo? {
         for (attempt in 1..MAX_RETRY) {
-            RuntimeJournal.recovery("重试点会话 (第${attempt}次)")
+            RuntimeJournal.recovery("重试点会话(第${attempt}次)")
 
-            // 先退回消息列表
             adapter.navigateToMessageList(service, root)
             delay(500)
 
@@ -34,25 +31,21 @@ object ErrorRecovery {
                 RuntimeJournal.recovery("重试成功")
                 return info
             }
-            delay(800)
+            delay(1000)
         }
         RuntimeJournal.recovery("重试失败, 放弃本次")
         return null
     }
 
-    /**
-     * 读消息失败 → 检测当前在哪 → 导航回正确页面
-     */
     suspend fun recoverReadMessages(
         adapter: PlatformAdapter,
         service: AccessibilityService
     ): AccessibilityNodeInfo? {
         for (attempt in 1..MAX_RETRY) {
-            RuntimeJournal.recovery("恢复读消息 (第${attempt}次)")
+            RuntimeJournal.recovery("恢复读消息(第${attempt}次)")
 
             val root = service.rootInActiveWindow ?: break
 
-            // 检测当前页面
             val page = detectPage(adapter, root)
             when (page) {
                 PageType.CHAT -> {
@@ -93,9 +86,6 @@ object ErrorRecovery {
         return null
     }
 
-    /**
-     * 发送消息失败 → 检查页面 → 恢复
-     */
     suspend fun recoverSend(
         adapter: PlatformAdapter,
         service: AccessibilityService
@@ -106,39 +96,27 @@ object ErrorRecovery {
         val page = detectPage(adapter, root)
         when (page) {
             PageType.CHAT -> {
-                // 在聊天页但发送失败, 可能是输入框问题, 放弃
                 RuntimeJournal.recovery("在聊天页但发送失败, 放弃")
             }
             PageType.POPUP -> {
                 closePopup(service, root)
             }
             else -> {
-                // 不在聊天页了, 导航回去
                 adapter.navigateToMessageList(service, root)
             }
         }
     }
 
-    /**
-     * 公开的页面检测 —— 供 AccessibilityService 等外部调用
-     */
     fun detectPagePublic(adapter: PlatformAdapter, root: AccessibilityNodeInfo): PageType {
         return detectPage(adapter, root)
     }
 
-    /**
-     * 检测当前页面类型 —— 第二层启发式规则 (补充页 §一)
-     * View ID 认不出来时用这个兜底
-     */
     private fun detectPage(adapter: PlatformAdapter, root: AccessibilityNodeInfo): PageType {
-        // 先用 View ID 快判
         if (adapter.isInChat(root)) return PageType.CHAT
         if (adapter.isInMessageList(root)) return PageType.MESSAGE_LIST
 
-        // View ID 失效 → 启发式规则
         val nodes = TreeCompressor.compressToList(root)
 
-        // 规则: 屏幕底部有输入框(EditText) + 发送按钮 → 聊天页
         val hasInput = nodes.any { it.editable && it.bounds.bottom > 1500 }
         val hasSendBtn = nodes.any {
             it.clickable && it.bounds.bottom > 1500 &&
@@ -146,18 +124,15 @@ object ErrorRecovery {
         }
         if (hasInput && hasSendBtn) return PageType.CHAT
 
-        // 规则: 多个会话项 → 消息列表
         val conversationItems = nodes.count { it.clickable && it.text.length in 2..20 }
         if (conversationItems >= 3) return PageType.MESSAGE_LIST
 
-        // 规则: 底部有tab按钮(3-5个) → 主页面
         val tabButtons = nodes.count {
             it.clickable && it.bounds.bottom > 2000 &&
             it.text.length in 1..5
         }
         if (tabButtons in 3..5) return PageType.MAIN_PAGE
 
-        // 规则: 顶部有返回箭头 + 标题 → 二级页
         val hasBackArrow = nodes.any {
             it.clickable && it.bounds.top < 200 &&
             (it.text.isEmpty() || it.text.contains("返回") == true ||
@@ -166,27 +141,31 @@ object ErrorRecovery {
         val hasTitle = nodes.any { it.bounds.top < 200 && it.text.length in 2..20 && !it.clickable }
         if (hasBackArrow && hasTitle) return PageType.SECONDARY_PAGE
 
-        // 规则: 有对话框/权限弹窗特征 → 弹窗
+        // ═══ P2-问题9: 弹窗关键词扩充 ═══
+        val popupKeywords = listOf("允许", "取消", "确定", "关闭", "知道了", "好的", "不再提示", "关闭广告")
         val dialog = nodes.any {
-            it.clickable && (it.text.contains("允许") || it.text.contains("取消") ||
-            it.text.contains("确定") || it.text.contains("关闭"))
+            it.clickable && popupKeywords.any { kw -> it.text.contains(kw) }
         }
         if (dialog) return PageType.POPUP
 
         return PageType.UNKNOWN
     }
 
+    // ═══ P2-问题9: 弹窗关闭双保险——找关闭按钮 + 双击返回 ═══
     private fun closePopup(service: AccessibilityService, root: AccessibilityNodeInfo) {
         val nodes = TreeCompressor.compressToList(root)
-        // 找"关闭"/"取消"/"X"按钮
+        val closeKeywords = listOf("关闭", "取消", "X", "×", "确定", "知道了", "好的", "不再提示", "关闭广告", "允许")
         val closeNode = nodes.find {
-            it.clickable && (it.text.contains("关闭") || it.text.contains("取消") ||
-            it.text == "X" || it.text == "×")
+            it.clickable && closeKeywords.any { kw -> it.text.contains(kw) }
         }
         if (closeNode != null) {
             val original = findNodeAt(root, closeNode.bounds)
             original?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         } else {
+            // 找不到关闭按钮 → 双击返回键
+            android.util.Log.d("AIA", "ErrorRecovery closePopup: no close button found, double back")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            Thread.sleep(500)
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
         }
     }
@@ -204,20 +183,11 @@ object ErrorRecovery {
     }
 }
 
-/**
- * 页面类型 —— 三层识别机制 (补充页 §一)
- */
 enum class PageType {
-    /** 聊天页（第一层: View ID 匹配） */
     CHAT,
-    /** 消息列表（第一层: View ID 匹配） */
     MESSAGE_LIST,
-    /** 主页面（第二层: 底部 tab 按钮） */
     MAIN_PAGE,
-    /** 二级页面（第二层: 顶部返回箭头+标题） */
     SECONDARY_PAGE,
-    /** 弹窗/对话框 */
     POPUP,
-    /** 无法识别, 需要第三层视觉兜底 */
     UNKNOWN
 }

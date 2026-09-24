@@ -417,13 +417,39 @@ private fun Card3HostingControl(
             Divider(color = Divider, thickness = 1.dp)
             Spacer(Modifier.height(14.dp))
 
-            // AI托管开关
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(text = "AI 托管", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                    Text(if (isHosting) "已开启 · 模式：${when(hostingMode) { HostingMode.FULL_AUTO -> "全自动"; HostingMode.SEMI_AUTO -> "半自动"; HostingMode.MONITOR_ONLY -> "仅记录" }} · $engineState" else "开启后按所选模式自动处理消息", fontSize = 12.sp, color = TextSecondary)
+                        // AI???????????
+            val btnBg = if (isHosting) Green else Color(0xFF555555)
+            val btnText = if (isHosting) "\u2713 \u5df2\u5f00\u542fAI\u6258\u7ba1" else "\u8bf7\u5f00\u542fAI\u6258\u7ba1"
+            val modeText = when(hostingMode) {
+                HostingMode.FULL_AUTO -> "\u5168\u81ea\u52a8\u6a21\u5f0f"
+                HostingMode.SEMI_AUTO -> "\u534a\u81ea\u52a8\u6a21\u5f0f"
+                HostingMode.MONITOR_ONLY -> "\u4ec5\u8bb0\u5f55\u6a21\u5f0f"
+            }
+            val btnSubText = if (isHosting) modeText + " \u00b7 " + engineState else "\u70b9\u51fb\u5f00\u542f\u540e\u81ea\u52a8\u5904\u7406\u6d88\u606f"
+            Surface(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+                    .clickable { onToggleHosting(!isHosting) },
+                RoundedCornerShape(12.dp),
+                color = btnBg
+            ) {
+                Column(
+                    Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        btnText,
+                        fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = White
+                    )
+                    Text(
+                        btnSubText,
+                        fontSize = 12.sp,
+                        color = White.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
-                GreenSwitch(checked = isHosting, onCheckedChange = onToggleHosting)
             }
 
             Spacer(Modifier.height(14.dp))
@@ -534,17 +560,19 @@ private fun Card3HostingControl(
 }
 
 @Composable
-private fun GreenSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    val bg by animateColorAsState(if (checked) Green else Gray, tween(200))
-    val offset by animateFloatAsState(if (checked) 1f else 0f, tween(200))
-    Box(
-        Modifier.width(44.dp).height(24.dp).clip(RoundedCornerShape(12.dp)).background(bg).clickable(
-            interactionSource = remember { MutableInteractionSource() }, indication = null
-        ) { onCheckedChange(!checked) }
+private fun ToggleButton(checked: Boolean, onToggle: () -> Unit) {
+    val bg = if (checked) Green else Color(0xFF555555)
+    val txt = if (checked) "已开启" else "已关闭"
+    Surface(
+        Modifier.clickable { onToggle() },
+        RoundedCornerShape(10.dp),
+        color = bg
     ) {
-        Box(
-            Modifier.offset(x = (2 + 20 * offset).dp, y = 2.dp).size(20.dp).clip(CircleShape)
-                .background(White).shadow(2.dp, CircleShape)
+        Text(
+            txt,
+            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            color = White
         )
     }
 }
@@ -592,7 +620,7 @@ private fun Card4Settings(
                     Text(text = "天气感知", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
                     Text(text = "开启后大模型自动知道今天天气", fontSize = 12.sp, color = TextSecondary)
                 }
-                GreenSwitch(checked = weatherEnabled, onCheckedChange = onWeatherToggle)
+                ToggleButton(checked = weatherEnabled, onToggle = { onWeatherToggle(!weatherEnabled) })
             }
 
             Spacer(Modifier.height(14.dp))
@@ -603,7 +631,7 @@ private fun Card4Settings(
                     Text(text = "时间感知", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
                     Text(text = "开启后大模型自动知道现在几点", fontSize = 12.sp, color = TextSecondary)
                 }
-                GreenSwitch(checked = timeEnabled, onCheckedChange = onTimeToggle)
+                ToggleButton(checked = timeEnabled, onToggle = { onTimeToggle(!timeEnabled) })
             }
         }
     }

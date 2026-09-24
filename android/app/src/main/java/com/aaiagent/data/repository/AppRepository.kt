@@ -1,4 +1,4 @@
-package com.aaiagent.data.repository
+﻿package com.aaiagent.data.repository
 
 import com.aaiagent.data.db.AppDatabase
 import com.aaiagent.data.db.entity.ConfigEntity
@@ -25,8 +25,14 @@ class AppRepository(private val db: AppDatabase) {
     fun getLocation(): Map<String, Map<String, String>> {
         val loc = db.userLocationDao().get() ?: UserLocationEntity()
         return mapOf(
-            "home" to mapOf("city" to loc.homeCity, "district" to loc.homeDistrict),
-            "work" to mapOf("city" to loc.workCity, "district" to loc.workDistrict)
+            "home" to mapOf(
+                "city" to loc.homeCity.ifEmpty { "重庆" },
+                "district" to loc.homeDistrict.ifEmpty { "两江新区" }
+            ),
+            "work" to mapOf(
+                "city" to loc.workCity.ifEmpty { "重庆" },
+                "district" to loc.workDistrict.ifEmpty { "两江新区" }
+            )
         )
     }
 

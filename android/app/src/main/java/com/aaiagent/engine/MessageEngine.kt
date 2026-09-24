@@ -40,7 +40,6 @@ class MessageEngine(
    private var pollingJob: Job? = null
 
    init {
-        // 初始化运行日志 (补充页 §三)
         service?.let {
             val logDir = java.io.File(it.filesDir, "journal")
             RuntimeJournal.init(logDir)
@@ -66,11 +65,18 @@ class MessageEngine(
            pollingJob = scope.launch {
                delay(500)
                while (hostingEnabled && isActive) {
+                   // ═══ P0-问题1: 空闲保护——用户5秒内碰过屏幕就跳过 ═══
+                   if (GestureMonitor.isUserTouchingRecently(5000)) {
+                       android.util.Log.d("AIA", "polling: user touched within 5s, skip")
+                       delay(3000)
+                       continue
+                   }
                    if (state == EngineState.Idle || state == EngineState.Error) {
                        if (state == EngineState.Error) state = EngineState.Idle
                        try { scanAndProcess() } catch (e: Exception) { android.util.Log.e("AIA", "scanAndProcess crashed", e); state = EngineState.Error }
                    }
-                   delay(2000)
+                   // ═══ P2-问题8: 轮询间隔改为3秒 ═══
+                   delay(3000)
                }
            }
        } else {
@@ -88,12 +94,11 @@ class MessageEngine(
        llmJob?.cancel()
    }
 
-    // 主动扫描会话列表
     private suspend fun scanAndProcess() {
-        android.util.Log.d("AIA", "scanAndProcess: start, platform=$currentPlatform")
+        android.util.Log.d("AIA", "scanAndProcess: start, platform=$currentPlatform, hostingMode=$hostingMode")
         val svc = service
         if (svc == null) {
-            android.util.Log.e("AIA", "scanAndProcess: service is null! AccessibilityService not running?")
+            android.util.Log.e("AIA", "scanAndProcess: service is null!")
             state = EngineState.Error
             return
         }
@@ -104,12 +109,11 @@ class MessageEngine(
             return
         }
 
-        // 检查当前前台App是否是目标平台
         var root = svc.rootInActiveWindow
         if (root == null) {
             android.util.Log.w("AIA", "scanAndProcess: rootInActiveWindow is null, trying bringToForeground")
             try { adapter.bringToForeground(svc) } catch (_: Exception) {}
-            delay(2500)
+            delay(3000)
             root = svc.rootInActiveWindow
             if (root == null) {
                 android.util.Log.w("AIA", "scanAndProcess: root still null after bringToForeground")
@@ -121,11 +125,10 @@ class MessageEngine(
         val currentPkg = root.packageName?.toString() ?: ""
         android.util.Log.d("AIA", "scanAndProcess: current foreground pkg=$currentPkg, target=${adapter.packageName}")
 
-        // 如果当前窗口不是目标App，直接拉起目标App
         if (currentPkg != adapter.packageName) {
             android.util.Log.d("AIA", "scanAndProcess: not in target app, bringing to foreground")
             try { adapter.bringToForeground(svc) } catch (_: Exception) {}
-            delay(2500)
+            delay(3500)
             root = svc.rootInActiveWindow
             if (root == null) {
                 android.util.Log.w("AIA", "scanAndProcess: root null after bringToForeground (2)")
@@ -134,7 +137,6 @@ class MessageEngine(
             }
         }
 
-        // 导航到消息列表
         val inMsgList = adapter.isInMessageList(root)
         android.util.Log.d("AIA", "scanAndProcess: isInMessageList=$inMsgList")
         if (!inMsgList) {
@@ -147,14 +149,11 @@ class MessageEngine(
                 state = EngineState.Idle
                 return
             }
-            val inList2 = adapter.isInMessageList(root)
-            android.util.Log.d("AIA", "scanAndProcess: after navigate, isInMessageList=$inList2")
         }
 
         RuntimeJournal.stateChange(state.toString(), "ScanningConversations")
         state = EngineState.ScanningConversations
 
-        // 扫描未读会话（最多尝试5次）
         for (attempt in 1..5) {
             android.util.Log.d("AIA", "scanAndProcess: scanning attempt $attempt/5")
             try {
@@ -168,7 +167,39 @@ class MessageEngine(
                     if (ctx.firstMessageAt == 0L) ctx.firstMessageAt = System.currentTimeMillis()
                     
                     RuntimeJournal.clickConversation(info.contactName, true)
-                    delay(1000)
+                    
+                    // ═══ P1-问题5: 点会话后等2.5秒再检查 ═══
+                    delay(2500)
+                    var chatWaitRetries = 0
+                    var chatRoot = service?.rootInActiveWindow
+
+                    // ═══ P0-问题2: 进聊天页后验证标题，防止进错人 ═══
+                    if (chatRoot != null && adapter is com.aaiagent.adapter.SoulAdapter) {
+                        val soulAdapter = adapter as com.aaiagent.adapter.SoulAdapter
+                        val actualTitle = soulAdapter.readChatTitle(chatRoot)
+                        if (actualTitle != null && actualTitle.isNotEmpty()) {
+                            val expectedName = info.contactName
+                            android.util.Log.d("AIA", "scanAndProcess: title check - expected='$expectedName' actual='$actualTitle'")
+                            if (!actualTitle.contains(expectedName) && !expectedName.contains(actualTitle) && expectedName != "unknown") {
+                                android.util.Log.w("AIA", "scanAndProcess: title mismatch! expected='$expectedName' got='$actualTitle', backing out")
+                                try { svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } catch (_: Exception) {}
+                                delay(800)
+                                state = EngineState.Idle
+                                return
+                            }
+                            android.util.Log.d("AIA", "scanAndProcess: title matched!")
+                        }
+                    }
+
+                    while (chatWaitRetries < 5 && chatRoot != null && !adapter.isInChat(chatRoot)) {
+                        android.util.Log.d("AIA", "processConversation: waiting for chat... attempt " + (chatWaitRetries + 1) + "/5")
+                        kotlinx.coroutines.delay(1000)
+                        chatRoot = service?.rootInActiveWindow
+                        // 不再导航回消息列表——我们正在等待聊天页加载
+                        chatWaitRetries++
+                    }
+                    if (chatRoot != null) root = chatRoot
+                    
                     processConversation(ctx)
                     return
                 }
@@ -214,7 +245,6 @@ class MessageEngine(
         if (Deduplicator.isSeenRecent(fp, DEDUP_WINDOW_MS)) return
         Deduplicator.markSeen(fp)
 
-        // 监控模式：只同步记录
         if (hostingMode == HostingMode.MONITOR_ONLY) {
             scope.launch(Dispatchers.IO) {
                 try {
@@ -308,10 +338,9 @@ class MessageEngine(
                     adapter.navigateToMessageList(service!!, root)
                     delay(500)
                 }
-                val root2 = service.rootInActiveWindow ?: run { state = EngineState.Idle; return }
+                val root2 = service?.rootInActiveWindow ?: run { state = EngineState.Idle; return }
                 var info = adapter.clickFirstUnreadConversation(root2, shouldClick = true)
                 if (info == null) {
-                    // 补充页 §五: 点会话失败 → 错误恢复
                     info = ErrorRecovery.retryClickConversation(adapter, service!!, root2)
                 }
                 if (info == null) {
@@ -319,41 +348,48 @@ class MessageEngine(
                     state = EngineState.Idle
                     return
                 }
-                // 更新上下文中的联系人信息
                 ctx.contactName = info.contactName
                 ctx.contactId = info.contactId
                 RuntimeJournal.clickConversation(info.contactName, true)
-                // ??????????Soul ???????? 5 ??
-                delay(1500)
+                delay(2500)
                 var chatWaitRetries = 0
                 var chatRoot = service?.rootInActiveWindow
+                
+                // title verification for processConversation path
+                if (chatRoot != null && adapter is com.aaiagent.adapter.SoulAdapter) {
+                    val soulAdapter = adapter as com.aaiagent.adapter.SoulAdapter
+                    val actualTitle = soulAdapter.readChatTitle(chatRoot)
+                    if (actualTitle != null && actualTitle.isNotEmpty() && info.contactName != "unknown") {
+                        if (!actualTitle.contains(info.contactName) && !info.contactName.contains(actualTitle)) {
+                            android.util.Log.w("AIA", "processConversation: title mismatch! backing out")
+                            try { service!!.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) } catch (_: Exception) {}
+                            delay(800)
+                            state = EngineState.Idle
+                            return
+                        }
+                    }
+                }
+                
                 while (chatWaitRetries < 5 && chatRoot != null && !adapter.isInChat(chatRoot)) {
                     android.util.Log.d("AIA", "processConversation: waiting for chat... attempt " + (chatWaitRetries + 1) + "/5")
                     kotlinx.coroutines.delay(1000)
-                    chatRoot = service.rootInActiveWindow
-                    if (chatRoot != null && !adapter.isInMessageList(chatRoot)) {
-                        android.util.Log.w("AIA", "processConversation: lost message list while waiting, navigating back")
-                        try { adapter.navigateToMessageList(service!!, chatRoot) } catch (_: Exception) {}
-                        kotlinx.coroutines.delay(1000)
-                        chatRoot = service.rootInActiveWindow
-                    }
+                    chatRoot = service?.rootInActiveWindow
+                    // 不再导航回消息列表——我们正在等待聊天页加载
                     chatWaitRetries++
                 }
                 if (chatRoot != null) root = chatRoot
             }
 
-            // ??? ??: ????????, ?????
             root = ErrorRecovery.recoverReadMessages(adapter, service!!)
-                ?: service.rootInActiveWindow
+                ?: service?.rootInActiveWindow
                 ?: run { state = EngineState.Idle; return }
 
-            // ?????Soul ????????? 3 ??
             var messages = adapter.readMessages(root)
             var readRetries = 0
             while (messages.isEmpty() && readRetries < 3) {
                 android.util.Log.d("AIA", "processConversation: readMessages empty, retry " + (readRetries + 1) + "/3")
                 kotlinx.coroutines.delay(1500)
-                root = service.rootInActiveWindow ?: run { state = EngineState.Idle; return }
+                root = service?.rootInActiveWindow ?: run { state = EngineState.Idle; return }
                 if (!adapter.isInChat(root)) {
                     android.util.Log.w("AIA", "processConversation: lost chat page during read retry")
                     state = EngineState.Idle
@@ -365,19 +401,17 @@ class MessageEngine(
             if (messages.isEmpty()) {
                 RuntimeJournal.readMessages(0, "")
                 android.util.Log.w("AIA", "processConversation: readMessages still empty after retries")
-                state = EngineState.Idle
+                state = EngineState.Error
                 return
             }
             RuntimeJournal.readMessages(messages.size, messages.lastOrNull()?.content ?: "")
 
-            // 敏感词检查
             val lastUserMsg = messages.lastOrNull { it.sender != "self" }
             if (lastUserMsg != null && SensitiveWords.isHit(lastUserMsg.content)) {
                 state = EngineState.Idle
                 return
             }
 
-            // ── 仅记录模式：同步到后端就返回，不调AI ──
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 android.util.Log.d("AIA", "processConversation: MONITOR_ONLY - syncing only")
                 scope.launch(Dispatchers.IO) {
@@ -397,7 +431,6 @@ class MessageEngine(
             val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token } ?: ""
             val apiBaseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
             val apiService = ApiService(apiBaseUrl)
-            // contactName/contactId from the conversation info (set during clickFirstUnreadConversation)
             val contactName = ctx.contactName.ifEmpty { "unknown" }
             val contactId = ctx.contactId.ifEmpty { contactName }
 
@@ -441,12 +474,12 @@ class MessageEngine(
                     break
                 } catch (e: Exception) {
                     recalcCount++
-                    if (recalcCount >= MAX_RECALC) reply = "\u6069\u6069"
+                    if (recalcCount >= MAX_RECALC) reply = "嗯嗯"
                     delay(1000)
                 }
             }
 
-            if (reply == null) reply = "\u6069\u6069\uff0c\u597d\u7684\u3002"
+            if (reply == null) reply = "嗯嗯，好的。"
 
             RuntimeJournal.llmCalled("platform=$platform contact=$contactName", reply!!)
 
@@ -468,10 +501,7 @@ class MessageEngine(
         } catch (e: Exception) {
             RuntimeJournal.stateChange(state.toString(), "Error")
             state = EngineState.Error
-            // 补充页 §五: 发送异常 → 错误恢复
-            try {
-                ErrorRecovery.recoverSend(adapter, service!!)
-            } catch (_: Exception) {}
+            try { ErrorRecovery.recoverSend(adapter, service!!) } catch (_: Exception) {}
             e.printStackTrace()
         } finally {
             if (state != EngineState.Error) state = EngineState.Idle
@@ -516,7 +546,7 @@ class MessageEngine(
     }
 
     private fun splitSentences(text: String): List<String> {
-        val raw = text.split(Regex("(?<=[\u3002\uff01\uff1f\\n])"))
+        val raw = text.split(Regex("(?<=[。！？\\n])"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
 
@@ -546,9 +576,3 @@ class MessageEngine(
     fun currentState(): EngineState = state
     fun shutdown() { scope.cancel() }
 }
-
-
-
-
-
-

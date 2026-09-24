@@ -1,6 +1,9 @@
 ﻿package com.aaiagent
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -60,6 +63,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Register broadcast receiver for ADB-triggered hosting toggle
+        registerReceiver(object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == "com.aaiagent.TRIGGER_HOSTING") {
+                    android.util.Log.d("AIA", "TRIGGER_HOSTING broadcast received")
+                    if (!isHosting) toggleHosting(true)
+                }
+            }
+        }, IntentFilter("com.aaiagent.TRIGGER_HOSTING"))
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
 
