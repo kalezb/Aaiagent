@@ -83,18 +83,20 @@ class MessageEngine(
     fun startHosting(platform: String) {
         currentPlatform = platform
         hostingEnabled = true
-        activeLeaseToken = lease.acquire()
         GestureMonitor.onAutomationActionStarted(protectionMs = 1_500L)
         RuntimeJournal.stateChange(state.toString(), "HostingStarted")
 
-        if (hostingJob?.isActive == true) {
+        if (hostingJob?.isActive == true && lease.owns(activeLeaseToken)) {
             lease.renew(activeLeaseToken)
             wakeSignal.trySend(Unit)
             return
         }
 
+        hostingJob?.cancel()
+        activeLeaseToken = lease.acquire()
+        val leaseToken = activeLeaseToken
         hostingJob = scope.launch {
-            runHostingLoop(activeLeaseToken)
+            runHostingLoop(leaseToken)
         }
     }
 

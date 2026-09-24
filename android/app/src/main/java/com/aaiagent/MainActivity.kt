@@ -69,7 +69,8 @@ class MainActivity : ComponentActivity() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == "com.aaiagent.TRIGGER_HOSTING") {
                     android.util.Log.d("AIA", "TRIGGER_HOSTING broadcast received")
-                    if (!isHosting) toggleHosting(true)
+                    val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+                    if (engine?.hostingEnabled != true) toggleHosting(true)
                 }
             }
         }, IntentFilter("com.aaiagent.TRIGGER_HOSTING"))
