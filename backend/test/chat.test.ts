@@ -148,6 +148,45 @@ describe("chat logic", () => {
     expect(payload.max_tokens).toBe(160);
     expect(payload.messages[0].content).toContain("短句聊天风格");
     expect(payload.messages[0].content).toContain("用 ||| 分隔");
+    expect(payload.messages[0].content).toContain("瞬间/动态引发的聊天规则");
+    expect(payload.messages[0].content).toContain("不判断是刚发还是旧动态");
+    expect(payload.messages[0].content).toContain("不能机械照搬");
+    expect(payload.messages[0].content).toContain("避免连续重复相同句式");
+    expect(payload.messages[0].content).toContain("不要仅因为当前时间主动说半夜");
+    expect(payload.messages[0].content).toContain("时间词硬限制");
+    expect(payload.messages[0].content).toContain("即使系统时间是凌晨也必须遵守");
+  });
+
+  it("removes time and sleep comments when the other person did not mention time", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "谢谢 你眼光不错 ||| 你怎么这个点还醒着" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "测试联系人",
+        contact_name: "测试联系人",
+        messages: [{ role: "user", content: "你这高跟鞋真好看" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "谢谢 你眼光不错",
+    });
   });
 });
 

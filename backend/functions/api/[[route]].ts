@@ -105,6 +105,38 @@ function formatChinaMessageTime(epochSeconds) {
   }).format(new Date(epochSeconds * 1000));
 }
 
+const USER_TIME_MENTION_PATTERN = /(睡|醒|早|晚|凌晨|半夜|时间|几点|这个点|夜里|夜深)/;
+const UNREQUESTED_TIME_CLAUSE_PATTERN = /(大半夜|半夜|凌晨|这么晚|这个点|还没睡|没睡着|没睡|刚醒|醒着|夜里|夜深|睡了|早点睡|很晚了|太晚了|晚睡|熬夜|大晚上)/;
+
+function hasUserTimeMention(messages) {
+  return messages.some((message) =>
+    message.role === "user" && USER_TIME_MENTION_PATTERN.test(String(message.content || ""))
+  );
+}
+
+function removeUnrequestedTimeMentions(reply) {
+  return reply
+    .split("|||")
+    .map((segment) => segment
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((clause) => !UNREQUESTED_TIME_CLAUSE_PATTERN.test(clause))
+      .join(" ")
+      .trim())
+    .filter(Boolean)
+    .join("|||");
+}
+
+function buildTimeSafeReply(reply, messages) {
+  if (hasUserTimeMention(messages)) return reply;
+  const cleaned = removeUnrequestedTimeMentions(reply);
+  if (cleaned) return cleaned;
+  const lastMessage = [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  if (/(在吗|你好|嗨|hello|哈喽)/i.test(lastMessage)) return "在呢 怎么了";
+  if (/(好看|漂亮|帅|喜欢|气质|照片|穿搭|高跟|丝袜)/.test(lastMessage)) return "谢谢 你眼光不错";
+  return "嗯 你说";
+}
+
 async function activatePersona(db, personaId) {
   const persona = await db.prepare("SELECT id, name FROM personas WHERE id = ?").bind(personaId).first();
   if (!persona) return null;
@@ -438,6 +470,13 @@ export const onRequest = async (context) => {
         "5. 输出里除 ||| 外，不要使用句号、逗号、问号、感叹号等标点；需要停顿时用空格。只输出回复正文，不要加引号、标题、序号或解释。";
 
       // build llm messages
+      systemPrompt += "\n\n瞬间/动态引发的聊天规则（优先遵守）：\n" +
+        "1. 对方用文字夸奖外貌、穿搭、照片或动态，但没有明确说刚发或新动态时，只当作对方可能看过你的瞬间后搭话。自然接住夸奖，不判断是刚发还是旧动态，不编造你此刻穿着或正在做什么，不追问哪张图以及什么时候看到。\n" +
+        "2. 对方明确说刚发、新动态或刚刷到，可以自然回应“刚发就被你看见啦”“这都被你发现了”这类意思，但这些只是表达方向，不是固定话术。每次都要结合对方原话换一种自然说法，不能机械照搬。\n" +
+        "3. 对方只发在吗、你好，且没有提到动态时，正常打招呼，不能主动认定对方看了你的瞬间。\n" +
+        "4. 不要仅因为当前时间主动说半夜、这么晚、还没睡；只有对方提到作息、睡觉或时间时，才自然回应时间。\n" +
+        "5. 先参考你说过的最近内容，避免连续重复相同句式、相同开头和相同夸赞回应；同一个意思要换自然说法。";
+      systemPrompt += "\n\n时间词硬限制：只要对方当前或最近消息没有出现睡觉、醒、早上、晚上、凌晨、半夜、时间、几点、这个点等时间相关词，你的回复就绝对不能出现半夜、这么晚、还没睡、没睡、刚醒、夜里、这个点、睡了等时间或作息判断，即使系统时间是凌晨也必须遵守。";
       const llmMessages = [{ role: "system", content: systemPrompt }];
       if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
       for (const msg of historyMessages) {
@@ -456,7 +495,8 @@ export const onRequest = async (context) => {
       });
       if (!resp.ok) return json({ error: "LLM \u8c03\u7528\u5931\u8d25" }, 502);
       const data = await resp.json();
-      const reply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
+      const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
+      const reply = buildTimeSafeReply(rawReply, messages);
       const nowSec = Math.floor(Date.now() / 1000);
 
       // save messages
