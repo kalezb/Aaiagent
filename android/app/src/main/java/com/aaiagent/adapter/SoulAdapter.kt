@@ -83,7 +83,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
-            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty() &&
+                item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isEmpty()
+            ) {
+                continue
+            }
             if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
 
             val sender = readMessageSender(item, screenWidth)
@@ -93,20 +97,29 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 .filter { it.isNotEmpty() }
                 .joinToString("")
 
-            val type = when {
-                item.findAccessibilityNodeInfosByViewId(prefix + "voice_bubble").isNotEmpty() -> "voice"
-                item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() -> "image"
-                item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() -> "image"
-                item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty() -> "image"
-                item.findAccessibilityNodeInfosByViewId(prefix + "gif_intimacy").isNotEmpty() -> "sticker"
-                text.isNotEmpty() -> "text"
-                else -> "unknown"
-            }
+            val hasVoice = item.findAccessibilityNodeInfosByViewId(prefix + "voice_bubble").isNotEmpty()
+            val hasImage = item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
+                item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
+                item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty()
+            val hasSticker = item.findAccessibilityNodeInfosByViewId(prefix + "gif_intimacy").isNotEmpty() ||
+                item.findAccessibilityNodeInfosByViewId(prefix + "iv_emoji").isNotEmpty()
+            val hasInteraction = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction").isNotEmpty() ||
+                item.findAccessibilityNodeInfosByViewId(prefix + "img_back_poke").isNotEmpty()
+            val hasSnapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isNotEmpty()
+            val type = SoulMediaType.resolve(
+                hasVoice = hasVoice,
+                hasImage = hasImage,
+                hasSticker = hasSticker,
+                hasInteraction = hasInteraction,
+                hasSnapPhoto = hasSnapPhoto,
+                hasText = text.isNotEmpty()
+            )
 
             val content = when {
                 text.isNotEmpty() -> text
                 type == "voice" -> "[语音]"
-                type == "image" -> "[图片]"
+                type == "image" -> if (hasSnapPhoto) "[闪照]" else "[图片]"
+                type == "interaction" -> "[拍一拍]"
                 type == "sticker" -> "[表情]"
                 else -> ""
             }
@@ -122,11 +135,25 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         for (item in items.asReversed()) {
             if (!item.isVisibleToUser) continue
             if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
-            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty()) continue
+            if (item.findAccessibilityNodeInfosByViewId(prefix + "tv_privacy_protect_tag").isNotEmpty() &&
+                item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isEmpty()
+            ) {
+                continue
+            }
             if (item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()) continue
             if (readMessageSender(item, service.resources.displayMetrics.widthPixels) == "self") continue
 
-            val targets = listOf("image", "image_content", "chat_image_url", "gif_intimacy", "voice_bubble")
+            val targets = listOf(
+                "image",
+                "image_content",
+                "chat_image_url",
+                "gif_intimacy",
+                "iv_emoji",
+                "la_light_interaction",
+                "img_back_poke",
+                "item_snap_pic_receive_root",
+                "voice_bubble"
+            )
             for (target in targets) {
                 val node = item.findAccessibilityNodeInfosByViewId(prefix + target)
                     .firstOrNull { it.isVisibleToUser }

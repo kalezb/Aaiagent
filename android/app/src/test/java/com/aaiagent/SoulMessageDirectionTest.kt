@@ -51,6 +51,21 @@ class SoulMessageDirectionTest {
     }
 
     @Test
+    fun `left avatar wins over a false read receipt marker`() {
+        assertEquals(
+            "other",
+            SoulMessageDirection.resolve(
+                isSelfAvatar = false,
+                isOtherAvatar = false,
+                hasReadReceipt = true,
+                avatarCenterX = 97,
+                contentCenterX = 350,
+                screenWidth = 1080
+            )
+        )
+    }
+
+    @Test
     fun `content position is the final layout fallback`() {
         assertEquals(
             "self",
