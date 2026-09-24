@@ -98,7 +98,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
             val sender = readMessageSender(item, screenWidth)
 
-            val momentCardContent = readMomentCardContent(item)
+            val momentCardContent = readMomentCardContent(item, forwardedByOther = sender == "other")
 
             val text = item.findAccessibilityNodeInfosByViewId(prefix + "content_text")
                 .mapNotNull { it.text?.toString()?.trim() }
@@ -1120,13 +1120,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return if (bounds.width() > 0) bounds.centerX() else null
     }
 
-    private fun readMomentCardContent(item: AccessibilityNodeInfo): String? {
+    private fun readMomentCardContent(
+        item: AccessibilityNodeInfo,
+        forwardedByOther: Boolean
+    ): String? {
         val cardRoot = item.findAccessibilityNodeInfosByViewId(prefix + "cardRoot")
             .firstOrNull { it.isVisibleToUser }
             ?: return null
         return SoulMomentCard.format(
             author = readChildText(cardRoot, "nickName"),
-            content = readChildText(cardRoot, "content")
+            content = readChildText(cardRoot, "content"),
+            forwardedByOther = forwardedByOther
         )
     }
 
