@@ -23,7 +23,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private val prefix = "cn.soulapp.android:id/"
     private var emptyScanStreak = 0
-    private var testContactTriggered = false
 
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
         return root.packageName?.toString() == packageName &&
@@ -441,13 +440,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             return it
         }
 
-        if (!testContactTriggered) {
-            tryFindTestContact(root, shouldClick)?.let {
-                testContactTriggered = true
-                emptyScanStreak = 0
-                return it
-            }
-        }
 
         emptyScanStreak++
         val topRoot = scrollListToTop(root)
@@ -501,23 +493,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val description = badge.contentDescription?.toString()?.trim() ?: ""
         if (text.toIntOrNull()?.let { it > 0 } == true) return true
         if (description.contains("未读") || description.contains("unread", ignoreCase = true)) return true
-        return badge.childCount > 0 && (badge.isVisibleToUser || badge.parent?.isVisibleToUser == true)
+        return false
     }
 
-    private fun tryFindTestContact(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
-        val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
-        for (item in items) {
-            if (!item.isVisibleToUser) continue
-            val name = readChildText(item, "name") ?: continue
-            if (name != TEST_CONTACT_ONLY) continue
-            val preview = readChildText(item, "message") ?: ""
-            if (shouldClick && !tapNode(item)) {
-                return ConversationInfo(name, name, preview)
-            }
-            return ConversationInfo(contactId = name, contactName = name, preview = preview)
-        }
-        return null
-    }
 
     override fun scrollConversationList(root: AccessibilityNodeInfo, direction: ScrollDirection): Boolean {
         val action = if (direction == ScrollDirection.FORWARD) {

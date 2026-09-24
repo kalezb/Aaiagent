@@ -175,7 +175,6 @@ class MessageEngine(
                 it.llmRequestId++
                 it.firstMessageAt = System.currentTimeMillis()
                 it.recalcCount = 0
-                it.lastIncomingFingerprint = ""
             }
             activeContext = it
         }
@@ -270,6 +269,14 @@ class MessageEngine(
 
             val latestOther = messages.lastOrNull { it.sender != "self" } ?: return
             RuntimeJournal.readMessages(messages.size, latestOther.content)
+            val incomingBatchFingerprint = incomingConversationFingerprint(messages)
+            if (IncomingConversationTracker.isAlreadyHandled(
+                handledFingerprint = context.lastRepliedIncomingFingerprint,
+                currentFingerprint = incomingBatchFingerprint
+            )) {
+                android.util.Log.d("AIA", "conversation already handled, skip duplicate reply")
+                return
+            }
             synchronized(context) {
                 context.lastIncomingFingerprint = incomingFingerprint(latestOther)
             }
@@ -277,6 +284,9 @@ class MessageEngine(
 
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 syncMessages(context, messages)
+                synchronized(context) {
+                    context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                }
                 return
             }
 
@@ -315,11 +325,20 @@ class MessageEngine(
             when (hostingMode) {
                 HostingMode.FULL_AUTO -> {
                     state = EngineState.AboutToSend
-                    sendReply(adapter, context, reply, leaseToken, interactionEpoch)
+                    val sentAny = sendReply(adapter, context, reply, leaseToken, interactionEpoch)
+                    if (sentAny) {
+                        synchronized(context) {
+                            context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                        }
+                    }
                 }
                 HostingMode.SEMI_AUTO -> {
                     if (adapter is SoulAdapter) {
-                        adapter.fillInputOnly(reply, context.contactName)
+                        if (adapter.fillInputOnly(reply, context.contactName)) {
+                            synchronized(context) {
+                                context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                            }
+                        }
                     }
                 }
                 HostingMode.MONITOR_ONLY -> Unit
@@ -537,39 +556,44 @@ class MessageEngine(
         reply: String,
         leaseToken: String,
         interactionEpoch: Long
-    ) {
+    ): Boolean {
         val sentences = ReplyFormatter.formatForSending(reply)
-        if (sentences.isEmpty()) return
+        if (sentences.isEmpty()) return false
+
+        var sentAny = false
 
         for ((index, sentence) in sentences.withIndex()) {
             if (!canContinue(leaseToken, interactionEpoch)) {
                 clearInputField()
-                return
+                return sentAny
             }
             if (!verifyCurrentChat(adapter, context.contactName)) {
                 RuntimeJournal.messageSent(false, "发送前联系人验证失败")
-                return
+                return sentAny
             }
 
             state = EngineState.Sending
-            val svc = service ?: return
-            val root = svc.rootInActiveWindow ?: return
+            val svc = service ?: return sentAny
+            val root = svc.rootInActiveWindow ?: return sentAny
             val result = adapter.fillAndSend(svc, root, sentence, context.contactName)
             if (result != PlatformAdapter.SendResult.SUCCESS) {
                 RuntimeJournal.messageSent(false, "发送未完成: $result")
                 if (result == PlatformAdapter.SendResult.BANNED) {
                     state = EngineState.Error
-                    return
+                    return sentAny
                 }
                 clearInputField()
-                return
+                return sentAny
             }
             RuntimeJournal.messageSent(true, "第${index + 1}/${sentences.size}句")
+
+            sentAny = true
 
             if (index < sentences.size - 1) {
                 delay(Random.nextLong(SPLIT_MIN_MS, SPLIT_MAX_MS))
             }
         }
+        return sentAny
     }
 
     private fun verifyCurrentChat(adapter: PlatformAdapter, expectedContactName: String): Boolean {
@@ -663,6 +687,16 @@ class MessageEngine(
         return contexts.getOrPut("$platform:$contactId") {
             ConversationContext(platform, contactId, firstMessageAt = System.currentTimeMillis())
         }
+    }
+
+    private fun incomingConversationFingerprint(
+        messages: List<PlatformAdapter.ChatMessage>
+    ): String {
+        return IncomingConversationTracker.fingerprint(
+            messages
+                .filter { it.sender != "self" }
+                .map { "${it.type}:${it.content}" }
+        )
     }
 
     private fun incomingFingerprint(message: PlatformAdapter.ChatMessage): String {
