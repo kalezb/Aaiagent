@@ -21,3 +21,16 @@ object SoulMediaType {
         }
     }
 }
+
+object SoulVoiceContent {
+    fun resolve(transcription: String, regularText: String): String {
+        val spoken = transcription.trim()
+        val caption = regularText.trim()
+        return when {
+            spoken.isNotEmpty() && caption.isNotEmpty() -> "对方语音转文字：$spoken $caption"
+            spoken.isNotEmpty() -> "对方语音转文字：$spoken"
+            caption.isNotEmpty() -> caption
+            else -> "[语音]"
+        }
+    }
+}

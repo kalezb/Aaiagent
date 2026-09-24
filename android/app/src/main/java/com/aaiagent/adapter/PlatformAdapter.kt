@@ -36,6 +36,14 @@ interface PlatformAdapter {
     suspend fun finishVisualCapture(root: AccessibilityNodeInfo) = Unit
 
     /**
+     * Converts every unanswered voice message in the current chat into text.
+     * Adapters without native transcription can keep the empty result.
+     */
+    suspend fun transcribeIncomingVoices(
+        root: AccessibilityNodeInfo
+    ): VoiceTranscriptionResult = VoiceTranscriptionResult()
+
+    /**
      * Lightweight list fingerprint used to wait for list animations to settle.
      */
     fun listSnapshot(root: AccessibilityNodeInfo): ListSnapshot = ListSnapshot()
@@ -90,6 +98,15 @@ interface PlatformAdapter {
         val root: AccessibilityNodeInfo,
         val privacyProtected: Boolean = false
     )
+
+    data class VoiceTranscriptionResult(
+        val total: Int = 0,
+        val transcribed: Int = 0
+    ) {
+        val hasAny: Boolean get() = transcribed > 0
+        val isComplete: Boolean get() = total > 0 && transcribed == total
+        val isPartial: Boolean get() = transcribed in 1 until total
+    }
 
     enum class ScrollDirection {
         FORWARD,

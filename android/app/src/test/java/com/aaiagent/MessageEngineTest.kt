@@ -1,6 +1,7 @@
 package com.aaiagent
 
 import com.aaiagent.engine.AutomationLease
+import com.aaiagent.adapter.PlatformAdapter.VoiceTranscriptionResult
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.IncomingMessageTracker
 import com.aaiagent.engine.HostingCompletionPolicy
@@ -95,6 +96,24 @@ class MessageEngineTest {
         assertTrue(lease.renew(token, ttlMs = 30_000L))
         now += 20_000L
         assertTrue(lease.owns(token))
+    }
+
+    @Test
+    fun `voice transcription only replies from model when every voice is readable`() {
+        val complete = VoiceTranscriptionResult(total = 3, transcribed = 3)
+        assertTrue(complete.hasAny)
+        assertTrue(complete.isComplete)
+        assertFalse(complete.isPartial)
+
+        val partial = VoiceTranscriptionResult(total = 3, transcribed = 2)
+        assertTrue(partial.hasAny)
+        assertFalse(partial.isComplete)
+        assertTrue(partial.isPartial)
+
+        val none = VoiceTranscriptionResult(total = 3)
+        assertFalse(none.hasAny)
+        assertFalse(none.isComplete)
+        assertFalse(none.isPartial)
     }
 
     @Test

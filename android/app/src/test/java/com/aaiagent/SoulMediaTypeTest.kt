@@ -1,6 +1,7 @@
 package com.aaiagent
 
 import com.aaiagent.adapter.SoulMediaType
+import com.aaiagent.adapter.SoulVoiceContent
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -41,6 +42,19 @@ class SoulMediaTypeTest {
     @Test
     fun `empty message item is unknown`() {
         assertEquals("unknown", resolve())
+    }
+
+    @Test
+    fun `voice transcript keeps its own text instead of becoming a plain text message`() {
+        assertEquals(
+            "对方语音转文字：今天天气特别冷",
+            SoulVoiceContent.resolve("今天天气特别冷", "")
+        )
+        assertEquals(
+            "对方语音转文字：今天天气特别冷 你那边呢",
+            SoulVoiceContent.resolve("今天天气特别冷", "你那边呢")
+        )
+        assertEquals("[语音]", SoulVoiceContent.resolve("", ""))
     }
 
     private fun resolve(

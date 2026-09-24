@@ -16,6 +16,7 @@ import com.aaiagent.adapter.PlatformAdapter.ScrollDirection
 import com.aaiagent.adapter.PlatformAdapter.SendResult
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.GestureMonitor
+import com.aaiagent.engine.VoiceHandler
 import kotlinx.coroutines.delay
 
 class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
@@ -97,6 +98,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 .filter { it.isNotEmpty() }
                 .joinToString("")
 
+            val voiceTranscription = item.findAccessibilityNodeInfosByViewId(prefix + "audioContent")
+                .mapNotNull { it.text?.toString()?.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+
             val hasVoice = item.findAccessibilityNodeInfosByViewId(prefix + "voice_bubble").isNotEmpty()
             val hasImage = item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
@@ -118,9 +124,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             )
 
             val content = when {
+                type == "voice" -> SoulVoiceContent.resolve(voiceTranscription, text)
                 text.isNotEmpty() -> text
                 type == "exchange" -> "[以图换图]"
-                type == "voice" -> "[语音]"
                 type == "image" -> if (hasSnapPhoto) "[闪照]" else "[图片]"
                 type == "interaction" -> "[拍一拍]"
                 type == "sticker" -> "[表情]"
@@ -131,6 +137,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
         if (messages.isEmpty()) fallbackReadTextViews(root, messages, screenWidth)
         return messages
+    }
+
+    override suspend fun transcribeIncomingVoices(
+        root: AccessibilityNodeInfo
+    ): PlatformAdapter.VoiceTranscriptionResult {
+        val screenWidth = service.resources.displayMetrics.widthPixels
+        return VoiceHandler.transcribeIncomingVoices(
+            service = service,
+            root = root,
+            isIncomingItem = { item -> readMessageSender(item, screenWidth) == "other" }
+        )
     }
 
     override fun readVisualTargetBounds(

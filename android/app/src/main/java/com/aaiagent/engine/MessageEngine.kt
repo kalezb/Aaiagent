@@ -441,12 +441,18 @@ class MessageEngine(
         android.util.Log.d("AIA", "media understanding start type=${mediaTarget.type}")
 
         if (mediaTarget.type == "voice") {
-            val transcribed = VoiceHandler.tryTranscribe(svc, root, currentPlatform)
-            if (!transcribed.isNullOrBlank()) {
-                return MediaUnderstanding(
-                    replaceLatest(messages, mediaTarget, "对方语音转文字：$transcribed"),
-                    null
-                )
+            val result = adapter.transcribeIncomingVoices(root)
+            android.util.Log.d(
+                "AIA",
+                "voice transcription total=${result.total} transcribed=${result.transcribed}"
+            )
+            if (result.isComplete || result.isPartial) {
+                val refreshedMessages = adapter.readMessages(svc.rootInActiveWindow ?: root)
+                return if (result.isComplete) {
+                    MediaUnderstanding(refreshedMessages, null)
+                } else {
+                    MediaUnderstanding(refreshedMessages, "有几条语音没听清 你打字发一下")
+                }
             }
         }
 
