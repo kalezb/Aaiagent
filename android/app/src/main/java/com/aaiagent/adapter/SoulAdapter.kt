@@ -1065,10 +1065,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val result = if (bounds.width() > 0 && bounds.height() > 0) {
             val screenWidth = service.resources.displayMetrics.widthPixels
             val screenHeight = service.resources.displayMetrics.heightPixels
-            performTap(
-                bounds.centerX().coerceIn(20, screenWidth - 20).toFloat(),
-                bounds.centerY().coerceIn(20, screenHeight - 20).toFloat()
+            val point = SoulTapPolicy.clampPoint(
+                x = bounds.centerX(),
+                y = bounds.centerY(),
+                screenWidth = screenWidth,
+                screenHeight = screenHeight
             )
+            performTap(point.x.toFloat(), point.y.toFloat())
         } else {
             false
         }
