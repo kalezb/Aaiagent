@@ -30,12 +30,35 @@ CREATE TABLE IF NOT EXISTS chat_history (
     role        TEXT NOT NULL,
     content     TEXT NOT NULL,
     created_at  INTEGER NOT NULL
+    ,source     TEXT NOT NULL DEFAULT 'sync'
+    ,message_key TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_history_token ON chat_history(token);
 CREATE INDEX IF NOT EXISTS idx_chat_history_contact ON chat_history(platform, contact_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_created ON chat_history(created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_history(token, platform, contact_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_message_key ON chat_history(token, message_key) WHERE message_key <> '';
+CREATE INDEX IF NOT EXISTS idx_chat_history_incremental ON chat_history(token, id);
+
+-- 客户看板只读这张轻量统计表，避免每 5 秒扫描全部聊天历史
+CREATE TABLE IF NOT EXISTS conversation_stats (
+    token               TEXT NOT NULL,
+    platform            TEXT NOT NULL,
+    contact_id          TEXT NOT NULL,
+    contact_name        TEXT NOT NULL DEFAULT '',
+    message_count       INTEGER NOT NULL DEFAULT 0,
+    latest_message_id   INTEGER NOT NULL DEFAULT 0,
+    latest_role         TEXT NOT NULL DEFAULT '',
+    latest_content      TEXT NOT NULL DEFAULT '',
+    latest_source       TEXT NOT NULL DEFAULT '',
+    latest_at           INTEGER NOT NULL DEFAULT 0,
+    updated_at          INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (token, platform, contact_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_stats_recent
+  ON conversation_stats(token, latest_at DESC);
 
 -- 会话摘要
 CREATE TABLE IF NOT EXISTS session_summary (
@@ -149,3 +172,16 @@ CREATE TABLE IF NOT EXISTS customer_summaries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_customer_summaries_updated ON customer_summaries(token, updated_at);
+
+-- 只保存结构化身份档案，不保存普通口水话；按统一客户分组共享。
+CREATE TABLE IF NOT EXISTS customer_profiles (
+    token       TEXT NOT NULL,
+    group_id    TEXT NOT NULL,
+    profile_json TEXT NOT NULL DEFAULT '{}',
+    last_processed_message_id INTEGER NOT NULL DEFAULT 0,
+    extracted_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (token, group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_updated ON customer_profiles(token, updated_at);

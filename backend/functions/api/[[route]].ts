@@ -138,6 +138,65 @@ function buildTimeSafeReply(reply, messages) {
   return "嗯 你说";
 }
 
+async function maybeExtractCustomerProfile(env, tokenRow, platform, contactId) {
+  if (!env.DEEPSEEK_API_KEY) return;
+  const token = tokenRow.token;
+  const groupId = await resolveProfileGroup(env.DB, token, platform, contactId);
+  const existing = await loadCustomerProfile(env.DB, token, groupId);
+  const aliases = [{ platform, contact_id: contactId }];
+  if (!groupId.startsWith("single:")) {
+    const { results } = await env.DB.prepare(
+      "SELECT platform, contact_id FROM contact_links WHERE token = ? AND group_id = ? ORDER BY created_at"
+    ).bind(token, groupId).all();
+    if (results?.length) aliases.splice(0, aliases.length, ...results);
+  }
+  const clauses = aliases.map(() => "(platform = ? AND contact_id = ?)");
+  const aliasParams = aliases.flatMap((alias) => [alias.platform, alias.contact_id]);
+  const state = await env.DB.prepare(
+    "SELECT COUNT(*) AS user_count, MAX(id) AS max_id FROM chat_history WHERE token = ? AND role = 'user' AND (" + clauses.join(" OR ") + ") AND id > ?"
+  ).bind(token, ...aliasParams, existing.last_processed_message_id).first();
+  if (Number(state?.user_count || 0) < 40) return;
+  const { results } = await env.DB.prepare(
+    "SELECT id, content, created_at FROM chat_history WHERE token = ? AND role = 'user' AND (" + clauses.join(" OR ") + ") AND id > ? ORDER BY id ASC LIMIT 240"
+  ).bind(token, ...aliasParams, existing.last_processed_message_id).all();
+  const candidates = (results || [])
+    .map((row) => ({ id: Number(row.id || 0), content: String(row.content || "").trim(), created_at: Number(row.created_at || 0) }))
+    .filter((row) => profileCandidateText(row.content))
+    .slice(-80);
+  const maxId = Number(state?.max_id || 0);
+  const now = Math.floor(Date.now() / 1000);
+  if (!candidates.length) {
+    await env.DB.prepare(
+      "INSERT INTO customer_profiles (token, group_id, profile_json, last_processed_message_id, extracted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(token, group_id) DO UPDATE SET last_processed_message_id = excluded.last_processed_message_id, extracted_at = excluded.extracted_at, updated_at = excluded.updated_at"
+    ).bind(token, groupId, JSON.stringify(existing.profile), maxId, now, now).run();
+    return;
+  }
+  const schema = JSON.stringify(emptyCustomerProfile());
+  const candidateLines = candidates.map((row) => `[${formatChinaMessageTime(row.created_at)}] ${row.content.slice(0, 180)}`).join("\n");
+  const response = await fetch(((env.DEEPSEEK_API_BASE || "https://api.deepseek.com/v1").replace(/\/+$/, "")) + "/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + env.DEEPSEEK_API_KEY },
+    body: JSON.stringify({
+      model: env.PROFILE_MODEL || "deepseek-flash",
+      temperature: 0,
+      max_tokens: 900,
+      thinking: { type: "disabled" },
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "你只负责从客户聊天里提取长期有效的客户资料。不要总结普通聊天，不要猜测。只输出 JSON，不确定的字段留空。数组去重，最多保留 12 项。只按给定结构输出：" + schema },
+        { role: "user", content: "已有档案：" + JSON.stringify(existing.profile) + "\n可能含个人信息的聊天片段：\n" + candidateLines },
+      ],
+    }),
+  });
+  if (!response.ok) return;
+  const data = await response.json();
+  const extracted = parseJsonObject(data.choices?.[0]?.message?.content, null);
+  if (!extracted || typeof extracted !== "object") return;
+  const merged = mergeCustomerProfile(existing.profile, extracted);
+  await env.DB.prepare(
+    "INSERT INTO customer_profiles (token, group_id, profile_json, last_processed_message_id, extracted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(token, group_id) DO UPDATE SET profile_json = excluded.profile_json, last_processed_message_id = excluded.last_processed_message_id, extracted_at = excluded.extracted_at, updated_at = excluded.updated_at"
+  ).bind(token, groupId, JSON.stringify(merged), maxId, now, now).run();
+}
 async function activatePersona(db, personaId) {
   const persona = await db.prepare("SELECT id, name FROM personas WHERE id = ?").bind(personaId).first();
   if (!persona) return null;
@@ -153,6 +212,80 @@ function formatLocation(row) {
   return {
     home: { city: row.home_city, district: row.home_district },
     work: { city: row.work_city, district: row.work_district },
+  };
+}
+
+function parseJsonObject(value, fallback = {}) {
+  if (!value) return fallback;
+  if (typeof value === "object") return value;
+  const text = String(value).trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  try { return JSON.parse(text); } catch (_) { return fallback; }
+}
+
+function emptyCustomerProfile() {
+  return {
+    basic: { name: "", gender: "", age: "" },
+    location: { hometown: "", city: "", residence: "" },
+    education: { school: "", major: "", degree: "" },
+    work: { company: "", role: "", industry: "" },
+    family: { marital_status: "", children: "", notes: "" },
+    relationship: { status: "", preferences: "" },
+    preferences: { likes: [], dislikes: [], hobbies: [] },
+    life: { habits: "", schedule: "" },
+    recent: { goals: [], events: [] },
+    notes: [],
+  };
+}
+
+function mergeProfileValue(current, incoming) {
+  if (Array.isArray(current) || Array.isArray(incoming)) {
+    const values = [...(Array.isArray(current) ? current : []), ...(Array.isArray(incoming) ? incoming : [])]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+    return [...new Set(values)].slice(-30);
+  }
+  if (current && incoming && typeof current === "object" && typeof incoming === "object") {
+    const merged = { ...current };
+    for (const [key, value] of Object.entries(incoming)) {
+      merged[key] = mergeProfileValue(merged[key], value);
+    }
+    return merged;
+  }
+  const text = typeof incoming === "string" ? incoming.trim() : incoming;
+  return text === "" || text === null || text === undefined ? current : text;
+}
+
+function mergeCustomerProfile(existing, incoming) {
+  const base = emptyCustomerProfile();
+  const current = mergeProfileValue(base, parseJsonObject(existing, {}));
+  return mergeProfileValue(current, parseJsonObject(incoming, {}));
+}
+
+const PROFILE_CANDIDATE_PATTERN = /(鎴戝彨|鎴戞槸|濮撳悕|鍚嶅瓧|骞撮緞|浣忓湪|瀹堕噷|鑰佸|鍩庡競|鍦板潃|瀛︽牎|涓撴牚|涓撲笟|鍏徃|涓婄彮|宸ヤ綔|鑱屼笟|琛屼笟|缁撳|绂诲|鑰佸﹩|鑰佸叕|瀛╁瓙|鐢锋湅鍙?|濂虫湅鍙?|鍠滄|涓嶅枩娆?|鐖卞ソ|涔犳儃|鏈€杩?|鎵撶畻|鍑嗗|璁″垝|鐩爣|鐢熸棩|姣曚笟|璁ょ瘑|瑙佽繃)/;
+
+function profileCandidateText(value) {
+  const text = String(value || "").trim();
+  return text.length >= 2 && text.length <= 240 && /(我叫|我是|姓名|名字|年龄|多大|住在|家里|老家|城市|地址|学校|大学|专业|公司|上班|工作|职业|行业|结婚|离婚|老婆|老公|孩子|男朋友|女朋友|爱好|习惯|最近|打算|准备|计划|目标|生日|毕业|认识|见过|喜欢|不喜欢)/.test(text);
+}
+
+async function resolveProfileGroup(db, token, platform, contactId) {
+  const link = await db.prepare(
+    "SELECT group_id FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
+  ).bind(token, platform, contactId).first();
+  return link?.group_id || makeSingleGroupId(token, platform, contactId);
+}
+
+async function loadCustomerProfile(db, token, groupId) {
+  if (!token || !groupId) return { profile: emptyCustomerProfile(), last_processed_message_id: 0, updated_at: 0 };
+  const row = await db.prepare(
+    "SELECT profile_json, last_processed_message_id, extracted_at, updated_at FROM customer_profiles WHERE token = ? AND group_id = ?"
+  ).bind(token, groupId).first();
+  if (!row) return { profile: emptyCustomerProfile(), last_processed_message_id: 0, updated_at: 0 };
+  return {
+    profile: mergeCustomerProfile({}, parseJsonObject(row.profile_json, emptyCustomerProfile())),
+    last_processed_message_id: Number(row.last_processed_message_id || 0),
+    extracted_at: Number(row.extracted_at || 0),
+    updated_at: Number(row.updated_at || 0),
   };
 }
 
@@ -184,6 +317,67 @@ function parseSingleGroupId(groupId) {
   } catch (_) {
     return null;
   }
+}
+
+const VALID_MESSAGE_SOURCES = new Set(["ai", "human_phone", "dashboard", "sync"]);
+
+function hashMessagePart(value) {
+  let hash = 2166136261;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function makeSyncedMessageKey(token, platform, contactId, message, index) {
+  const clientKey = String(message.message_key || message.messageId || "").trim();
+  if (clientKey) return clientKey.slice(0, 220);
+  const role = message.role === "assistant" ? "assistant" : "user";
+  const createdAt = Number(message.created_at || 0);
+  const fingerprint = [role, String(message.content || ""), createdAt, index].join("\u001f");
+  return ["auto", platform, contactId, hashMessagePart(fingerprint)].join(":").slice(0, 220);
+}
+
+function countInsertedRows(results) {
+  return (results || []).reduce((total, result) => {
+    const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
+    return total + (Number.isFinite(changes) ? changes : 0);
+  }, 0);
+}
+
+async function updateConversationStats(db, token, platform, contactId, contactName, insertedCount, latestMessage, nowSec) {
+  if (!insertedCount || !latestMessage) return;
+  const role = latestMessage.role === "assistant" ? "assistant" : "user";
+  const source = VALID_MESSAGE_SOURCES.has(latestMessage.source) ? latestMessage.source : "sync";
+  const content = String(latestMessage.content || "").slice(0, 4000);
+  const createdAt = Number(latestMessage.created_at || nowSec);
+  await db.prepare(
+    "INSERT INTO conversation_stats (token, platform, contact_id, contact_name, message_count, latest_message_id, latest_role, latest_content, latest_source, latest_at, updated_at) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+    "ON CONFLICT(token, platform, contact_id) DO UPDATE SET " +
+    "message_count = conversation_stats.message_count + excluded.message_count, " +
+    "contact_name = excluded.contact_name, " +
+    "latest_message_id = CASE WHEN excluded.latest_at >= conversation_stats.latest_at THEN excluded.latest_message_id ELSE conversation_stats.latest_message_id END, " +
+    "latest_role = CASE WHEN excluded.latest_at >= conversation_stats.latest_at THEN excluded.latest_role ELSE conversation_stats.latest_role END, " +
+    "latest_content = CASE WHEN excluded.latest_at >= conversation_stats.latest_at THEN excluded.latest_content ELSE conversation_stats.latest_content END, " +
+    "latest_source = CASE WHEN excluded.latest_at >= conversation_stats.latest_at THEN excluded.latest_source ELSE conversation_stats.latest_source END, " +
+    "latest_at = MAX(conversation_stats.latest_at, excluded.latest_at), " +
+    "updated_at = excluded.updated_at"
+  ).bind(
+    token,
+    platform,
+    contactId,
+    String(contactName || contactId),
+    insertedCount,
+    0,
+    role,
+    content,
+    source,
+    createdAt,
+    nowSec
+  ).run();
 }
 
 async function loadGroupIdentity(db, groupId, token) {
@@ -236,11 +430,23 @@ async function listCustomerGroups(db, token, platformFilter, searchQuery) {
   const linkStmt = db.prepare(linkQuery);
   const links = (await (token ? linkStmt.bind(token) : linkStmt).all()).results || [];
 
+  // Use one latest row per conversation instead of loading up to 10k rows.
   const historyQuery = token
-    ? "SELECT id, token, platform, contact_id, contact_name, role, content, created_at FROM chat_history WHERE token = ? ORDER BY created_at DESC LIMIT 10000"
-    : "SELECT id, token, platform, contact_id, contact_name, role, content, created_at FROM chat_history ORDER BY created_at DESC LIMIT 10000";
+    ? "SELECT token, platform, contact_id, contact_name, latest_role AS role, latest_content AS content, latest_at AS created_at, message_count FROM conversation_stats WHERE token = ?"
+    : "SELECT token, platform, contact_id, contact_name, latest_role AS role, latest_content AS content, latest_at AS created_at, message_count FROM conversation_stats";
   const historyStmt = db.prepare(historyQuery);
   const histories = (await (token ? historyStmt.bind(token) : historyStmt).all()).results || [];
+  const contentMatchQuery = token
+    ? "SELECT DISTINCT token, platform, contact_id FROM chat_history WHERE token = ? AND lower(content) LIKE ? LIMIT 500"
+    : "SELECT DISTINCT token, platform, contact_id FROM chat_history WHERE lower(content) LIKE ? LIMIT 500";
+  const normalizedSearch = String(searchQuery || "").trim().toLowerCase();
+  let contentHitKeys = new Set();
+  if (normalizedSearch) {
+    const contentMatchStmt = db.prepare(contentMatchQuery);
+    const contentNeedle = "%" + normalizedSearch + "%";
+    const contentMatches = (await (token ? contentMatchStmt.bind(token, contentNeedle) : contentMatchStmt.bind(contentNeedle)).all()).results || [];
+    contentHitKeys = new Set(contentMatches.map((row) => makeContactKey(row.token, row.platform, row.contact_id)));
+  }
 
   const groupRecords = new Map();
   const groupMeta = new Map(groups.map((group) => [group.id, group]));
@@ -304,41 +510,50 @@ async function listCustomerGroups(db, token, platformFilter, searchQuery) {
     if (!aliasToGroup.has(key)) addAlias(message.token, message.platform, message.contact_id, message.contact_name);
     const group = groupRecords.get(aliasToGroup.get(key));
     if (!group) continue;
-    group.message_count += 1;
-    if (message.created_at >= group.last_at) {
-      group.last_at = message.created_at;
-      group.last_message = {
-        role: message.role,
-        content: message.content,
-        platform: message.platform,
-        contact_name: message.contact_name,
-        created_at: message.created_at,
-      };
-    }
+    group.message_count += Number(message.message_count || 0);
+    group.last_at = Number(message.created_at || 0);
+    group.last_message = {
+      role: message.role,
+      content: message.content,
+      platform: message.platform,
+      contact_name: message.contact_name,
+      created_at: message.created_at,
+    };
   }
 
   const query = String(searchQuery || "").trim().toLowerCase();
   const rows = [...groupRecords.values()].filter((group) => {
     if (!query) return true;
     const aliasHit = group.aliases.some((alias) => String(alias.contact_name || "").toLowerCase().includes(query));
-    const contentHit = histories.some((message) =>
-      aliasToGroup.get(makeContactKey(message.token, message.platform, message.contact_id)) === group.id &&
-      String(message.content || "").toLowerCase().includes(query)
-    );
+    const contentHit = Array.from(contentHitKeys).some((key) => {
+      const [messageToken, messagePlatform, contactId] = key.split("\u0000");
+      return aliasToGroup.get(makeContactKey(messageToken, messagePlatform, contactId)) === group.id;
+    });
     return String(group.display_name || "").toLowerCase().includes(query) || aliasHit || contentHit;
   });
   rows.sort((a, b) => (b.last_at || 0) - (a.last_at || 0));
   return rows;
 }
 
-async function loadCustomerMessages(db, identity, limit = 500) {
-  if (!identity || !identity.aliases.length) return [];
+async function loadCustomerMessages(db, identity, limit = 300, sinceId = 0) {
+  if (!identity || !identity.aliases.length) return { messages: [], latest_id: 0 };
   const clauses = identity.aliases.map(() => "(platform = ? AND contact_id = ?)");
   const params = [identity.token, ...identity.aliases.flatMap((alias) => [alias.platform, alias.contact_id])];
-  params.push(Math.min(Math.max(Number(limit) || 500, 1), 1000));
-  const query = "SELECT id, platform, contact_id, contact_name, role, content, created_at FROM (SELECT id, platform, contact_id, contact_name, role, content, created_at FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") ORDER BY created_at DESC LIMIT ?) ORDER BY created_at ASC";
+  const safeLimit = Math.min(Math.max(Number(limit) || 300, 1), 300);
+  let query;
+  if (sinceId > 0) {
+    query = "SELECT id, platform, contact_id, contact_name, role, content, source, message_key, created_at FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") AND id > ? ORDER BY id ASC LIMIT ?";
+    params.push(sinceId, safeLimit);
+  } else {
+    query = "SELECT id, platform, contact_id, contact_name, role, content, source, message_key, created_at FROM (SELECT id, platform, contact_id, contact_name, role, content, source, message_key, created_at FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") ORDER BY id DESC LIMIT ?) ORDER BY id ASC";
+    params.push(safeLimit);
+  }
   const { results } = await db.prepare(query).bind(...params).all();
-  return results || [];
+  const messages = results || [];
+  return {
+    messages,
+    latest_id: messages.reduce((max, message) => Math.max(max, Number(message.id || 0)), 0),
+  };
 }
 
 function formatMemoryLines(messages, maxChars = 1800) {
@@ -611,11 +826,13 @@ export const onRequest = async (context) => {
       if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
       const groupId = url.searchParams.get("group_id") || "";
       const token = url.searchParams.get("token") || "";
-      const limit = Math.min(parseInt(url.searchParams.get("limit") || "500"), 1000);
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "300"), 300);
+      const sinceId = Math.max(0, parseInt(url.searchParams.get("since_id") || "0"));
       const identity = await loadGroupIdentity(env.DB, groupId, token);
       if (!identity) return json({ error: "客户不存在" }, 404);
-      const messages = await loadCustomerMessages(env.DB, identity, limit);
-      return json({ identity, messages });
+      const messagePage = await loadCustomerMessages(env.DB, identity, limit, sinceId);
+      const profile = await loadCustomerProfile(env.DB, identity.token, identity.id);
+      return json({ identity, ...messagePage, profile });
     }
 
     // POST /api/manual-replies - enqueue an exact message from the dashboard
@@ -693,9 +910,19 @@ export const onRequest = async (context) => {
         "UPDATE manual_replies SET status = ?, sent_at = CASE WHEN ? = 'sent' THEN ? ELSE sent_at END, error = ? WHERE id = ? AND token = ?"
       ).bind(status, status, now, error, taskId, tokenRow.token).run();
       if (status === "sent") {
-        await env.DB.prepare(
-          "INSERT INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at) VALUES (?, ?, ?, ?, 'assistant', ?, ?)"
-        ).bind(tokenRow.token, task.platform, task.contact_id, task.contact_name, task.content, now).run();
+        const insertResult = await env.DB.prepare(
+          "INSERT OR IGNORE INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at, source, message_key) VALUES (?, ?, ?, ?, 'assistant', ?, ?, 'dashboard', ?)"
+        ).bind(tokenRow.token, task.platform, task.contact_id, task.contact_name, task.content, now, "dashboard:" + taskId).run();
+        await updateConversationStats(
+          env.DB,
+          tokenRow.token,
+          task.platform,
+          task.contact_id,
+          task.contact_name,
+          countInsertedRows([insertResult]),
+          { role: "assistant", content: task.content, source: "dashboard", created_at: now },
+          now
+        );
       }
       return json({ success: true, status });
     }
@@ -837,12 +1064,37 @@ export const onRequest = async (context) => {
       const body = await request.json();
       const { platform, contact_id, contact_name, messages } = body;
       if (!platform || !contact_id || !contact_name || !messages || !Array.isArray(messages)) return json({ error: "\u7f3a\u5c11\u5fc5\u8981\u53c2\u6570" }, 400);
+      if (messages.length > 200) return json({ error: "单次最多同步200条" }, 413);
       const nowSec = Math.floor(Date.now() / 1000);
-      const stmt = env.DB.prepare("INSERT INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const batch = messages.map((msg) => stmt.bind(tokenRow.token, platform, contact_id, contact_name, msg.role, msg.content, msg.created_at || nowSec));
-      await env.DB.batch(batch);
-      await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?").bind(nowSec, tokenRow.token).run();
-      return json({ ok: true });
+      const validMessages = [];
+      for (let index = 0; index < messages.length; index++) {
+        const msg = messages[index] || {};
+        const role = msg.role === "assistant" ? "assistant" : "user";
+        const content = String(msg.content || "").trim();
+        if (!content || content.length > 4000) continue;
+        const source = VALID_MESSAGE_SOURCES.has(msg.source) ? msg.source : "sync";
+        validMessages.push({
+          role,
+          content,
+          created_at: Number(msg.created_at || nowSec),
+          source,
+          message_key: makeSyncedMessageKey(tokenRow.token, platform, contact_id, msg, index),
+        });
+      }
+      const stmt = env.DB.prepare("INSERT OR IGNORE INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at, source, message_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      const batch = validMessages.map((msg) => stmt.bind(tokenRow.token, platform, contact_id, contact_name, msg.role, msg.content, msg.created_at, msg.source, msg.message_key));
+      const batchResults = batch.length ? await env.DB.batch(batch) : [];
+      const insertedCount = countInsertedRows(batchResults);
+      const latestMessage = validMessages.reduce((latest, message) => !latest || message.created_at >= latest.created_at ? message : latest, null);
+      if (insertedCount > 0) {
+        await updateConversationStats(env.DB, tokenRow.token, platform, contact_id, contact_name, insertedCount, latestMessage, nowSec);
+        await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?").bind(nowSec, tokenRow.token).run();
+        const profileJob = maybeExtractCustomerProfile(env, tokenRow, platform, contact_id).catch((error) => {
+          console.error("profile extraction failed", error instanceof Error ? error.message : String(error));
+        });
+        if (typeof context.waitUntil === "function") context.waitUntil(profileJob); else await profileJob;
+      }
+      return json({ ok: true, accepted: validMessages.length, inserted: insertedCount });
     }
 
     // POST /api/chat — core AI reply
@@ -972,11 +1224,31 @@ export const onRequest = async (context) => {
       const reply = buildTimeSafeReply(rawReply, messages);
       const nowSec = Math.floor(Date.now() / 1000);
 
-      // save messages
-      const stmt = env.DB.prepare("INSERT INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const batch = messages.map((msg) => stmt.bind(tokenRow.token, platform, contact_id, contact_name, msg.role, msg.content, msg.created_at || nowSec));
-      batch.push(stmt.bind(tokenRow.token, platform, contact_id, contact_name, "assistant", reply, nowSec));
-      await env.DB.batch(batch);
+      // User messages arrive through the idempotent sync outbox. Only write the generated AI
+      // reply here so repeated phone snapshots do not grow D1 writes without limit.
+      const insertResult = await env.DB.prepare(
+        "INSERT OR IGNORE INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at, source, message_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        tokenRow.token,
+        platform,
+        contact_id,
+        contact_name,
+        "assistant",
+        reply,
+        nowSec,
+        "ai",
+        "ai:" + crypto.randomUUID()
+      ).run();
+      await updateConversationStats(
+        env.DB,
+        tokenRow.token,
+        platform,
+        contact_id,
+        contact_name,
+        countInsertedRows([insertResult]),
+        { role: "assistant", content: reply, source: "ai", created_at: nowSec },
+        nowSec
+      );
 
       // update token
       await env.DB.prepare("UPDATE tokens SET last_used_at = ?, spent = spent + 0.01 WHERE token = ?").bind(nowSec, tokenRow.token).run();

@@ -5,11 +5,15 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.aaiagent.data.db.dao.ConfigDao
+import com.aaiagent.data.db.dao.ConversationSyncStateDao
 import com.aaiagent.data.db.dao.MessageCacheDao
+import com.aaiagent.data.db.dao.MessageSyncOutboxDao
 import com.aaiagent.data.db.dao.TokenDao
 import com.aaiagent.data.db.dao.UserLocationDao
 import com.aaiagent.data.db.entity.ConfigEntity
+import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.db.entity.MessageCacheEntity
+import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
 import com.aaiagent.data.db.entity.TokenEntity
 import com.aaiagent.data.db.entity.UserLocationEntity
 
@@ -18,15 +22,19 @@ import com.aaiagent.data.db.entity.UserLocationEntity
         TokenEntity::class,
         ConfigEntity::class,
         MessageCacheEntity::class,
+        ConversationSyncStateEntity::class,
+        MessageSyncOutboxEntity::class,
         UserLocationEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun tokenDao(): TokenDao
     abstract fun configDao(): ConfigDao
     abstract fun messageCacheDao(): MessageCacheDao
+    abstract fun conversationSyncStateDao(): ConversationSyncStateDao
+    abstract fun messageSyncOutboxDao(): MessageSyncOutboxDao
     abstract fun userLocationDao(): UserLocationDao
 
     companion object {

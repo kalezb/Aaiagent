@@ -302,6 +302,7 @@ button:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; }
 .message-meta { display: flex; gap: 6px; margin-top: 4px; color: #9fb3c2; font-size: 9px; }
 .self .message-meta { justify-content: flex-end; }
 .platform-label { padding: 0 5px; border-radius: 5px; background: #edf7ff; }
+.source-label { padding: 0 5px; border-radius: 5px; background: #f1f5f8; }
 
 .composer { padding: 13px 22px 16px; border-top: 1px solid var(--line); background: #fff; }
 .composer-box {
@@ -349,6 +350,7 @@ button:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; }
 .stat span { color: var(--muted); font-size: 10px; }
 .profile-section { padding: 18px; border-top: 1px solid var(--line); margin-top: 19px; }
 .profile-section h4 { margin: 0 0 12px; color: #69879d; font-size: 12px; }
+.profile-updated { margin-left: 6px; color: #9fb3c2; font-size: 9px; font-weight: 400; }
 .platform-links { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 .platform-link {
   padding: 9px 4px;
@@ -516,6 +518,21 @@ th { color: var(--muted); font-weight: 600; }
       <h4>平台账号</h4>
       <div class="platform-links" id="profilePlatformLinks"></div>
     </div>
+    <div class="profile-section">
+      <h4>身份档案 <span class="profile-updated" id="profileUpdated"></span></h4>
+      <div class="profile-info"><span>姓名 / 称呼</span><b id="profileBasicName">未收集</b></div>
+      <div class="profile-info"><span>所在城市</span><b id="profileLocationCity">未收集</b></div>
+      <div class="profile-info"><span>家乡</span><b id="profileLocationHometown">未收集</b></div>
+      <div class="profile-info"><span>学校 / 专业</span><b id="profileEducation">未收集</b></div>
+      <div class="profile-info"><span>工作</span><b id="profileWork">未收集</b></div>
+      <div class="profile-info"><span>家庭</span><b id="profileFamily">未收集</b></div>
+      <div class="profile-info"><span>感情状态</span><b id="profileRelationship">未收集</b></div>
+      <div class="profile-info"><span>喜欢</span><b id="profileLikes">未收集</b></div>
+      <div class="profile-info"><span>不喜欢</span><b id="profileDislikes">未收集</b></div>
+      <div class="profile-info"><span>近期动态</span><b id="profileRecent">未收集</b></div>
+      <div class="profile-info"><span>备注</span><b id="profileNotes">未收集</b></div>
+    </div>
+
     <div class="profile-section">
       <h4>当前状态</h4>
       <div class="profile-info"><span>托管模式</span><b>手机端控制</b></div>

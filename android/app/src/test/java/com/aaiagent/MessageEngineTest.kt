@@ -1,6 +1,7 @@
 package com.aaiagent
 
 import com.aaiagent.engine.AutomationLease
+import com.aaiagent.engine.BackendTaskPollPolicy
 import com.aaiagent.adapter.PlatformAdapter.VoiceTranscriptionResult
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.IncomingMessageTracker
@@ -11,6 +12,10 @@ import com.aaiagent.engine.ReplyFreshnessDecision
 import com.aaiagent.engine.ReplyFreshnessPolicy
 import com.aaiagent.engine.ReplyTaskAction
 import com.aaiagent.engine.ReplyTaskPolicy
+import com.aaiagent.engine.SyncMessageKey
+import com.aaiagent.engine.SyncSnapshotCodec
+import com.aaiagent.engine.SyncSnapshotItem
+import com.aaiagent.engine.SyncSnapshotPolicy
 import com.aaiagent.engine.UserInteractionGate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,7 +42,7 @@ class MessageEngineTest {
     }
 
     @Test
-    fun `semi auto and monitor only do not force navigation`() {
+    fun `semi auto stays in chat while full auto and monitor only leave after a read`() {
         assertFalse(
             HostingCompletionPolicy.shouldReturnToMessageList(
                 mode = HostingMode.SEMI_AUTO,
@@ -52,6 +57,9 @@ class MessageEngineTest {
                 automationStillOwned = true
             )
         )
+        assertTrue(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.FULL_AUTO))
+        assertTrue(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.MONITOR_ONLY))
+        assertFalse(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.SEMI_AUTO))
     }
 
     @Test
@@ -220,6 +228,46 @@ class MessageEngineTest {
             listOf("咋啦", "发这么一串问号"),
             ReplyFormatter.formatForSending("咋啦 发这么一串问号")
         )
+    }
+
+    @Test
+    fun `sync message keys are stable for a persisted sequence`() {
+        val first = SyncMessageKey.build("soul", "contact-1", "user", "hello", 0)
+        assertEquals(first, SyncMessageKey.build("soul", "contact-1", "user", "hello", 0))
+        assertTrue(first.startsWith("sync:soul:contact-1:"))
+        assertFalse(first == SyncMessageKey.build("soul", "contact-1", "user", "hello", 1))
+    }
+
+    @Test
+    fun `snapshot only selects messages appended after the previous visible window`() {
+        val previous = listOf(
+            SyncSnapshotItem("user", "hello"),
+            SyncSnapshotItem("assistant", "hi")
+        )
+        val current = previous + listOf(
+            SyncSnapshotItem("user", "hello"),
+            SyncSnapshotItem("assistant", "still there")
+        )
+
+        assertEquals(listOf(2, 3), SyncSnapshotPolicy.selectNewItems(previous, current))
+        assertEquals(emptyList<Int>(), SyncSnapshotPolicy.selectNewItems(previous, previous))
+    }
+
+    @Test
+    fun `snapshot codec round trips repeated messages`() {
+        val snapshot = listOf(
+            SyncSnapshotItem("user", "hello"),
+            SyncSnapshotItem("user", "hello")
+        )
+
+        assertEquals(snapshot, SyncSnapshotCodec.decode(SyncSnapshotCodec.encode(snapshot)))
+    }
+
+    @Test
+    fun `backend task polling is throttled without slowing soul list scans`() {
+        assertTrue(BackendTaskPollPolicy.isDue(0L, 1_000L, 30_000L))
+        assertFalse(BackendTaskPollPolicy.isDue(1_000L, 30_999L, 30_000L))
+        assertTrue(BackendTaskPollPolicy.isDue(1_000L, 31_000L, 30_000L))
     }
 
     @Test

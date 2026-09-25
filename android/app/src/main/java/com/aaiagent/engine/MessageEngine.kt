@@ -6,7 +6,9 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.aaiagent.adapter.AdapterRegistry
 import com.aaiagent.adapter.PlatformAdapter
 import com.aaiagent.adapter.SoulAdapter
+import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.repository.AppRepository
+import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
 import com.aaiagent.network.ApiService
 import com.aaiagent.network.ChatRequest
 import com.aaiagent.network.ReplyTask
@@ -54,6 +56,8 @@ class MessageEngine(
     private val mediaNudgeStore = MediaNudgeStore(repository)
 
     private var hostingJob: Job? = null
+    private var lastBackendTaskPollAt: Long = 0L
+    private var lastSyncFlushAt: Long = 0L
 
     @Volatile
     var state: EngineState = EngineState.Idle
@@ -116,6 +120,7 @@ class MessageEngine(
         delay(400)
         while (hostingEnabled && lease.owns(leaseToken) && scope.isActive) {
             lease.renew(leaseToken)
+            maybeFlushSyncOutbox()
             if (GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)) {
                 state = EngineState.Paused
                 delay(500)
@@ -153,7 +158,13 @@ class MessageEngine(
         }
         val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
 
-        if (processBackendReplyTask(svc, adapter, leaseToken)) return
+        val now = System.currentTimeMillis()
+        if (hostingMode != HostingMode.MONITOR_ONLY &&
+            BackendTaskPollPolicy.isDue(lastBackendTaskPollAt, now, BACKEND_TASK_POLL_INTERVAL_MS)
+        ) {
+            lastBackendTaskPollAt = now
+            if (processBackendReplyTask(svc, adapter, leaseToken)) return
+        }
 
         val activeRoot = svc.rootInActiveWindow
         if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
@@ -248,6 +259,9 @@ class MessageEngine(
         reportReplyTask(apiBaseUrl, deviceToken, task.taskId, status, error)
         RuntimeJournal.messageSent(status == "sent", "后台人工消息 ${conversation.contactName}")
         if (status == "sent") {
+            synchronized(getOrCreateContext(currentPlatform, conversation.contactId)) {
+                getOrCreateContext(currentPlatform, conversation.contactId).aiSentContents.add(content)
+            }
             returnToMessageList(adapter, leaseToken, "manual reply sent")
         }
         return true
@@ -382,12 +396,15 @@ class MessageEngine(
             var messages = readMessagesWithRetry(adapter, root, context.contactName, leaseToken)
             if (messages.isEmpty()) {
                 RuntimeJournal.readMessages(0, "")
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "empty chat")
                 return
             }
+            enqueueSnapshot(context, messages)
 
             val lastMessage = messages.lastOrNull() ?: return
             if (!ConversationReplyPolicy.shouldReply(lastMessage.sender)) {
                 android.util.Log.d("AIA", "conversation has no unanswered incoming message")
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "no unanswered incoming message")
                 return
             }
             val incomingBatch = IncomingMessageBatch.select(messages) ?: return
@@ -411,10 +428,10 @@ class MessageEngine(
             }
             if (incomingBatch.incoming.any { SensitiveWords.isHit(it.content) }) return
             if (hostingMode == HostingMode.MONITOR_ONLY) {
-                syncMessages(context, messages)
                 synchronized(context) {
                     context.lastRepliedIncomingFingerprint = visibleFingerprint
                 }
+                returnToMessageList(adapter, leaseToken, "monitor batch recorded")
                 return
             }
 
@@ -805,6 +822,7 @@ class MessageEngine(
                 return sentAny
             }
             RuntimeJournal.messageSent(true, "第${index + 1}/${sentences.size}句")
+            synchronized(context) { context.aiSentContents.add(sentence.trim()) }
 
             sentAny = true
 
@@ -821,26 +839,101 @@ class MessageEngine(
         return ConversationIdentity.matches(expectedContactName, adapter.readChatTitle(root))
     }
 
-    private suspend fun syncMessages(
+    private suspend fun enqueueSnapshot(
         context: ConversationContext,
         messages: List<PlatformAdapter.ChatMessage>
     ) {
-        val token = withContext(Dispatchers.IO) { repository.getActiveToken()?.token?.trim() }.orEmpty()
-        val baseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
-        if (token.isEmpty()) return
-        runCatching {
-            ApiService(baseUrl).syncMessages(
-                token = token,
+        val token = withContext(Dispatchers.IO) {
+            repository.getActiveToken()?.token?.trim()
+        }.orEmpty()
+        if (token.isEmpty() || messages.isEmpty()) return
+
+        val automatedReplies = synchronized(context) { context.aiSentContents.toSet() }
+        val stateId = listOf(token, currentPlatform, context.contactId).joinToString("\u0000")
+        val inserted = withContext(Dispatchers.IO) {
+            repository.cleanOldCache()
+            val previousState = repository.getConversationSyncState(stateId)
+            val previousSnapshot = SyncSnapshotCodec.decode(previousState?.snapshotJson)
+            val currentSnapshot = messages.mapNotNull { message ->
+                val role = if (message.sender == "self") "assistant" else "user"
+                val content = message.content.trim()
+                if (content.isEmpty()) null else SyncSnapshotItem(role, content)
+            }
+            val newIndexes = SyncSnapshotPolicy.selectNewItems(previousSnapshot, currentSnapshot)
+            var sequence = previousState?.nextSequence ?: 0L
+            val outbox = mutableListOf<MessageSyncOutboxEntity>()
+            for (index in newIndexes) {
+                val item = currentSnapshot[index]
+                sequence++
+                if (item.role == "assistant" && item.content in automatedReplies) continue
+                val id = SyncMessageKey.build(
+                    platform = currentPlatform,
+                    contactId = context.contactId,
+                    role = item.role,
+                    content = item.content,
+                    sequence = sequence
+                )
+                outbox += MessageSyncOutboxEntity(
+                    id = id,
+                    token = token,
+                    platform = currentPlatform,
+                    contactId = context.contactId,
+                    contactName = context.contactName,
+                    role = item.role,
+                    content = item.content,
+                    source = if (item.role == "assistant") "human_phone" else "sync",
+                    createdAt = System.currentTimeMillis() / 1000
+                )
+            }
+            val state = ConversationSyncStateEntity(
+                id = stateId,
                 platform = currentPlatform,
                 contactId = context.contactId,
-                contactName = context.contactName,
-                messages = messages.map {
-                    mapOf(
-                        "role" to if (it.sender == "self") "assistant" else "user",
-                        "content" to it.content
-                    )
-                }
+                snapshotJson = SyncSnapshotCodec.encode(currentSnapshot),
+                nextSequence = sequence
             )
+            repository.persistSyncSnapshot(state, outbox)
+        }
+        if (inserted >= SYNC_BATCH_SIZE) maybeFlushSyncOutbox(force = true)
+    }
+
+    private suspend fun maybeFlushSyncOutbox(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastSyncFlushAt < SYNC_FLUSH_INTERVAL_MS) return
+        lastSyncFlushAt = now
+        val pending = withContext(Dispatchers.IO) { repository.pendingSyncMessages(now, 100) }
+        if (pending.isEmpty()) return
+        val baseUrl = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
+        val api = ApiService(baseUrl)
+        pending.groupBy { Triple(it.token, it.platform, it.contactId) }.values.forEach { group ->
+            val first = group.first()
+            val success = runCatching {
+                api.syncMessages(
+                    token = first.token,
+                    platform = first.platform,
+                    contactId = first.contactId,
+                    contactName = first.contactName,
+                    messages = group.map {
+                        mapOf<String, Any>(
+                            "message_key" to it.id,
+                            "role" to it.role,
+                            "content" to it.content,
+                            "source" to it.source,
+                            "created_at" to it.createdAt
+                        )
+                    }
+                )
+            }.getOrDefault(false)
+            val ids = group.map { it.id }
+            withContext(Dispatchers.IO) {
+                if (success) {
+                    repository.deleteSyncMessages(ids)
+                } else {
+                    val attempts = group.maxOf { it.attempts } + 1
+                    val backoff = minOf(300_000L, 1_000L shl minOf(attempts, 8))
+                    repository.markSyncMessagesFailed(ids, now + backoff)
+                }
+            }
         }
     }
 
@@ -944,7 +1037,7 @@ class MessageEngine(
         leaseToken: String,
         reason: String
     ) {
-        if (hostingMode != HostingMode.FULL_AUTO || !canContinue(leaseToken, null)) return
+        if (!HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode) || !canContinue(leaseToken, null)) return
         val svc = service ?: return
         val currentRoot = svc.rootInActiveWindow ?: return
         state = EngineState.ScanningConversations
@@ -980,8 +1073,11 @@ class MessageEngine(
 
     companion object {
         const val POLL_INTERVAL_MS = 3_000L
+        const val BACKEND_TASK_POLL_INTERVAL_MS = 30_000L
         const val USER_PAUSE_MS = 5_000L
         const val DEDUP_WINDOW_MS = 5 * 60 * 1000L
+        const val SYNC_BATCH_SIZE = 10
+        const val SYNC_FLUSH_INTERVAL_MS = 10_000L
         const val MAX_CHAT_WAIT_RETRIES = 5
         const val READ_MESSAGE_RETRIES = 4
         const val MAX_LLM_RETRIES = 3

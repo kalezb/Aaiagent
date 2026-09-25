@@ -46,7 +46,7 @@ data class SyncMessagesRequest(
     val platform: String,
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
-    val messages: List<Map<String, String>>
+    val messages: List<Map<String, Any>>
 )
 
 data class ConfigSaveResult(val success: Boolean, val message: String, val error: String?)
@@ -107,7 +107,7 @@ class ApiService(private val baseUrl: String) {
         platform: String,
         contactId: String,
         contactName: String,
-        messages: List<Map<String, String>>
+        messages: List<Map<String, Any>>
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val request = SyncMessagesRequest(platform, contactId, contactName, messages)

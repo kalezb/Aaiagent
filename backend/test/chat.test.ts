@@ -13,6 +13,9 @@ class MockD1 {
     this.contactsRows = contactsRows;
     this.batchCalls = [];
     this.locationRows = new Map();
+    this.conversationStatsRows = [];
+    this.profileRows = new Map();
+    this.runCalls = [];
     this.options = {};
   }
 
@@ -21,12 +24,79 @@ class MockD1 {
     return this;
   }
 
+  historyKey(statement) {
+    const params = statement.params || [];
+    return `${params[0]}\u0000${params[8] || ""}`;
+  }
+
+  applyHistoryInsert(statement) {
+    const params = statement.params || [];
+    const key = this.historyKey(statement);
+    if (params[8] && this.historyRows.some((row) => `${row.token}\u0000${row.message_key || ""}` === key)) {
+      return 0;
+    }
+    const id = Math.max(0, ...this.historyRows.map((row) => Number(row.id || 0))) + 1;
+    this.historyRows.push({
+      id,
+      token: params[0],
+      platform: params[1],
+      contact_id: params[2],
+      contact_name: params[3],
+      role: params[4],
+      content: params[5],
+      created_at: params[6],
+      source: params[7],
+      message_key: params[8],
+    });
+    return 1;
+  }
+
+  applyConversationStats(statement) {
+    const p = statement.params || [];
+    const key = `${p[0]}\u0000${p[1]}\u0000${p[2]}`;
+    let row = this.conversationStatsRows.find((item) => `${item.token}\u0000${item.platform}\u0000${item.contact_id}` === key);
+    if (!row) {
+      row = { token: p[0], platform: p[1], contact_id: p[2], message_count: 0, latest_at: 0 };
+      this.conversationStatsRows.push(row);
+    }
+    row.contact_name = p[3];
+    row.message_count += Number(p[4] || 0);
+    if (Number(p[9] || 0) >= Number(row.latest_at || 0)) {
+      row.latest_role = p[6];
+      row.latest_content = p[7];
+      row.latest_source = p[8];
+      row.latest_at = p[9];
+    }
+    row.updated_at = p[10];
+  }
+
+  applyStatement(statement) {
+    const sql = statement.sql || "";
+    if (sql.includes("INSERT OR IGNORE INTO chat_history") || sql.includes("INSERT INTO chat_history")) {
+      return this.applyHistoryInsert(statement);
+    }
+    if (sql.includes("INSERT INTO conversation_stats")) {
+      this.applyConversationStats(statement);
+      return 1;
+    }
+    if (sql.includes("INSERT INTO customer_profiles")) {
+      const p = statement.params || [];
+      this.profileRows.set(`${p[0]}\u0000${p[1]}`, {
+        token: p[0], group_id: p[1], profile_json: p[2], last_processed_message_id: p[3], extracted_at: p[4], updated_at: p[5],
+      });
+      return 1;
+    }
+    return 1;
+  }
+
   prepare(sql: string) {
     return {
       all: async () => ({ results: [] }),
       first: async () => null,
       run: async () => ({ success: true }),
       bind: (...params: unknown[]) => ({
+        sql,
+        params,
         first: async () => {
           if (sql.includes("FROM tokens")) {
             return {
@@ -41,6 +111,17 @@ class MockD1 {
           }
           if (sql.includes("FROM user_locations")) {
             return this.locationRows.get(params[0]) ?? null;
+          }
+          if (sql.includes("COUNT(*) AS user_count")) {
+            return this.options.profileState ?? { user_count: 0, max_id: 0 };
+          }
+          if (sql.includes("FROM conversation_stats")) {
+            return this.conversationStatsRows.find((row) =>
+              row.token === params[0] && row.platform === params[1] && row.contact_id === params[2]
+            ) ?? null;
+          }
+          if (sql.includes("FROM customer_profiles")) {
+            return this.profileRows.get(`${params[0]}\u0000${params[1]}`) ?? null;
           }
           if (sql.includes("FROM customer_groups g JOIN contact_links")) {
             return this.options.priorityTask ?? null;
@@ -79,10 +160,17 @@ class MockD1 {
           if (sql.includes("FROM customer_summaries")) return { results: this.options.customerSummaries ?? [] };
           if (sql.includes("FROM session_summary")) return { results: this.options.sessionSummaries ?? [] };
           if (sql.includes("FROM contacts")) return { results: this.contactsRows };
-          if (sql.includes("FROM chat_history")) return { results: this.historyRows };
+          if (sql.includes("FROM conversation_stats")) return { results: this.conversationStatsRows };
+          if (sql.includes("FROM chat_history")) {
+            const sinceId = sql.includes("id > ?")
+              ? Number(params[sql.includes("LIMIT ?") ? params.length - 2 : params.length - 1] || 0)
+              : 0;
+            return { results: this.historyRows.filter((row) => Number(row.id || 0) > sinceId) };
+          }
           return { results: [] };
         },
         run: async () => {
+          this.runCalls.push({ sql, params });
           if (sql.includes("INSERT INTO user_locations")) {
             const [token, homeCity, homeDistrict, workCity, workDistrict, updatedAt] = params;
             this.locationRows.set(token, {
@@ -93,7 +181,8 @@ class MockD1 {
               updated_at: updatedAt,
             });
           }
-          return { success: true };
+          const changes = this.applyStatement({ sql, params });
+          return { success: true, meta: { changes } };
         },
       }),
     };
@@ -101,7 +190,10 @@ class MockD1 {
 
   async batch(statements: unknown[]) {
     this.batchCalls.push(statements);
-    return statements.map(() => ({ success: true }));
+    return statements.map((statement) => ({
+      success: true,
+      meta: { changes: this.applyStatement(statement) },
+    }));
   }
 }
 
@@ -637,6 +729,10 @@ describe("customer dashboard and cross-platform memory", () => {
         { group_id: "group:1", token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极" },
       ],
     });
+    db.conversationStatsRows = [
+      { token: "test-token", platform: "soul", contact_id: "soul-a", contact_name: "梦想", message_count: 3, latest_role: "user", latest_content: "高跟鞋那张很有气质", latest_at: 10 },
+      { token: "test-token", platform: "qq", contact_id: "qq-a", contact_name: "积极", message_count: 4, latest_role: "assistant", latest_content: "谢谢 你眼光不错", latest_at: 11 },
+    ];
     const env = { DB: db, KV: new MockKV(), DASHBOARD_PASSWORD: "secret" };
 
     const response = await onRequest({
@@ -654,6 +750,7 @@ describe("customer dashboard and cross-platform memory", () => {
       display_name: "王先生",
       priority_reply: true,
       platforms: ["soul", "qq"],
+      message_count: 7,
     });
   });
 
@@ -752,5 +849,149 @@ describe("customer dashboard and cross-platform memory", () => {
     expect(html).toContain("同一客户在 Soul、QQ、陌陌、连信上的聊天会合并为同一段记忆");
     expect(source).toContain("function renderProfilePanel(group)");
     expect(source).toContain('class="pf ${active.has(platform.id)');
+  });
+});
+
+describe("monitoring sync and customer profile batching", () => {
+  it("deduplicates synced messages and preserves the original source", async () => {
+    const db = new MockD1();
+    const env = { DB: db, KV: new MockKV() };
+    const body = {
+      platform: "soul",
+      contact_id: "contact-1",
+      contact_name: "梦想",
+      messages: [{
+        message_key: "sync:soul:contact-1:one",
+        role: "assistant",
+        content: "我在呢",
+        source: "human_phone",
+        created_at: 100,
+      }],
+    };
+    const send = () => onRequest({
+      request: new Request("https://example.com/api/messages/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify(body),
+      }),
+      env,
+    } as never);
+
+    const first = await send();
+    const second = await send();
+    await expect(first.json()).resolves.toMatchObject({ ok: true, accepted: 1, inserted: 1 });
+    await expect(second.json()).resolves.toMatchObject({ ok: true, accepted: 1, inserted: 0 });
+    expect(db.historyRows).toHaveLength(1);
+    expect(db.historyRows[0]).toMatchObject({ source: "human_phone", message_key: "sync:soul:contact-1:one" });
+    expect(db.conversationStatsRows[0]).toMatchObject({ message_count: 1, latest_source: "human_phone" });
+  });
+
+  it("returns only messages newer than the dashboard cursor", async () => {
+    const history = [
+      { id: 10, token: "test-token", platform: "soul", contact_id: "contact-1", contact_name: "梦想", role: "user", content: "旧消息", source: "sync", created_at: 10 },
+      { id: 11, token: "test-token", platform: "soul", contact_id: "contact-1", contact_name: "梦想", role: "assistant", content: "新消息", source: "ai", created_at: 11 },
+    ];
+    const db = new MockD1(history).withOptions({
+      groups: [{ id: "group:shared", token: "test-token", display_name: "梦想", notes: "", priority_reply: 0 }],
+      contactLinks: [{ group_id: "group:shared", token: "test-token", platform: "soul", contact_id: "contact-1", contact_name: "梦想" }],
+    });
+    const response = await onRequest({
+      request: new Request("https://example.com/api/customer-messages?token=test-token&group_id=group%3Ashared&since_id=10", {
+        headers: { "X-Dashboard-Password": "secret" },
+      }),
+      env: { DB: db, KV: new MockKV(), DASHBOARD_PASSWORD: "secret" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      latest_id: 11,
+      messages: [{ id: 11, source: "ai", content: "新消息" }],
+    });
+  });
+
+  it("does not spend profile tokens before 40 new user messages", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const db = new MockD1().withOptions({ profileState: { user_count: 39, max_id: 39 } });
+    const response = await onRequest({
+      request: new Request("https://example.com/api/messages/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({ platform: "soul", contact_id: "contact-1", contact_name: "梦想", messages: [{ role: "user", content: "我喜欢打球", created_at: 100 }] }),
+      }),
+      env: { DB: db, KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps cloudflare polling inside the free-plan request budget", () => {
+    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    expect(source).toContain("window.setInterval(refreshVisibleData, 10000)");
+  });
+
+  it("does not rewrite the visible user transcript on every AI reply", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "在的 刚忙完" } }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const db = new MockD1();
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "contact-1",
+        contact_name: "期待下一步的我们",
+        messages: [{ role: "user", content: "在吗" }],
+      }),
+    });
+
+    const response = await onRequest({
+      request,
+      env: { DB: db, KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(db.historyRows).toHaveLength(1);
+    expect(db.historyRows[0]).toMatchObject({ role: "assistant", source: "ai", content: "在的 刚忙完" });
+  });
+
+  it("uses deepseek-flash JSON output once the 40-message profile batch is ready", async () => {
+    const history = Array.from({ length: 40 }, (_, index) => ({
+      id: index + 1,
+      token: "test-token",
+      platform: "soul",
+      contact_id: "contact-1",
+      contact_name: "梦想",
+      role: "user",
+      content: index === 39 ? "我喜欢羽毛球" : `普通聊天${index + 1}`,
+      source: "sync",
+      created_at: 100 + index,
+    }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ basic: { name: "张先生" }, preferences: { hobbies: ["羽毛球"] } }) } }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const db = new MockD1(history).withOptions({ profileState: { user_count: 40, max_id: 40 } });
+    const response = await onRequest({
+      request: new Request("https://example.com/api/messages/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({ platform: "soul", contact_id: "contact-1", contact_name: "梦想", messages: [{ role: "user", content: "最近好吗", created_at: 140 }] }),
+      }),
+      env: { DB: db, KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.deepseek.com/v1/chat/completions");
+    const payload = JSON.parse(String(init.body));
+    expect(payload.model).toBe("deepseek-flash");
+    expect(payload.thinking).toEqual({ type: "disabled" });
+    expect(payload.response_format).toEqual({ type: "json_object" });
+    expect(payload.messages[1].content).toContain("我喜欢羽毛球");
   });
 });

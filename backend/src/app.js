@@ -15,6 +15,8 @@ const state = {
   targetAlias: null,
   refreshTimer: null,
   customerRequest: 0,
+  messages: [],
+  messageCursor: 0,
   bindingSelection: new Set(),
 };
 
@@ -92,7 +94,7 @@ async function login() {
     $("loginView").hidden = true;
     $("appView").hidden = false;
     await initializeDashboard();
-    state.refreshTimer = window.setInterval(refreshVisibleData, 5000);
+    state.refreshTimer = window.setInterval(refreshVisibleData, 10000);
   } catch (error) {
     $("loginError").textContent = error.message || "登录失败";
   }
@@ -189,6 +191,8 @@ async function openCustomer(group) {
   state.selected = group;
   $("sidebar").classList.remove("mobile-open");
   state.targetAlias = group.aliases?.[0] || null;
+  state.messages = [];
+  state.messageCursor = 0;
   renderCustomers();
   updateChatHeader();
   $("messages").innerHTML = '<div class="empty-state">读取消息...</div>';
@@ -243,6 +247,7 @@ function renderProfilePanel(group) {
   $("profilePriority").textContent = group?.priority_reply ? "已开启" : "普通";
   $("profilePriority").className = group?.priority_reply ? "status-priority" : "";
   $("profileLastMessage").textContent = group?.last_at ? formatShortTime(group.last_at) : "--";
+  renderProfileIdentity(group?.profile);
 
   const active = new Set(group?.platforms || []);
   $("profilePlatformLinks").innerHTML = PLATFORMS.map((platform) => {
@@ -260,29 +265,79 @@ function renderProfilePanel(group) {
   });
 }
 
+function profileText(value, fallback = "未收集") {
+  if (Array.isArray(value)) return value.filter(Boolean).join("、") || fallback;
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function renderProfileIdentity(profileState) {
+  const profile = profileState?.profile || {};
+  const basic = profile.basic || {};
+  const location = profile.location || {};
+  const education = profile.education || {};
+  const work = profile.work || {};
+  const family = profile.family || {};
+  const relationship = profile.relationship || {};
+  const preferences = profile.preferences || {};
+  const recent = profile.recent || {};
+  $("profileBasicName").textContent = profileText(basic.name);
+  $("profileLocationCity").textContent = profileText(location.city || location.residence);
+  $("profileLocationHometown").textContent = profileText(location.hometown);
+  $("profileEducation").textContent = profileText([education.school, education.major].filter(Boolean));
+  $("profileWork").textContent = profileText([work.company, work.role, work.industry].filter(Boolean));
+  $("profileFamily").textContent = profileText([family.marital_status, family.children, family.notes].filter(Boolean));
+  $("profileRelationship").textContent = profileText([relationship.status, relationship.preferences].filter(Boolean));
+  $("profileLikes").textContent = profileText(preferences.likes);
+  $("profileDislikes").textContent = profileText(preferences.dislikes);
+  $("profileRecent").textContent = profileText([...(recent.goals || []), ...(recent.events || [])]);
+  $("profileNotes").textContent = profileText(profile.notes);
+  $("profileUpdated").textContent = profileState?.updated_at ? `更新于 ${formatShortTime(profileState.updated_at)}` : "每40条消息批量提取";
+}
+
 async function refreshMessages(forceBottom = false) {
   const group = state.selected;
   if (!group) return;
   const host = $("messages");
   const nearBottom = host.scrollHeight - host.scrollTop - host.clientHeight < 100;
+  const sinceId = forceBottom ? 0 : state.messageCursor;
   try {
-    const params = new URLSearchParams({ token: group.token, group_id: group.id, limit: "1000" });
+    const params = new URLSearchParams({
+      token: group.token,
+      group_id: group.id,
+      limit: "300",
+      since_id: String(sinceId || 0),
+    });
     const data = await api("GET", `/customer-messages?${params.toString()}`);
     if (state.selected?.id !== group.id) return;
+    const incoming = data.messages || [];
+    if (sinceId > 0) {
+      const byId = new Map(state.messages.map((message) => [String(message.id), message]));
+      incoming.forEach((message) => byId.set(String(message.id), message));
+      state.messages = [...byId.values()].sort((a, b) => Number(a.id) - Number(b.id));
+    } else {
+      state.messages = incoming;
+    }
+    state.messageCursor = Math.max(Number(data.latest_id || 0), ...state.messages.map((message) => Number(message.id || 0)));
     state.selected = {
       ...group,
       ...data.identity,
+      profile: data.profile || group.profile,
       platforms: group.platforms || [],
       last_message: group.last_message,
       last_at: group.last_at,
       message_count: group.message_count,
     };
-    renderMessages(data.messages || []);
-    if (forceBottom || nearBottom) host.scrollTop = host.scrollHeight;
+    renderMessages(state.messages);
+    if (forceBottom || nearBottom || incoming.some((message) => message.role === "assistant")) host.scrollTop = host.scrollHeight;
     updateChatHeader();
   } catch (error) {
     $("messages").innerHTML = `<div class="empty-state">消息读取失败：${esc(error.message)}</div>`;
   }
+}
+
+function sourceLabel(source) {
+  return ({ ai: "AI", human_phone: "手机", dashboard: "后台", sync: "同步" })[source] || "同步";
 }
 
 function renderMessages(messages) {
@@ -304,6 +359,7 @@ function renderMessages(messages) {
           <div class="bubble">${esc(message.content || "[非文字消息]")}</div>
           <div class="message-meta">
             <span>${esc(formatFullTime(message.created_at))}</span>
+            <span class="source-label">${esc(sourceLabel(message.source))}</span>
             <span class="platform-label">${esc(platformName(message.platform))}</span>
           </div>
         </div>

@@ -8,5 +8,6 @@ data class ConversationContext(
     var llmRequestId: Int = 0,
     var recalcCount: Int = 0,
     var lastIncomingFingerprint: String = "",
+    val aiSentContents: MutableSet<String> = mutableSetOf(),
     var lastRepliedIncomingFingerprint: String = ""
 )
