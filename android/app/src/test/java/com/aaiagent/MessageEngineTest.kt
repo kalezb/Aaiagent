@@ -256,8 +256,8 @@ class MessageEngineTest {
     @Test
     fun `snapshot codec round trips repeated messages`() {
         val snapshot = listOf(
-            SyncSnapshotItem("user", "hello"),
-            SyncSnapshotItem("user", "hello")
+            SyncSnapshotItem("user", "hello", createdAt = 100),
+            SyncSnapshotItem("user", "hello", createdAt = 200)
         )
 
         assertEquals(snapshot, SyncSnapshotCodec.decode(SyncSnapshotCodec.encode(snapshot)))

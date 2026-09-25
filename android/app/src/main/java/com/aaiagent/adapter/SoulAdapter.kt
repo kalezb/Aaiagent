@@ -16,6 +16,7 @@ import com.aaiagent.adapter.PlatformAdapter.ScrollDirection
 import com.aaiagent.adapter.PlatformAdapter.SendResult
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.GestureMonitor
+import com.aaiagent.engine.SoulMessageTime
 import com.aaiagent.engine.VoiceHandler
 import kotlinx.coroutines.delay
 
@@ -80,9 +81,15 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val messages = mutableListOf<ChatMessage>()
         val screenWidth = service.resources.displayMetrics.widthPixels
         val messageItems = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
+        val timestampTracker = SoulMessageTime.ContextTracker()
 
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
+            val observedTimestamp = item.findAccessibilityNodeInfosByViewId(prefix + "timestamp")
+                .mapNotNull { it.text?.toString()?.trim() }
+                .firstOrNull { it.isNotEmpty() }
+                .orEmpty()
+            val timestamp = timestampTracker.observe(observedTimestamp)
             if (item.findAccessibilityNodeInfosByViewId(prefix + "aigcRootView").isNotEmpty()) continue
             val hasSnapPhoto = item.findAccessibilityNodeInfosByViewId(prefix + "item_snap_pic_receive_root").isNotEmpty()
             val hasSnapExchange = item.findAccessibilityNodeInfosByViewId(prefix + "item_roote_snap_exchange_photo").isNotEmpty()
@@ -97,7 +104,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             }
 
             val sender = readMessageSender(item, screenWidth)
-
             val momentCardContent = readMomentCardContent(item, forwardedByOther = sender == "other")
 
             val text = item.findAccessibilityNodeInfosByViewId(prefix + "content_text")
@@ -141,7 +147,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 type == "sticker" -> "[表情]"
                 else -> ""
             }
-            if (content.isNotEmpty()) messages.add(ChatMessage(sender, content, type))
+            if (content.isNotEmpty()) {
+                messages.add(
+                    ChatMessage(
+                        sender = sender,
+                        content = content,
+                        type = type,
+                        timestampText = timestamp.text,
+                        timestampMillis = timestamp.epochMillis
+                    )
+                )
+            }
         }
 
         if (messages.isEmpty()) fallbackReadTextViews(root, messages, screenWidth)

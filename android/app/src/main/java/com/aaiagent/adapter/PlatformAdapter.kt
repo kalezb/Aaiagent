@@ -78,7 +78,9 @@ interface PlatformAdapter {
     data class ChatMessage(
         val sender: String,
         val content: String,
-        val type: String = "text"
+        val type: String = "text",
+        val timestampText: String = "",
+        val timestampMillis: Long? = null
     )
 
     data class ConversationInfo(

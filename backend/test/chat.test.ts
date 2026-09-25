@@ -291,6 +291,178 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("直接自然接住夸奖");
   });
 
+  it("labels the current message with its real time and uses it for stale context", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "刚忙完 隔了几天才看到 ||| 中秋快乐 吃月饼没" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "桃子幺幺",
+        contact_name: "桃子幺幺",
+        messages: [{
+          role: "user",
+          content: "中秋来了",
+          timestamp: "9月22日 06:59",
+          created_at: Math.floor(Date.parse("2026-09-21T22:59:00.000Z") / 1000),
+        }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+    expect(await response.json()).toMatchObject({ action: "send", reply: "中秋快乐 吃月饼没" });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.messages[0].content).toContain("禁止编造自己正在做什么");
+    expect(payload.messages[0].content).toContain("对方最后一条消息是 74 小时前发的");
+    expect(payload.messages[0].content).toContain("不要假装刚刚看到");
+    expect(payload.messages[0].content).toContain("不提刚忙完");
+    expect(payload.messages.at(-1).content).toBe("[9月22日 06:59，距今约74小时] 对方说：中秋来了");
+  });
+
+  it("rejects hallucinated question wording on stale messages", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "你这几个问号是啥意思" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "stale-hallucination",
+        contact_name: "桃子幺幺",
+        messages: [{ role: "user", content: "回宿舍了", timestamp: "9月22日 22:44", created_at: 1790088240 }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(await response.json()).toMatchObject({ action: "send", reply: "嗯 回去早点休息" });
+  });
+
+  it("uses a past-context fallback for stale relative-time events", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "聚餐挺好" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "stale-relative-event",
+        contact_name: "桃子幺幺",
+        messages: [{ role: "user", content: "今天有聚餐", timestamp: "9月22日 22:44", created_at: 1790088240 }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(await response.json()).toMatchObject({ action: "send", reply: "前几天聚餐还开心吧" });
+  });
+
+  it("blocks unsupported current-state claims when the message time is unknown", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "宿舍这个词 听着像还在念书|||我这边刚到家 天都黑透了" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "stale-without-timestamp",
+        contact_name: "桃子幺幺",
+        messages: [{ role: "user", content: "回宿舍了" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(await response.json()).toMatchObject({ action: "send", reply: "宿舍这个词 听着像还在念书" });
+  });
+
+  it("does not infer staleness from unrelated database history", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "在的" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const historyRows = [
+      { id: 1, role: "user", content: "旧消息", created_at: Math.floor(Date.parse("2026-09-21T00:00:00.000Z") / 1000) },
+    ];
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "contact-1",
+        contact_name: "测试联系人",
+        messages: [{ role: "user", content: "在吗" }],
+      }),
+    });
+    await onRequest({
+      request,
+      env: { DB: new MockD1(historyRows), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const prompt = JSON.parse(String(init.body)).messages[0].content;
+    expect(prompt).not.toMatch(/对方最后一条消息是 \d+ 小时前发的/);
+  });
+
   it("removes time and sleep comments when the other person did not mention time", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
@@ -955,7 +1127,7 @@ describe("monitoring sync and customer profile batching", () => {
 
     expect(response.status).toBe(200);
     expect(db.historyRows).toHaveLength(1);
-    expect(db.historyRows[0]).toMatchObject({ role: "assistant", source: "ai", content: "在的 刚忙完" });
+    expect(db.historyRows[0]).toMatchObject({ role: "assistant", source: "ai", content: "在的" });
   });
 
   it("uses deepseek-flash JSON output once the 40-message profile batch is ready", async () => {

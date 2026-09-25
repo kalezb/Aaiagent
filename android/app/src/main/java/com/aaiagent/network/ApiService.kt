@@ -15,7 +15,7 @@ data class ChatRequest(
     val platform: String,
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
-    val messages: List<Map<String, String>>,
+    val messages: List<Map<String, Any>>,
     val location: Map<String, Map<String, String>>? = null
 )
 

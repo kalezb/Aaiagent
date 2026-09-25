@@ -106,6 +106,37 @@ function formatChinaMessageTime(epochSeconds) {
   }).format(new Date(epochSeconds * 1000));
 }
 
+function requestMessageEpochSeconds(message) {
+  const raw = Number(message?.created_at || 0);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw > 1_000_000_000_000 ? Math.floor(raw / 1000) : Math.floor(raw);
+}
+
+function formatCurrentChatMessage(message, nowSec = Math.floor(Date.now() / 1000)) {
+  const epoch = requestMessageEpochSeconds(message);
+  const speaker = message?.role === "assistant" ? "你说" : "对方说";
+  let timeLabel = String(message?.timestamp || "").trim() || (epoch ? formatChinaMessageTime(epoch) : "");
+  if (epoch > 0 && message?.role === "user") {
+    const ageHours = Math.max(0, Math.floor((nowSec - epoch) / 3600));
+    if (ageHours >= 24) timeLabel += "，距今约" + ageHours + "小时";
+  }
+  return (timeLabel ? "[" + timeLabel + "] " : "") + speaker + "：" + String(message?.content || "");
+}
+
+function latestIncomingAgeHours(messages, historyMessages, nowSec) {
+  const latestIncoming = [...messages].reverse().find((message) => message?.role === "user");
+  if (!latestIncoming) return null;
+  let epoch = requestMessageEpochSeconds(latestIncoming);
+  if (!epoch) {
+    const content = String(latestIncoming.content || "").trim();
+    const matchingHistory = [...(historyMessages || [])].reverse().find((message) =>
+      message?.role === "user" && String(message.content || "").trim() === content
+    );
+    epoch = Number(matchingHistory?.created_at || 0);
+  }
+  return epoch > 0 ? Math.max(0, Math.floor((nowSec - epoch) / 3600)) : null;
+}
+
 const USER_TIME_MENTION_PATTERN = /(睡|醒|早|晚|凌晨|半夜|时间|几点|这个点|夜里|夜深)/;
 const UNREQUESTED_TIME_CLAUSE_PATTERN = /(大半夜|半夜|凌晨|这么晚|这个点|还没睡|没睡着|没睡|刚醒|醒着|夜里|夜深|睡了|早点睡|很晚了|太晚了|晚睡|熬夜|大晚上)/;
 
@@ -128,12 +159,63 @@ function removeUnrequestedTimeMentions(reply) {
     .join("|||");
 }
 
-function buildTimeSafeReply(reply, messages) {
-  if (hasUserTimeMention(messages)) return reply;
-  const cleaned = removeUnrequestedTimeMentions(reply);
+const STALE_REPLY_EXCUSE_PATTERN = /(刚忙完|刚看到|刚翻到|刚回来|刚有空|才看到|才翻到|才回|最近忙|这几天忙|忙得|忙晕|一直忙|隔了.{0,4}才|现在才回|这么久才回)/;
+const STALE_CURRENT_STATE_PATTERN = /(我这边|刚静下来|刚安静下来|刚坐下|刚到家|才回家|准备(?:歇|睡|休息)|要睡|马上睡|我也准备|吃点|去吃|现在去|一会儿|跑了.{0,5}小区|跑小区|送货|上门|见客户|天都黑|黑透|今天(?:有|去|吃|聚|跑|上班|工作|晴|雨|冷|热)|现在.*(?:晴|雨|冷|热|忙|吃|去|跑))/;
+
+
+function userAskedAboutOwnCurrentState(messages) {
+  const lastMessage = [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  return /(?:你|星暮).{0,8}(?:在干嘛|干嘛呢|做什么|忙什么|忙不忙|忙吗|到家|回家|吃饭|吃了吗|下班|上班|睡|休息|天气|冷不冷|热不热)|(?:你在哪|你那里)/.test(lastMessage);
+}
+
+function removeUnsupportedReplyAssertions(reply) {
+  return String(reply || "")
+    .split("|||")
+    .map((segment) => segment
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((clause) => !STALE_REPLY_EXCUSE_PATTERN.test(clause) && !STALE_CURRENT_STATE_PATTERN.test(clause))
+      .join(" ")
+      .trim())
+    .filter(Boolean)
+    .join(" ||| ");
+}
+
+function staleReplyMismatchesQuestion(reply, messages) {
+  const lastMessage = [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  const userAskedQuestion = /[?？]|问号|疑问|怎么|为啥|为什么|吗|呢/.test(lastMessage);
+  return /问号|几个问|发错/.test(reply) && !userAskedQuestion;
+}
+
+function staleReplyNeedsContextFallback(reply, messages) {
+  const lastMessage = [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  const containsRelativeTime = /(今天|明天|今晚|晚点|等会|一会儿|现在|刚)/.test(lastMessage);
+  const replyHasPastAnchor = /(前几天|那天|后来|当时|已经|过了|中秋)/.test(reply);
+  return containsRelativeTime && !replyHasPastAnchor;
+}
+
+function buildTimeSafeReply(reply, messages, hoursAgo = null) {
+  const candidate = userAskedAboutOwnCurrentState(messages)
+    ? String(reply || "")
+    : removeUnsupportedReplyAssertions(reply);
+  if (hoursAgo !== null && hoursAgo >= 24 && staleReplyMismatchesQuestion(candidate, messages)) {
+    return buildFallbackReply(messages);
+  }
+  if (hoursAgo !== null && hoursAgo >= 24 && staleReplyNeedsContextFallback(candidate, messages)) {
+    return buildFallbackReply(messages);
+  }
+  if (hasUserTimeMention(messages)) return candidate;
+  const cleaned = removeUnrequestedTimeMentions(candidate);
   if (cleaned) return cleaned;
+  return buildFallbackReply(messages);
+}
+
+function buildFallbackReply(messages) {
   const lastMessage = [...messages].reverse().find((message) => message.role === "user")?.content || "";
   if (/(在吗|你好|嗨|hello|哈喽)/i.test(lastMessage)) return "在呢 怎么了";
+  if (/聚餐|聚会/.test(lastMessage)) return "前几天聚餐还开心吧";
+  if (/回宿舍|回屋|到家|回去/.test(lastMessage)) return "嗯 回去早点休息";
+  if (/中秋/.test(lastMessage)) return "中秋快乐";
   if (/(好看|漂亮|帅|喜欢|气质|照片|穿搭|高跟|丝袜)/.test(lastMessage)) return "谢谢 你眼光不错";
   return "嗯 你说";
 }
@@ -1153,8 +1235,7 @@ export const onRequest = async (context) => {
       const memoryRow = await loadMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases);
       const { results: allMsgs } = await historyStatement.all();
       const allMessages = (allMsgs || []).reverse();
-      let hoursAgo = 0;
-      for (let i = allMessages.length - 1; i >= 0; i--) { if (allMessages[i].role === "user") { hoursAgo = Math.floor((Date.now() / 1000 - allMessages[i].created_at) / 3600); break; } }
+      const hoursAgo = latestIncomingAgeHours(messages, allMessages, Math.floor(Date.now() / 1000));
       const historyMessages = allMessages.length <= MAX_MSGS ? allMessages : allMessages.slice(allMessages.length - MAX_MSGS);
       const olderMessages = allMessages.slice(0, Math.max(0, allMessages.length - MAX_MSGS))
         .filter((message) => Number(message.id || 0) > memoryRow.summarizedUpToId);
@@ -1181,13 +1262,16 @@ export const onRequest = async (context) => {
       const platformStyle = PLATFORM_STYLE_HINTS[platform] || "\u81ea\u7136\u3001\u65e5\u5e38";
 
       let systemPrompt = personaPrompt + "\n\n\u5f53\u524d\u5e73\u53f0\uff1a" + platform + "\uff0c\u8bf7\u7528\u4ee5\u4e0b\u8bed\u6c14\uff1a" + platformStyle + "\n\n\u73b0\u5728\u662f " + currentDatetime + "\uff08" + weekday + "\uff09\u3002\n\u4f60\u4f4f\u5728" + (location?.home?.city || "\u91cd\u5e86") + (location?.home?.district || "") + "\uff0c\u5728" + (location?.work?.city || "\u91cd\u5e86") + (location?.work?.district || "") + "\u4e0a\u73ed\u3002\n\u4eca\u5929" + weather.condition + "\uff0c\u6c14\u6e29" + weather.temp + "\u00b0C\u3002\n\n\u56de\u590d\u89c4\u5219\uff08\u5fc5\u987b\u9075\u5b88\uff09\uff1a\n1. \"\u5bf9\u65b9\u8bf4\"\u662f\u5bf9\u65b9\u53d1\u7684\u8bdd\uff0c\"\u4f60\u8bf4\"\u662f\u4f60\uff08AI \u626e\u6f14\u7684\u4eba\u8bbe\uff09\u4e4b\u524d\u53d1\u7684\u8bdd\u3002\u4e0d\u8981\u641e\u6df7\u89d2\u8272\u3002\n2. \u6ce8\u610f\u5f53\u524d\u65f6\u95f4\u3002\u665a\u4e0a\u4e0d\u8bf4\"\u65e9\u4e0a\u597d\"\uff0c\u4e0b\u5348\u4e0d\u8bf4\"\u521a\u8d77\u5e8a\"\u3002\n3. \u6ce8\u610f\u5f53\u524d\u5929\u6c14\u3002\u51b7\u5929\u4e0d\u8bf4\u70ed\uff0c\u9634\u5929\u4e0d\u8bf4\u592a\u9633\u5927\u3002\n4. \u5bf9\u65b9\u804a\u5929\u6c14\u65f6\u4ee5\u5bf9\u65b9\u8bf4\u7684\u4e3a\u51c6\u3002\u53ea\u6709\u5bf9\u65b9\u95ee\"\u4f60\u90a3\u8fb9\u51b7\u4e0d\u51b7\"\u65f6\u624d\u8bf4\u81ea\u5df1\u8fd9\u8fb9\u3002\n5. \u5bf9\u65b9\u95ee\u4f4f\u5728\u54ea \u2192 \u8bf4\u5bb6\u5ead\u5730\u5740\uff08home\uff09\u3002\u5bf9\u65b9\u95ee\u5de5\u4f5c\u5728\u54ea \u2192 \u8bf4\u5de5\u4f5c\u5730\u5740\uff08work\uff09\u3002\n6. \u4e0d\u8981\u7f16\u9020\u4e0e\u5bf9\u65b9\u6d88\u606f\u77db\u76fe\u7684\u4e8b\u5b9e\u3002\n7. \u5982\u679c\u4f60\u5f88\u4e45\u6ca1\u56de\u5bf9\u65b9\uff0c\u6b63\u5e38\u8bf4\"\u521a\u5fd9\u5b8c\"\"\u521a\u770b\u5230\u6d88\u606f\"\u3002\u4e0d\u8981\u8bf4\u5bf9\u65b9\u6d88\u5931\u4e86\u2014\u2014\u6d88\u5931\u7684\u4eba\u662f\u4f60\u3002\n8. \u53ea\u56de\u590d\u5bf9\u65b9\u6700\u65b0\u7684\u8fd9\u6761\u6d88\u606f\uff0c\u57fa\u4e8e\u4e0a\u4e0b\u6587\u81ea\u7136\u63a5\u8bdd\u3002";
-      if (hoursAgo > 2) {
+      if (hoursAgo !== null && hoursAgo > 2) {
         systemPrompt += chinaTime.isRestPeriod
           ? "\n\n\u6ce8\u610f\uff1a\u5bf9\u65b9\u6700\u540e\u4e00\u6761\u6d88\u606f\u662f " + hoursAgo + " \u5c0f\u65f6\u524d\u53d1\u7684\u3002\u5f53\u524d\u662f\u6df1\u591c\uff0c\u4e0d\u8981\u8bf4\u521a\u4e0a\u95e8\u6216\u8fd8\u5728\u5916\u9762\u8dd1\uff0c\u4f46\u53ef\u4ee5\u81ea\u7136\u56de\u590d\u4e1a\u52a1\u6d88\u606f\uff0c\u4e5f\u53ef\u4ee5\u5b89\u6392\u660e\u5929\u53bb\u6536\u3002"
-          : "\n\n\u6ce8\u610f\uff1a\u5bf9\u65b9\u6700\u540e\u4e00\u6761\u6d88\u606f\u662f " + hoursAgo + " \u5c0f\u65f6\u524d\u53d1\u7684\u3002\u4f60\u4e00\u76f4\u5728\u5fd9\u6ca1\u56de\u590d\uff0c\u73b0\u5728\u521a\u770b\u5230\u3002";
+          : "\n\n\u6ce8\u610f\uff1a\u5bf9\u65b9\u6700\u540e\u4e00\u6761\u6d88\u606f\u662f " + hoursAgo + " \u5c0f\u65f6\u524d\u53d1\u7684\u3002\u4e0d\u8981\u5047\u88c5\u521a\u521a\u770b\u5230\uff0c\u4e5f\u4e0d\u8981\u7f16\u9020\u8fd9\u51e0\u5929\u505a\u8fc7\u4ec0\u4e48\uff1b\u76f4\u63a5\u56de\u5e94\u5bf9\u65b9\u7684\u539f\u8bdd\uff0c\u53ef\u81ea\u7136\u8865\u4e00\u53e5\u9694\u4e86\u51e0\u5929\u624d\u56de\u3002";
       }
       if (chinaTime.isRestPeriod) {
         systemPrompt += "\n\n\u661f\u66ae\u6b64\u523b\u7684\u771f\u5b9e\u751f\u6d3b\u72b6\u6001\uff1a" + chinaTime.lifeState + "\u3002\u60c5\u7eea\uff1a" + chinaTime.mood + "\u3002\n\u4f60\u8981\u50cf\u4e00\u4e2a\u6709\u6b63\u5e38\u4f5c\u606f\u548c\u60c5\u7eea\u7684\u4eba\uff0c\u4e0d\u662f24\u5c0f\u65f6\u5f85\u547d\u5ba2\u670d\u3002\u5f53\u524d\u72b6\u6001\u53ea\u4f5c\u4e3a\u81ea\u7136\u80cc\u666f\uff0c\u6309\u771f\u5b9e\u53cd\u5e94\u8bf4\u8bdd\uff0c\u4e0d\u8981\u673a\u68b0\u6c47\u62a5\u4f5c\u606f\uff0c\u4e5f\u4e0d\u8981\u7f16\u9020\u4e0e\u5f53\u524d\u72b6\u6001\u51b2\u7a81\u7684\u5de5\u4f5c\u7ecf\u5386\u3002";
+      }
+      if (hoursAgo !== null && hoursAgo >= 24) {
+        systemPrompt += "\n\n旧消息约束（必须遵守）：对方这条消息已经过去 " + hoursAgo + " 小时。不要提刚忙完、刚看到、才翻到、最近忙、隔了几天或现在才回，不要解释为什么晚回，不要描述这几天做过什么，也不要提我这边、现在、今天、天气、刚到家或刚静下来。只直接回应对方原文，过去事件用过去语气承载，不给当前或未来建议。";
       }
 
       systemPrompt += "\n\n短句聊天风格（必须优先遵守）：\n" +
@@ -1197,9 +1281,17 @@ export const onRequest = async (context) => {
         "4. 内容要直接回应对方最后一条消息，像熟人随口聊天，允许轻微口语和情绪，但不要油腻、不要暧昧、不要夸张共情。\n" +
         "5. 输出里除 ||| 外，不要使用句号、逗号、问号、感叹号等标点；需要停顿时用空格。只输出回复正文，不要加引号、标题、序号或解释。";
 
+      systemPrompt += "\n\n事实约束（优先级最高）：\n" +
+        "1. 只能把聊天记录里明确出现的内容当成事实，不要猜测或补全对方没说的事情。\n" +
+        "2. 禁止编造自己正在做什么、去过哪里、见了谁、吃了什么、聚餐、跑小区、送货等具体活动；聊天记录没出现就不要提。\n" +
+        "3. 只有系统明确给出“对方最后一条消息是多少小时前发的”时，才可以提很久没回；没有时间依据时不要主动说刚忙完、刚看到或汇报近况。\n" +
+        "4. 直接回应对方最后一条消息。对方只是问候或说一句与时间无关的话时，只接这句话，不要扯工作、天气、行程或生活流水账。\n" +
+        "5. 如果上面的规则与本段冲突，以本段为准。";
+
       systemPrompt += "\n\n同一客户可能绑定 Soul、QQ、陌陌、连信上的多个账号，历史中的不同平台昵称都视为同一个人，记忆必须连续。";
 
       // build llm messages
+      systemPrompt += "\n\n旧消息回复规则（覆盖前面冲突规则）：发现消息距今超过24小时时，直接回应内容，不解释晚回原因，不提刚忙完、刚看到、最近在忙、这几天、隔了几天、聚餐、跑小区或任何未在聊天记录中出现的生活经历。对方只是问候时，用一句自然的话接住即可。";
       systemPrompt += "\n\n对方夸奖外貌、穿搭、身材、照片或动态时，直接自然接住夸奖，然后正常继续聊天。";
       const llmMessages = [{ role: "system", content: systemPrompt }];
       if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
@@ -1209,19 +1301,22 @@ export const onRequest = async (context) => {
         const platformLabel = PLATFORM_STYLE_HINTS[msg.platform] ? msg.platform : "未知平台";
         llmMessages.push({ role: "user", content: "[" + platformLabel + " " + timeStr + "] " + roleLabel + "\uff1a" + msg.content });
       }
-      for (const msg of messages) { llmMessages.push({ role: msg.role, content: msg.content }); }
+      for (const msg of messages) {
+        llmMessages.push({ role: msg.role, content: formatCurrentChatMessage(msg) });
+      }
 
       // call DeepSeek
+      const requestTemperature = hoursAgo !== null && hoursAgo >= 24 ? Math.min(temperature, 0.2) : temperature;
       const apiKey = env.DEEPSEEK_API_KEY || "";
       const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-        body: JSON.stringify({ model: modelName, messages: llmMessages, temperature, max_tokens: maxTokens }),
+        body: JSON.stringify({ model: modelName, messages: llmMessages, temperature: requestTemperature, max_tokens: maxTokens }),
       });
       if (!resp.ok) return json({ error: "LLM \u8c03\u7528\u5931\u8d25" }, 502);
       const data = await resp.json();
       const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
-      const reply = buildTimeSafeReply(rawReply, messages);
+      const reply = buildTimeSafeReply(rawReply, messages, hoursAgo);
       const nowSec = Math.floor(Date.now() / 1000);
 
       // User messages arrive through the idempotent sync outbox. Only write the generated AI

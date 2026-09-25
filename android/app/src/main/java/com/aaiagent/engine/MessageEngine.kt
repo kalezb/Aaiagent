@@ -728,9 +728,11 @@ class MessageEngine(
                         contactId = context.contactId,
                         contactName = context.contactName,
                         messages = requestMessages.map {
-                            mapOf(
+                            mapOf<String, Any>(
                                 "role" to if (it.sender == "self") "assistant" else "user",
-                                "content" to it.content
+                                "content" to it.content,
+                                "timestamp" to it.timestampText,
+                                "created_at" to (it.timestampMillis?.div(1000L) ?: 0L)
                             )
                         },
                         location = location
@@ -857,7 +859,11 @@ class MessageEngine(
             val currentSnapshot = messages.mapNotNull { message ->
                 val role = if (message.sender == "self") "assistant" else "user"
                 val content = message.content.trim()
-                if (content.isEmpty()) null else SyncSnapshotItem(role, content)
+                if (content.isEmpty()) null else SyncSnapshotItem(
+                    role = role,
+                    content = content,
+                    createdAt = message.timestampMillis?.div(1000L)
+                )
             }
             val newIndexes = SyncSnapshotPolicy.selectNewItems(previousSnapshot, currentSnapshot)
             var sequence = previousState?.nextSequence ?: 0L
@@ -882,7 +888,7 @@ class MessageEngine(
                     role = item.role,
                     content = item.content,
                     source = if (item.role == "assistant") "human_phone" else "sync",
-                    createdAt = System.currentTimeMillis() / 1000
+                    createdAt = item.createdAt ?: (System.currentTimeMillis() / 1000)
                 )
             }
             val state = ConversationSyncStateEntity(
