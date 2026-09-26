@@ -9,10 +9,11 @@ import org.junit.Test
 
 class StickerMatcherTest {
     @Test
-    fun `all fourteen interaction stickers have model-readable meanings`() {
+    fun `all interaction stickers have model-readable meanings`() {
         val expectedMeanings = mapOf(
             "戳一下" to "打招呼",
             "拍一下" to "拍了拍你",
+            "弹一下" to "引起你的注意",
             "皮一下" to "开玩笑",
             "挠一下" to "调侃",
             "摸一下" to "安慰",
@@ -27,7 +28,7 @@ class StickerMatcherTest {
             "略略略" to "开玩笑"
         )
 
-        assertEquals(14, expectedMeanings.size)
+        assertEquals(15, expectedMeanings.size)
         expectedMeanings.forEach { (name, meaning) ->
             val text = StickerMatcher.modelTextFor(name)
             assertNotNull(text)

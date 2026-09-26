@@ -47,6 +47,36 @@ class SoulInteractionMessageTest {
     }
 
     @Test
+    fun `bounce system text extracts a dynamic nickname`() {
+        val parsed = SoulInteractionMessage.parseSystemText(
+            "“ 见仁见智 ” 弹了弹我"
+        )
+
+        assertEquals("见仁见智", parsed?.actorName)
+        assertEquals("弹一下", parsed?.displayName)
+    }
+
+    @Test
+    fun `bounce system text accepts an unquoted nickname`() {
+        val parsed = SoulInteractionMessage.parseSystemText(
+            "见仁见智 弹了弹我"
+        )
+
+        assertEquals("见仁见智", parsed?.actorName)
+        assertEquals("弹一下", parsed?.displayName)
+    }
+
+    @Test
+    fun `bounce system text accepts quotes around the whole sentence`() {
+        val parsed = SoulInteractionMessage.parseSystemText(
+            "“另一个客户 弹了弹我”"
+        )
+
+        assertEquals("另一个客户", parsed?.actorName)
+        assertEquals("弹一下", parsed?.displayName)
+    }
+
+    @Test
     fun `unrelated system text is rejected`() {
         assertNull(SoulInteractionMessage.parseSystemText("“期待下一步的我们” 拍了拍你"))
         assertNull(SoulInteractionMessage.parseSystemText("摸了摸我的头"))

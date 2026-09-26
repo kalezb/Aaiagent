@@ -25,6 +25,7 @@ object StickerMatcher {
     private val STICKERS = listOf(
         Sticker("poke_it", "戳一下", "对方戳了你一下，通常是在打招呼、逗你或提醒你回消息"),
         Sticker("clapping_head", "拍一下", "对方拍了拍你，通常是打招呼、催你回消息或表达亲昵互动"),
+        Sticker("bounce_it", "弹一下", "对方弹了你一下，通常是想引起你的注意、逗你或催你回复"),
         Sticker("water_gun", "皮一下", "对方和你开玩笑，气氛轻松调皮"),
         Sticker("cat_paw", "挠一下", "对方挠你一下，通常是调侃、逗趣或轻柔催促"),
         Sticker("pat_it", "摸一下", "对方摸摸你，通常表达安慰、关心或亲昵互动"),

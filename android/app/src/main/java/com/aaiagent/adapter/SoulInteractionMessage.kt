@@ -15,21 +15,40 @@ object SoulInteractionMessage {
      *
      * 昵称必须动态解析，不能把任何测试账号写死。
      */
-    private val QUOTED_NICKNAME_PATTERN = Regex(
-        pattern = "^[“\"]\\s*(.*?)\\s*[”\"]\\s*摸了摸我的头\\s*$"
+    private data class SystemAction(
+        val quotedNicknamePattern: Regex,
+        val optionalOuterQuotePattern: Regex,
+        val displayName: String
     )
 
-    private val OPTIONAL_OUTER_QUOTE_PATTERN = Regex(
-        pattern = "^[“\"]?\\s*(.*?)\\s*摸了摸我的头\\s*[”\"]?$"
+    private val ACTIONS = listOf(
+        action("摸了摸我的头", "摸一下"),
+        action("弹了弹我", "弹一下")
     )
+
+    private fun action(text: String, displayName: String): SystemAction {
+        val escaped = Regex.escape(text)
+        return SystemAction(
+            quotedNicknamePattern = Regex(
+                "^[“\"]\\s*(.*?)\\s*[”\"]\\s*$escaped\\s*$"
+            ),
+            optionalOuterQuotePattern = Regex(
+                "^[“\"]?\\s*(.*?)\\s*$escaped\\s*[”\"]?$"
+            ),
+            displayName = displayName
+        )
+    }
 
     fun parseSystemText(raw: String): Parsed? {
         val text = raw.trim()
-        val match = QUOTED_NICKNAME_PATTERN.matchEntire(text)
-            ?: OPTIONAL_OUTER_QUOTE_PATTERN.matchEntire(text)
-            ?: return null
-        val actorName = match.groupValues[1].trim().trim('“', '”', '"')
-        if (actorName.isEmpty()) return null
-        return Parsed(actorName = actorName, displayName = "摸一下")
+        for (action in ACTIONS) {
+            val match = action.quotedNicknamePattern.matchEntire(text)
+                ?: action.optionalOuterQuotePattern.matchEntire(text)
+                ?: continue
+            val actorName = match.groupValues[1].trim().trim('“', '”', '"')
+            if (actorName.isEmpty()) continue
+            return Parsed(actorName = actorName, displayName = action.displayName)
+        }
+        return null
     }
 }
