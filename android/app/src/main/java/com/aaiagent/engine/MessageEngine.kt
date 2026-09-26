@@ -478,7 +478,7 @@ class MessageEngine(
                 val understanding = understandIncomingBatch(
                     adapter = adapter,
                     root = root,
-                    messages = messages,
+                    messages = incomingBatch.incoming,
                     incomingBatch = incomingBatch,
                     api = api,
                     token = token,
@@ -593,7 +593,8 @@ class MessageEngine(
                 "voice transcription total=${result.total} transcribed=${result.transcribed}"
             )
             if (result.hasAny) {
-                return MediaUnderstanding(adapter.readMessages(svc.rootInActiveWindow ?: root))
+                val refreshed = adapter.readMessages(svc.rootInActiveWindow ?: root)
+                return MediaUnderstanding(IncomingMessageBatch.select(refreshed)?.incoming ?: messages)
             }
         }
 
@@ -791,7 +792,8 @@ class MessageEngine(
                     val freshRoot = service?.rootInActiveWindow ?: return null
                     if (!verifyCurrentChat(adapter, context.contactName)) return null
                     val freshMessages = adapter.readMessages(freshRoot)
-                    if (freshMessages.isNotEmpty()) requestMessages = freshMessages
+                    val freshIncoming = IncomingMessageBatch.select(freshMessages)?.incoming
+                    if (!freshIncoming.isNullOrEmpty()) requestMessages = freshIncoming
                     delay(250)
                 }
             }

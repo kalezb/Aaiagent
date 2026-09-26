@@ -308,6 +308,34 @@ async function loadCustomerProfile(db, token, groupId) {
   };
 }
 
+function compactProfileForPrompt(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map(compactProfileForPrompt)
+      .filter((item) => item !== undefined && item !== null && item !== "")
+      .slice(0, 12);
+  }
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const [key, child] of Object.entries(value)) {
+      const compact = compactProfileForPrompt(child);
+      if (compact === undefined || compact === null || compact === "") continue;
+      if (Array.isArray(compact) && compact.length === 0) continue;
+      if (!Array.isArray(compact) && typeof compact === "object" && Object.keys(compact).length === 0) continue;
+      result[key] = compact;
+    }
+    return result;
+  }
+  const text = String(value ?? "").trim();
+  return text ? text.slice(0, 180) : undefined;
+}
+
+function customerProfilePrompt(profile) {
+  const compact = compactProfileForPrompt(profile);
+  if (!compact || !Object.keys(compact).length) return "";
+  return JSON.stringify(compact);
+}
+
 async function loadDeviceLocation(db, token) {
   const row = await db.prepare(
     "SELECT home_city, home_district, work_city, work_district FROM user_locations WHERE token = ?"
@@ -575,7 +603,7 @@ async function loadCustomerMessages(db, identity, limit = 300, sinceId = 0) {
   };
 }
 
-function formatMemoryLines(messages, maxChars = 1800) {
+function formatMemoryLines(messages, maxChars = 800) {
   const lines = [];
   let used = 0;
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -589,10 +617,30 @@ function formatMemoryLines(messages, maxChars = 1800) {
   return lines.reverse().join("\n");
 }
 
-function mergeMemorySummary(existingSummary, messages, maxChars = 2400) {
+function mergeMemorySummary(existingSummary, messages, maxChars = 800) {
   const addition = formatMemoryLines(messages);
   const merged = [String(existingSummary || "").trim(), addition].filter(Boolean).join("\n");
   return merged.length <= maxChars ? merged : merged.slice(merged.length - maxChars);
+}
+
+function dedupeHistoryAgainstCurrent(historyMessages, currentMessages) {
+  const remaining = new Map();
+  for (const message of currentMessages || []) {
+    const key = String(message.role || "user") + "\u0000" + String(message.content || "").trim();
+    remaining.set(key, (remaining.get(key) || 0) + 1);
+  }
+  const result = [];
+  for (let index = historyMessages.length - 1; index >= 0; index--) {
+    const message = historyMessages[index];
+    const key = String(message.role || "user") + "\u0000" + String(message.content || "").trim();
+    const count = remaining.get(key) || 0;
+    if (count > 0) {
+      remaining.set(key, count - 1);
+      continue;
+    }
+    result.push(message);
+  }
+  return result.reverse();
 }
 
 async function loadMemorySummary(db, token, groupId, aliases) {
@@ -1138,7 +1186,7 @@ export const onRequest = async (context) => {
       const personaPrompt = activePersona?.system_prompt || "\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684\u804a\u5929\u52a9\u624b\u3002";
 
       // history
-      const MAX_MSGS = 40;
+      const MAX_MSGS = 10;
       const currentLink = await env.DB.prepare(
         "SELECT group_id FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
       ).bind(tokenRow.token, platform, contact_id).first();
@@ -1160,9 +1208,12 @@ export const onRequest = async (context) => {
         ).bind(tokenRow.token, platform, contact_id, MAX_MSGS + 80);
       }
       const memoryRow = await loadMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases);
+      const profileGroupId = currentLink?.group_id || makeSingleGroupId(tokenRow.token, platform, contact_id);
+      const customerProfile = await loadCustomerProfile(env.DB, tokenRow.token, profileGroupId);
       const { results: allMsgs } = await historyStatement.all();
       const allMessages = (allMsgs || []).reverse();
-      const historyMessages = allMessages.length <= MAX_MSGS ? allMessages : allMessages.slice(allMessages.length - MAX_MSGS);
+      const recentHistory = allMessages.length <= MAX_MSGS ? allMessages : allMessages.slice(allMessages.length - MAX_MSGS);
+      const historyMessages = dedupeHistoryAgainstCurrent(recentHistory, messages);
       const olderMessages = allMessages.slice(0, Math.max(0, allMessages.length - MAX_MSGS))
         .filter((message) => Number(message.id || 0) > memoryRow.summarizedUpToId);
       const summary = mergeMemorySummary(memoryRow.summary, olderMessages);
@@ -1195,9 +1246,11 @@ export const onRequest = async (context) => {
           ? "你们最近互动频繁，可以自然熟络一点，但不要主动推销。"
           : "你们聊过几次，可以延续之前的话题，别突然变陌生。";
       const activityNow = currentActivityByHour(currentHour);
+      const profileContext = customerProfilePrompt(customerProfile.profile);
 
       let systemPrompt = personaPrompt +
         "\n\n当前平台：" + platform + "。" +
+        (profileContext ? "\n\n【长期客户档案】" + profileContext : "") +
         "\n\n【现在】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" +
         "你住在" + (location?.home?.city || "重庆") + (location?.home?.district || "") + "，在" + (location?.work?.city || "重庆") + (location?.work?.district || "") + "上班，做旧手机回收。今天" + weather.condition + weather.temp + "度。" +
         (activity.activeDays >= 2 ? "\n这个对象最近7天有" + activity.activeDays + "天都主动找过你，如果隔了很久没回别装作天天在聊。" : "") +

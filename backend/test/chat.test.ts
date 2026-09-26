@@ -231,12 +231,12 @@ afterEach(() => {
 });
 
 describe("chat logic", () => {
-  it("limits history to 40 recent messages", () => {
+  it("limits raw history to 10 recent messages", () => {
     const messages = Array.from({ length: 50 }, (_, index) => ({
       content: `message-${index}`,
     }));
-    expect(messages.slice(-40)[0].content).toBe("message-10");
-    expect(messages.slice(-40).at(-1)?.content).toBe("message-49");
+    expect(messages.slice(-10)[0].content).toBe("message-40");
+    expect(messages.slice(-10).at(-1)?.content).toBe("message-49");
   });
 
   it("passes base persona, platform, location, time and role context to the model", async () => {
@@ -282,6 +282,75 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("你说\"是你之前发的话");
     expect(payload.messages[0].content).not.toContain("短句聊天风格");
     expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
+  });
+
+  it("uses a compact profile and only ten recent unique history messages", async () => {
+    const history = [{
+      id: 16,
+      token: "test-token",
+      platform: "soul",
+      contact_id: "contact-1",
+      contact_name: "梦想",
+      role: "user",
+      content: "刚发的问题",
+      created_at: 115,
+    }, ...Array.from({ length: 15 }, (_, index) => {
+      const number = 15 - index;
+      return {
+        id: number,
+        token: "test-token",
+        platform: "soul",
+        contact_id: "contact-1",
+        contact_name: "梦想",
+        role: number % 2 === 0 ? "user" : "assistant",
+        content: `历史-${number}`,
+        created_at: 100 + number,
+      };
+    })];
+    const db = new MockD1(history).withOptions({
+      contactLinks: [{ group_id: "group:shared", token: "test-token", platform: "soul", contact_id: "contact-1", contact_name: "梦想" }],
+    });
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    db.profileRows.set("test-token\u0000group:shared", {
+      profile_json: JSON.stringify({ basic: { name: "张先生", gender: "男" }, preferences: { hobbies: ["羽毛球"], likes: ["爬山"] }, notes: [""] }),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "周末有空" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "contact-1",
+          contact_name: "梦想",
+          messages: [
+            { role: "user", content: "刚发的问题", created_at: 115 },
+            { role: "user", content: "明天的安排呢" },
+          ],
+        }),
+      }),
+      env: { DB: db, KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const promptMessages = JSON.parse(String(init.body)).messages;
+    expect(promptMessages[0].content).toContain("【长期客户档案】");
+    expect(promptMessages[0].content).toContain('"name":"张先生"');
+    expect(promptMessages[0].content).not.toContain('"notes"');
+    const rawHistoryLines = promptMessages.filter((message) => String(message.content).startsWith("[soul "));
+    expect(rawHistoryLines.length).toBeLessThanOrEqual(10);
+    expect(rawHistoryLines.some((message) => String(message.content).includes("刚发的问题"))).toBe(false);
+    expect(promptMessages.filter((message) => String(message.content).includes("刚发的问题"))).toHaveLength(1);
+    expect(promptMessages.some((message) => String(message.content).includes("明天的安排呢"))).toBe(true);
   });
 
   it("keeps real message time as context without applying a stale reply policy", async () => {
