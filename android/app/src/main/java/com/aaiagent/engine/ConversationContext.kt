@@ -9,5 +9,8 @@ data class ConversationContext(
     var recalcCount: Int = 0,
     var lastIncomingFingerprint: String = "",
     val aiSentContents: MutableSet<String> = mutableSetOf(),
+    val pendingReplyParts: MutableList<String> = mutableListOf(),
+    var pendingReplyIncomingFingerprint: String = "",
+    var pendingReplyBatchFingerprint: String = "",
     var lastRepliedIncomingFingerprint: String = ""
 )

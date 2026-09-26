@@ -52,6 +52,7 @@ class MessageEngine(
     private val lease = AutomationLease()
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     private val contexts = mutableMapOf<String, ConversationContext>()
+    private val handledConversationIds = mutableSetOf<String>()
     private var hostingJob: Job? = null
     private var lastBackendTaskPollAt: Long = 0L
     private var lastSyncFlushAt: Long = 0L
@@ -109,6 +110,7 @@ class MessageEngine(
         hostingJob?.cancel()
         hostingJob = null
         activeContext = null
+        handledConversationIds.clear()
         clearInputField()
         state = EngineState.Idle
     }
@@ -126,8 +128,9 @@ class MessageEngine(
 
             if (state == EngineState.Error || state == EngineState.Paused) state = EngineState.Idle
             if (state == EngineState.Idle) {
+                var processedConversation = false
                 try {
-                    scanAndProcess(leaseToken)
+                    processedConversation = scanAndProcess(leaseToken)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -135,11 +138,15 @@ class MessageEngine(
                     RuntimeJournal.recovery("托管循环异常: ${error.message}")
                     state = EngineState.Error
                 }
+
+                if (processedConversation) continue
             }
 
-            withTimeoutOrNull(POLL_INTERVAL_MS) {
+            val wokeEarly = withTimeoutOrNull(POLL_INTERVAL_MS) {
                 wakeSignal.receive()
-            }
+            } != null
+            handledConversationIds.clear()
+            android.util.Log.d("AIA", "message-list round complete wokeEarly=$wokeEarly")
         }
 
         if (hostingEnabled && !lease.owns(leaseToken)) {
@@ -147,20 +154,20 @@ class MessageEngine(
         }
     }
 
-    private suspend fun scanAndProcess(leaseToken: String) {
-        if (!canContinue(leaseToken, null)) return
+    private suspend fun scanAndProcess(leaseToken: String): Boolean {
+        if (!canContinue(leaseToken, null)) return false
         val svc = service ?: run {
             state = EngineState.Error
-            return
+            return false
         }
-        val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
+        val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return false
 
         val now = System.currentTimeMillis()
         if (hostingMode != HostingMode.MONITOR_ONLY &&
             BackendTaskPollPolicy.isDue(lastBackendTaskPollAt, now, BACKEND_TASK_POLL_INTERVAL_MS)
         ) {
             lastBackendTaskPollAt = now
-            if (processBackendReplyTask(svc, adapter, leaseToken)) return
+            if (processBackendReplyTask(svc, adapter, leaseToken)) return true
         }
 
         val activeRoot = svc.rootInActiveWindow
@@ -168,39 +175,46 @@ class MessageEngine(
             val title = adapter.readChatTitle(activeRoot)
             if (!title.isNullOrBlank()) {
                 if (isContactAllowed(title, title)) {
+                    markHandled(title)
                     processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
                 } else {
+                    markHandled(title)
                     returnToMessageList(adapter, leaseToken, "contact filtered")
                 }
-                return
+                return true
             }
         }
 
         state = EngineState.ScanningConversations
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: run {
             state = EngineState.Idle
-            return
+            return false
         }
-        if (!canContinue(leaseToken, null)) return
+        if (!canContinue(leaseToken, null)) return false
 
         val info = adapter.clickFirstUnreadConversation(
             listRoot,
             shouldClick = true,
-            contactFilter = ::isContactAllowed
+            contactFilter = { contactName, contactId ->
+                !isHandled(contactId) && isContactAllowed(contactName, contactId)
+            }
         )
         if (info == null) {
             state = EngineState.Idle
-            return
+            return false
         }
         RuntimeJournal.clickConversation(info.contactName, true)
 
         val verifiedChat = waitForVerifiedChat(svc, adapter, info.contactName, leaseToken)
         if (verifiedChat == null) {
+            markHandled(info.contactId)
             state = EngineState.Idle
-            return
+            return true
         }
 
         processVerifiedChat(adapter, verifiedChat, info.contactId, info.contactName, leaseToken)
+        markHandled(info.contactId)
+        return true
     }
 
     private suspend fun processBackendReplyTask(
@@ -424,6 +438,49 @@ class MessageEngine(
                 return
             }
             enqueueSnapshot(context, messages)
+            val deliveryFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
+
+            val pendingParts = synchronized(context) { context.pendingReplyParts.toList() }
+            if (pendingParts.isNotEmpty() && hostingMode == HostingMode.FULL_AUTO) {
+                val pendingFingerprint = synchronized(context) {
+                    context.pendingReplyIncomingFingerprint
+                }
+                val pendingBatchFingerprint = synchronized(context) {
+                    context.pendingReplyBatchFingerprint
+                }
+                if (ReplyDeliveryPolicy.incomingChanged(pendingFingerprint, deliveryFingerprint)) {
+                    clearPendingReply(context)
+                    android.util.Log.d("AIA", "pending reply invalidated by newer incoming messages")
+                    return
+                }
+                state = EngineState.AboutToSend
+                val delivery = deliverReplyParts(
+                    adapter = adapter,
+                    context = context,
+                    parts = pendingParts,
+                    expectedIncomingFingerprint = pendingFingerprint,
+                    leaseToken = leaseToken,
+                    interactionEpoch = interactionEpoch
+                )
+                if (delivery.isComplete) {
+                    synchronized(context) {
+                        if (pendingBatchFingerprint.isNotBlank()) {
+                            context.lastRepliedIncomingFingerprint = pendingBatchFingerprint
+                        }
+                    }
+                    if (HostingCompletionPolicy.shouldReturnToMessageList(
+                            mode = hostingMode,
+                            sentAny = true,
+                            automationStillOwned = canContinue(leaseToken, interactionEpoch)
+                        )
+                    ) {
+                        state = EngineState.ScanningConversations
+                        returnToMessageList(adapter, leaseToken, "pending reply sent")
+                    }
+                }
+                if (delivery.status == ReplyDeliveryStatus.STALE) clearPendingReply(context)
+                return
+            }
 
             val lastMessage = messages.lastOrNull() ?: return
             if (!ConversationReplyPolicy.shouldReply(lastMessage.sender)) {
@@ -448,7 +505,7 @@ class MessageEngine(
                 return
             }
             synchronized(context) {
-                context.lastIncomingFingerprint = incomingFingerprint(latestIncoming)
+                context.lastIncomingFingerprint = deliveryFingerprint
             }
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 synchronized(context) {
@@ -503,8 +560,16 @@ class MessageEngine(
             when (hostingMode) {
                 HostingMode.FULL_AUTO -> {
                     state = EngineState.AboutToSend
-                    val sentAny = sendReply(adapter, context, reply, leaseToken, interactionEpoch)
-                    if (sentAny) {
+                    val delivery = sendReply(
+                        adapter = adapter,
+                        context = context,
+                        reply = reply,
+                        incomingBatchFingerprint = incomingBatchFingerprint,
+                        deliveryFingerprint = deliveryFingerprint,
+                        leaseToken = leaseToken,
+                        interactionEpoch = interactionEpoch
+                    )
+                    if (delivery.isComplete) {
                         synchronized(context) {
                             context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
                         }
@@ -517,6 +582,9 @@ class MessageEngine(
                             state = EngineState.ScanningConversations
                             returnToMessageList(adapter, leaseToken, "reply sent")
                         }
+                    } else if (delivery.status == ReplyDeliveryStatus.STALE) {
+                        clearPendingReply(context)
+                        android.util.Log.d("AIA", "reply delivery stopped because newer messages arrived")
                     }
                 }
                 HostingMode.SEMI_AUTO -> {
@@ -783,8 +851,8 @@ class MessageEngine(
             android.util.Log.d("AIA", "reply freshness=$decision recalc=$recalcCount")
             when (decision) {
                 ReplyFreshnessDecision.KEEP -> return response.reply.trim()
-                ReplyFreshnessDecision.FORCE_SEND -> {
-                    if (verifyCurrentChat(adapter, context.contactName)) return response.reply.trim()
+                ReplyFreshnessDecision.ABORT_STALE -> {
+                    android.util.Log.d("AIA", "discard stale reply and wait for newest messages")
                     return null
                 }
                 ReplyFreshnessDecision.RECOMPUTE -> {
@@ -805,47 +873,158 @@ class MessageEngine(
         adapter: PlatformAdapter,
         context: ConversationContext,
         reply: String,
+        incomingBatchFingerprint: String,
+        deliveryFingerprint: String,
         leaseToken: String,
         interactionEpoch: Long
-    ): Boolean {
+    ): ReplyDeliveryResult {
         val outgoing = AssistantReplySanitizer.clean(reply)
-        if (outgoing.isEmpty()) return false
+        if (outgoing.isEmpty()) return ReplyDeliveryResult(ReplyDeliveryStatus.FAILED, 0, 0)
 
-        // 代码层做"真人打字感"：按行拆成短段，去掉句末句号/逗号/～，逐段发，段间随机等几秒。
         val segments = outgoing.split(Regex("\\r?\\n|\\|\\|\\|"))
             .map { it.trim().trimEnd('。', '，', ',', '.', '~', '～').trim() }
             .filter { it.isNotEmpty() && it.length <= 60 }
-        val parts = if (segments.isNotEmpty()) segments else listOf(outgoing.trimEnd('。', '，', '~', '～'))
+        val rawParts = if (segments.isNotEmpty()) segments else listOf(outgoing.trimEnd('。', '，', '~', '～'))
+        val parts = ReplyDeliveryPolicy.prepareParts(rawParts)
+        if (parts.isEmpty()) return ReplyDeliveryResult(ReplyDeliveryStatus.FAILED, 0, 0)
         android.util.Log.d("AIA", "outgoing reply sanitized segments=${parts.size} length=${outgoing.length}")
 
-        var sentAny = false
+        synchronized(context) {
+            context.pendingReplyParts.clear()
+            context.pendingReplyParts.addAll(parts)
+            context.pendingReplyIncomingFingerprint = deliveryFingerprint
+            context.pendingReplyBatchFingerprint = incomingBatchFingerprint
+        }
+        return deliverReplyParts(
+            adapter = adapter,
+            context = context,
+            parts = parts,
+            expectedIncomingFingerprint = deliveryFingerprint,
+            leaseToken = leaseToken,
+            interactionEpoch = interactionEpoch
+        )
+    }
+
+    private suspend fun deliverReplyParts(
+        adapter: PlatformAdapter,
+        context: ConversationContext,
+        parts: List<String>,
+        expectedIncomingFingerprint: String,
+        leaseToken: String,
+        interactionEpoch: Long
+    ): ReplyDeliveryResult {
+        if (parts.isEmpty()) return ReplyDeliveryResult(ReplyDeliveryStatus.COMPLETE, 0, 0)
+
+        var sentCount = 0
         for ((index, part) in parts.withIndex()) {
-            if (!canContinue(leaseToken, interactionEpoch)) { clearInputField(); break }
-            if (!verifyCurrentChat(adapter, context.contactName)) { RuntimeJournal.messageSent(false, "发送前联系人验证失败"); break }
-            if (index > 0) delay((1000L..3000L).random())
+            if (!canContinue(leaseToken, interactionEpoch)) {
+                clearInputField()
+                clearPendingReply(context)
+                return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, parts.size)
+            }
+            if (index > 0) delay((1000L..2000L).random())
+            if (!incomingStillCurrent(adapter, context, expectedIncomingFingerprint)) {
+                android.util.Log.d("AIA", "reply delivery invalidated before part=${index + 1}")
+                clearInputField()
+                clearPendingReply(context)
+                return ReplyDeliveryResult(ReplyDeliveryStatus.STALE, sentCount, parts.size)
+            }
+            if (!verifyCurrentChatWithRetry(adapter, context.contactName)) {
+                RuntimeJournal.messageSent(false, "发送前联系人验证失败")
+                clearInputField()
+                break
+            }
             state = EngineState.Sending
             val svc = service ?: break
             val root = svc.rootInActiveWindow ?: break
             val result = adapter.fillAndSend(svc, root, part, context.contactName)
             if (result != PlatformAdapter.SendResult.SUCCESS) {
                 RuntimeJournal.messageSent(false, "发送未完成: $result")
-                if (result == PlatformAdapter.SendResult.BANNED) { state = EngineState.Error }
+                if (result == PlatformAdapter.SendResult.BANNED) {
+                    state = EngineState.Error
+                    clearPendingReply(context)
+                }
                 clearInputField()
                 break
             }
-            sentAny = true
+            sentCount++
+            synchronized(context) { context.aiSentContents.add(part) }
         }
-        if (sentAny) {
-            RuntimeJournal.messageSent(true, "回复发送")
-            synchronized(context) { context.aiSentContents.add(outgoing) }
+
+        val remaining = ReplyDeliveryPolicy.remaining(parts, sentCount)
+        val progress = ReplyDeliveryPolicy.progress(sentCount, parts.size)
+        synchronized(context) {
+            context.pendingReplyParts.clear()
+            context.pendingReplyParts.addAll(remaining)
+            if (remaining.isEmpty()) {
+                context.pendingReplyIncomingFingerprint = ""
+                context.pendingReplyBatchFingerprint = ""
+            }
         }
-        return sentAny
+        if (progress.isComplete) {
+            RuntimeJournal.messageSent(true, "回复发送完成 ${progress.sentParts}/${progress.totalParts}")
+        } else {
+            android.util.Log.w(
+                "AIA",
+                "reply delivery incomplete sent=${progress.sentParts}/${progress.totalParts} remaining=${remaining.size}"
+            )
+        }
+        return ReplyDeliveryResult(
+            status = if (progress.isComplete) ReplyDeliveryStatus.COMPLETE else ReplyDeliveryStatus.FAILED,
+            sentParts = progress.sentParts,
+            totalParts = progress.totalParts
+        )
+    }
+
+    private suspend fun verifyCurrentChatWithRetry(
+        adapter: PlatformAdapter,
+        expectedContactName: String,
+        retries: Int = 3,
+        retryDelayMs: Long = 400L
+    ): Boolean {
+        repeat(retries) { attempt ->
+            if (verifyCurrentChat(adapter, expectedContactName)) return true
+            if (attempt < retries - 1) delay(retryDelayMs)
+        }
+        return false
     }
 
     private fun verifyCurrentChat(adapter: PlatformAdapter, expectedContactName: String): Boolean {
         val root = service?.rootInActiveWindow ?: return false
         if (root.packageName?.toString() != adapter.packageName || !adapter.isInChat(root)) return false
         return ConversationIdentity.matches(expectedContactName, adapter.readChatTitle(root))
+    }
+
+    private fun incomingStillCurrent(
+        adapter: PlatformAdapter,
+        context: ConversationContext,
+        expectedFingerprint: String
+    ): Boolean {
+        if (expectedFingerprint.isBlank()) return false
+        val root = service?.rootInActiveWindow ?: return false
+        if (root.packageName?.toString() != adapter.packageName || !adapter.isInChat(root)) return false
+        if (!ConversationIdentity.matches(context.contactName, adapter.readChatTitle(root))) return false
+        val current = IncomingMessageBatch.incomingHistoryFingerprint(adapter.readMessages(root))
+        return !ReplyDeliveryPolicy.incomingChanged(expectedFingerprint, current)
+    }
+
+    private fun clearPendingReply(context: ConversationContext) {
+        synchronized(context) {
+            context.pendingReplyParts.clear()
+            context.pendingReplyIncomingFingerprint = ""
+            context.pendingReplyBatchFingerprint = ""
+        }
+    }
+
+    private fun conversationKey(contactId: String): String = "$currentPlatform:$contactId"
+
+    private fun markHandled(contactId: String) {
+        if (contactId.isBlank()) return
+        handledConversationIds.add(conversationKey(contactId))
+    }
+
+    private fun isHandled(contactId: String): Boolean {
+        return contactId.isNotBlank() && conversationKey(contactId) in handledConversationIds
     }
 
     private suspend fun enqueueSnapshot(
@@ -970,6 +1149,9 @@ class MessageEngine(
         activeContext?.let { context ->
             if (context.platform == platform) {
                 synchronized(context) {
+                    context.pendingReplyParts.clear()
+                    context.pendingReplyIncomingFingerprint = ""
+                    context.pendingReplyBatchFingerprint = ""
                     context.lastIncomingFingerprint = incomingFingerprint(message.content)
                 }
             }
@@ -985,13 +1167,15 @@ class MessageEngine(
             val adapter = adapterRegistry?.getByPlatform(platform) ?: return
             val root = service?.rootInActiveWindow ?: return
             if (!adapter.isInChat(root) || !ConversationIdentity.matches(context.contactName, adapter.readChatTitle(root))) return
-            val incomingBatch = IncomingMessageBatch.select(adapter.readMessages(root)) ?: return
-            val latestIncoming = incomingBatch.latestIncoming
-            val fingerprint = incomingFingerprint(latestIncoming)
+            val messages = adapter.readMessages(root)
+            val fingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
             synchronized(context) {
                 if (fingerprint != context.lastIncomingFingerprint) {
                     context.lastIncomingFingerprint = fingerprint
                     context.llmRequestId++
+                    context.pendingReplyParts.clear()
+                    context.pendingReplyIncomingFingerprint = ""
+                    context.pendingReplyBatchFingerprint = ""
                     android.util.Log.d("AIA", "new incoming message invalidated current LLM reply")
                 }
             }
@@ -1003,8 +1187,10 @@ class MessageEngine(
         if (!GestureMonitor.onTouchDetected()) return
         android.util.Log.d("AIA", "manual takeover detected, state=$state")
         if (state == EngineState.AboutToSend || state == EngineState.Sending || state == EngineState.WaitingLLM) {
+            activeContext?.let(::clearPendingReply)
             clearInputField()
         }
+        handledConversationIds.clear()
         state = EngineState.Paused
     }
 

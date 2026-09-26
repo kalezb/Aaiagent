@@ -15,6 +15,13 @@ object IncomingMessageBatch {
         )
     }
 
+    fun incomingHistoryFingerprint(messages: List<ChatMessage>): String {
+        return IncomingConversationTracker.fingerprint(
+            messages.filter { it.sender != "self" }
+                .map { "${it.type}:${it.content}" }
+        )
+    }
+
     fun select(messages: List<ChatMessage>): Selection? {
         val lastSelfIndex = messages.indexOfLast { it.sender == "self" }
         val incoming = messages

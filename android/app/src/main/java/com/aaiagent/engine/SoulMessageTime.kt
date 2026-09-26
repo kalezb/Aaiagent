@@ -35,6 +35,7 @@ object SoulMessageTime {
         private val nowMillis: () -> Long = { System.currentTimeMillis() }
     ) {
         private var current = Context()
+        private var inheritedEpochMillis: Long? = null
 
         fun observe(raw: String?): Context {
             val text = raw?.trim().orEmpty()
@@ -43,10 +44,16 @@ object SoulMessageTime {
                     text = text,
                     epochMillis = parseToEpochMillis(text, nowMillis())
                 )
+                inheritedEpochMillis = current.epochMillis
+            } else if (inheritedEpochMillis != null) {
+                inheritedEpochMillis = inheritedEpochMillis?.plus(INHERITED_GROUP_STEP_MS)
+                current = current.copy(epochMillis = inheritedEpochMillis)
             }
             return current
         }
     }
+
+    const val INHERITED_GROUP_STEP_MS = 1_000L
 
     fun parseToEpochMillis(
         raw: String?,

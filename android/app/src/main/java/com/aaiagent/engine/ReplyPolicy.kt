@@ -3,7 +3,7 @@ package com.aaiagent.engine
 enum class ReplyFreshnessDecision {
     KEEP,
     RECOMPUTE,
-    FORCE_SEND
+    ABORT_STALE
 }
 
 object ReplyFreshnessPolicy {
@@ -18,9 +18,7 @@ object ReplyFreshnessPolicy {
     ): ReplyFreshnessDecision {
         if (requestId == currentRequestId) return ReplyFreshnessDecision.KEEP
         val expired = firstMessageAtMs > 0L && nowMs - firstMessageAtMs >= maxWaitMs
-        if (recalcCount >= maxRecalc || expired) {
-            return ReplyFreshnessDecision.FORCE_SEND
-        }
+        if (recalcCount >= maxRecalc || expired) return ReplyFreshnessDecision.ABORT_STALE
         return ReplyFreshnessDecision.RECOMPUTE
     }
 }

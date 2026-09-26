@@ -111,4 +111,16 @@ class IncomingMessageBatchTest {
             IncomingMessageBatch.visibleFingerprint(messages)
         )
     }
+
+    @Test
+    fun `incoming history fingerprint detects a repeated message after our reply`() {
+        val first = ChatMessage("other", "在吗", "text")
+        val selfReply = ChatMessage("self", "在的", "text")
+        val repeated = ChatMessage("other", "在吗", "text")
+
+        org.junit.Assert.assertNotEquals(
+            IncomingMessageBatch.incomingHistoryFingerprint(listOf(first, selfReply)),
+            IncomingMessageBatch.incomingHistoryFingerprint(listOf(first, selfReply, repeated))
+        )
+    }
 }

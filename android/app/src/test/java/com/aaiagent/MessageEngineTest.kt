@@ -165,7 +165,7 @@ class MessageEngineTest {
     }
 
     @Test
-    fun `reply freshness forces send after deadline`() {
+    fun `stale reply is aborted instead of sending old content`() {
         assertEquals(
             ReplyFreshnessDecision.KEEP,
             ReplyFreshnessPolicy.decide(2, 2, 0, 1_000L, 2_000L)
@@ -175,11 +175,11 @@ class MessageEngineTest {
             ReplyFreshnessPolicy.decide(2, 3, 0, 1_000L, 2_000L)
         )
         assertEquals(
-            ReplyFreshnessDecision.FORCE_SEND,
+            ReplyFreshnessDecision.ABORT_STALE,
             ReplyFreshnessPolicy.decide(2, 3, 0, 1_000L, 10_000L)
         )
         assertEquals(
-            ReplyFreshnessDecision.FORCE_SEND,
+            ReplyFreshnessDecision.ABORT_STALE,
             ReplyFreshnessPolicy.decide(2, 3, 3, 1_000L, 2_000L)
         )
     }

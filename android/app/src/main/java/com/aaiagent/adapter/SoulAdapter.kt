@@ -14,8 +14,10 @@ import com.aaiagent.adapter.PlatformAdapter.ConversationInfo
 import com.aaiagent.adapter.PlatformAdapter.ListSnapshot
 import com.aaiagent.adapter.PlatformAdapter.ScrollDirection
 import com.aaiagent.adapter.PlatformAdapter.SendResult
+import com.aaiagent.engine.ChatTitlePolicy
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.GestureMonitor
+import com.aaiagent.engine.SoulInputState
 import com.aaiagent.engine.SoulMessageTime
 import com.aaiagent.engine.StickerMatcher
 import com.aaiagent.engine.VoiceHandler
@@ -50,23 +52,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val titles = root.findAccessibilityNodeInfosByViewId(prefix + "tv_title")
         for (node in titles) {
             val text = node.text?.toString()?.trim()
-            if (!text.isNullOrEmpty() && node.isVisibleToUser) return text
-        }
-
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            val rect = Rect()
-            node.getBoundsInScreen(rect)
-            val text = node.text?.toString()?.trim()
-            if (!text.isNullOrEmpty() && text.length in 2..24 &&
-                rect.top in 40..240 && rect.width() > 160 && node.isVisibleToUser
-            ) {
-                return text
-            }
-            for (index in 0 until node.childCount) {
-                node.getChild(index)?.let(queue::add)
+            if (!text.isNullOrEmpty() && node.isVisibleToUser) {
+                return ChatTitlePolicy.sanitize(text)
             }
         }
         return null
@@ -666,19 +653,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         text: String,
         expectedContactName: String?
     ): SendResult {
-        var currentRoot = service.rootInActiveWindow ?: return SendResult.TIMEOUT
-        if (!isInChat(currentRoot)) return SendResult.NOT_VERIFIED
-        if (!titleMatches(currentRoot, expectedContactName)) {
-            android.util.Log.w("AIA", "Soul send blocked: conversation title mismatch, expected=$expectedContactName")
-            return SendResult.NOT_VERIFIED
-        }
+        val currentRoot = waitForVerifiedChatRoot(expectedContactName)
+            ?: run {
+                android.util.Log.w("AIA", "Soul send blocked: chat/title not verified, expected=$expectedContactName")
+                return SendResult.NOT_VERIFIED
+            }
 
         val beforeSelfCount = readMessages(currentRoot).count { it.sender == "self" }
         val input = findEditableInput(currentRoot) ?: return SendResult.TIMEOUT
         if (!setTextAndVerify(text)) return SendResult.NOT_VERIFIED
 
-        currentRoot = service.rootInActiveWindow ?: return SendResult.NOT_VERIFIED
-        if (!titleMatches(currentRoot, expectedContactName)) return SendResult.NOT_VERIFIED
+        waitForVerifiedChatRoot(expectedContactName) ?: return SendResult.NOT_VERIFIED
 
         delay(700)
         val sendButton = findSendButtonWithRetry(input)
@@ -695,8 +680,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     suspend fun fillInputOnly(text: String, expectedContactName: String? = null): Boolean {
-        val root = service.rootInActiveWindow ?: return false
-        if (!isInChat(root) || !titleMatches(root, expectedContactName)) return false
+        if (waitForVerifiedChatRoot(expectedContactName) == null) return false
         return setTextAndVerify(text)
     }
 
@@ -886,15 +870,41 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val selfMessages = visibleMessages.filter { it.sender == "self" }
             val expected = compact(text)
             val matched = visibleMessages.takeLast(8).any { compact(it.content) == expected }
-            val inputCleared = isInChat(root) && currentInputText().isNullOrBlank()
+            val sendButtonVisible = isSendButtonVisible(root)
+            val inputCleared = SoulInputState.isCleared(
+                inChat = isInChat(root),
+                sendButtonVisible = sendButtonVisible,
+                inputStillContainsExpected = inputContains(text)
+            )
             val selfAdvanced = selfMessages.size > beforeSelfCount
             android.util.Log.d(
                 "AIA",
-                "send verify attempt=${attempt + 1} matched=$matched selfAdvanced=$selfAdvanced inputCleared=$inputCleared self=${selfMessages.size}/$beforeSelfCount last=${visibleMessages.lastOrNull()?.content}"
+                "send verify attempt=${attempt + 1} matched=$matched selfAdvanced=$selfAdvanced inputCleared=$inputCleared sendButtonVisible=$sendButtonVisible self=${selfMessages.size}/$beforeSelfCount last=${visibleMessages.lastOrNull()?.content}"
             )
             if (matched || selfAdvanced || inputCleared) return SendResult.SUCCESS
         }
         return SendResult.NOT_VERIFIED
+    }
+
+    private suspend fun waitForVerifiedChatRoot(
+        expectedContactName: String?,
+        retries: Int = 3,
+        retryDelayMs: Long = 400L
+    ): AccessibilityNodeInfo? {
+        repeat(retries) { attempt ->
+            val root = service.rootInActiveWindow ?: return@repeat
+            root.refresh()
+            if (isInChat(root) && titleMatches(root, expectedContactName)) return root
+            if (attempt < retries - 1) delay(retryDelayMs)
+        }
+        return null
+    }
+
+    private fun isSendButtonVisible(root: AccessibilityNodeInfo): Boolean {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "btn_send")
+            .asSequence()
+            .mapNotNull(::actionableNode)
+            .any { it.isVisibleToUser }
     }
 
     private fun titleMatches(root: AccessibilityNodeInfo, expectedContactName: String?): Boolean {
@@ -1020,7 +1030,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             }
             val name = readChildText(item, "name")
             val preview = readChildText(item, "message") ?: ""
-            val contactName = name ?: preview.ifEmpty { "unknown" }
+            val contactName = name?.let(ChatTitlePolicy::sanitize) ?: continue
 
             if (!contactFilter(contactName, contactName)) continue
 

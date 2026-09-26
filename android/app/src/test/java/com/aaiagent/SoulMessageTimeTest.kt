@@ -55,7 +55,18 @@ class SoulMessageTimeTest {
         val followingBubble = tracker.observe("")
 
         assertEquals("9月22日 06:59", followingBubble.text)
-        assertEquals(separator.epochMillis, followingBubble.epochMillis)
+        assertEquals(separator.epochMillis, followingBubble.epochMillis?.minus(SoulMessageTime.INHERITED_GROUP_STEP_MS))
+    }
+
+    @Test
+    fun `following bubbles keep a stable order inside one timestamp group`() {
+        val tracker = SoulMessageTime.ContextTracker { now }
+        val first = tracker.observe("9月22日 06:59")
+        val second = tracker.observe("")
+        val third = tracker.observe("")
+
+        assertEquals(first.epochMillis, second.epochMillis?.minus(SoulMessageTime.INHERITED_GROUP_STEP_MS))
+        assertEquals(second.epochMillis, third.epochMillis?.minus(SoulMessageTime.INHERITED_GROUP_STEP_MS))
     }
 
     @Test
