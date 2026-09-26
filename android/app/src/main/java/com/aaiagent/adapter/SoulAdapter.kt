@@ -127,8 +127,18 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty()
             val hasExchange = isExchangeItem(item)
-            val stickerNode = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
+            val lightInteractionNode = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
                 .firstOrNull { it.isVisibleToUser }
+            val staticStickerNode = item.findAccessibilityNodeInfosByViewId(prefix + "img_static")
+                .firstOrNull { it.isVisibleToUser }
+            val isBareStaticSticker = text.isEmpty() &&
+                voiceTranscription.isEmpty() &&
+                !hasVoice &&
+                !hasImage &&
+                !hasSnapPhoto &&
+                !hasExchange &&
+                momentCardContent == null
+            val stickerNode = lightInteractionNode ?: staticStickerNode?.takeIf { isBareStaticSticker }
             val type = SoulMediaType.resolve(
                 hasVoice = hasVoice,
                 hasImage = hasImage,
@@ -198,7 +208,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val rect = pendingStickerRects[rectIdx++]
             val name = StickerMatcher.match(service, rect)
             if (name != null) {
-                result[i] = result[i].copy(content = "[互动表情：$name]")
+                val modelText = StickerMatcher.modelTextFor(name) ?: "[互动表情：$name]"
+                result[i] = result[i].copy(content = modelText, type = "text")
             }
         }
         return result
