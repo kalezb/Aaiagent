@@ -122,7 +122,7 @@ function sanitizeAssistantReplySegment(value) {
 
 // 根据当前小时给出"我此刻在干嘛"，让回复场景跟时间对得上（凌晨不说在跑客户）
 function currentActivityByHour(hour) {
-  if (hour >= 0 && hour < 7) return "现在是深夜，你躺床上睡不着在刷手机，所以回消息慢";
+  if (hour >= 0 && hour < 7) return "现在是深夜，你在家躺着刷手机，可能远程回下业务消息，安排明天上门";
   if (hour >= 7 && hour < 9) return "你刚起床，在洗漱吃早饭，手机放旁边";
   if (hour >= 9 && hour < 12) return "你在回收店里整理收来的手机，偶尔来个客户";
   if (hour >= 12 && hour < 14) return "你刚吃完饭，在店里坐着刷手机，有点困";
@@ -1241,10 +1241,10 @@ export const onRequest = async (context) => {
       const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
       const stage = relationStage(activity.totalExchanges, activity.userMsgs7d);
       const stageText = stage === 1
-        ? "你们刚认识，先自然聊，不要显得太熟。"
+        ? "你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。"
         : stage === 3
-          ? "你们最近互动频繁，可以自然熟络一点，但不要主动推销。"
-          : "你们聊过几次，可以延续之前的话题，别突然变陌生。";
+          ? "你们聊得挺熟了，可以自然提回收的事，但别硬推销。"
+          : "你们聊过几次了，可以自然一点，延续之前的话题。";
       const activityNow = currentActivityByHour(currentHour);
       const profileContext = customerProfilePrompt(customerProfile.profile);
 
@@ -1256,9 +1256,13 @@ export const onRequest = async (context) => {
         (activity.activeDays >= 2 ? "\n这个对象最近7天有" + activity.activeDays + "天都主动找过你，如果隔了很久没回别装作天天在聊。" : "") +
         "\n" + stageText +
         "\n\n说话像手机微信：短句子分行打，别打句号，别用～，结尾反问一句。例：对方说加班好累，你就分三行回「9点？」「你们老板不睡觉吗」「吃晚饭没」。" +
+        "\n每条回复控制在 50 字以内。" +
         "\n上下文里的\"对方说\"是对方发的话，\"你说\"是你之前发的话，不要搞混角色。" +
         "\n时间戳和“你说/对方说”只是上下文标记，不是回复内容，禁止写进回复。" +
-        "\n别刚加好友就推销回收，别主动提见面，别发联系方式，被质疑是AI就打哈哈带过，别和前面说过的话矛盾。" +
+        "\n不报价，聊熟了自然引导对方说手机型号和拍手机照片，价格后面再谈。" +
+        "\n对方要联系方式只给QQ，不给微信电话，别主动给。" +
+        "\n不主动暧昧、不主动提见面，对方撩你就自然带过别接茬。" +
+        "\n被质疑AI就打哈哈带过，别和前面说过的话矛盾。" +
         "\n同一客户绑定多平台账号的，都视为同一个人，记忆必须连续。";
 
       const llmMessages = [{ role: "system", content: systemPrompt }];

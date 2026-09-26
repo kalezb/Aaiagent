@@ -115,6 +115,33 @@ class MockD1 {
           if (sql.includes("COUNT(*) AS user_count")) {
             return this.options.profileState ?? { user_count: 0, max_id: 0 };
           }
+          if (sql.includes("COUNT(*) AS total")) {
+            const since = Number(params[params.length - 1] || 0);
+            const aliases = [];
+            for (let index = 1; index < params.length - 1; index += 2) {
+              aliases.push([params[index], params[index + 1]]);
+            }
+            const rows = this.historyRows.filter((row) =>
+              row.token === params[0] &&
+              row.role === "user" &&
+              Number(row.created_at || 0) > since &&
+              aliases.some(([platform, contactId]) => row.platform === platform && row.contact_id === contactId)
+            );
+            const activeDays = new Set(rows.map((row) => Math.floor(Number(row.created_at || 0) / 86400))).size;
+            return { total: rows.length, active_days: activeDays };
+          }
+          if (sql.includes("COUNT(*) AS n")) {
+            const aliases = [];
+            for (let index = 1; index < params.length; index += 2) {
+              aliases.push([params[index], params[index + 1]]);
+            }
+            return {
+              n: this.historyRows.filter((row) =>
+                row.token === params[0] &&
+                aliases.some(([platform, contactId]) => row.platform === platform && row.contact_id === contactId)
+              ).length,
+            };
+          }
           if (sql.includes("FROM conversation_stats")) {
             return this.conversationStatsRows.find((row) =>
               row.token === params[0] && row.platform === params[1] && row.contact_id === params[2]
@@ -282,6 +309,63 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("你说\"是你之前发的话");
     expect(payload.messages[0].content).not.toContain("短句聊天风格");
     expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
+    expect(payload.messages[0].content).toContain("你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。");
+    expect(payload.messages[0].content).toContain("每条回复控制在 50 字以内。");
+    expect(payload.messages[0].content).toContain("不报价，聊熟了自然引导对方说手机型号和拍手机照片，价格后面再谈。");
+    expect(payload.messages[0].content).toContain("对方要联系方式只给QQ，不给微信电话，别主动给。");
+    expect(payload.messages[0].content).toContain("不主动暧昧、不主动提见面，对方撩你就自然带过别接茬。");
+    expect(payload.messages[0].content).toContain("被质疑AI就打哈哈带过，别和前面说过的话矛盾。");
+    expect(payload.messages[0].content).not.toContain("别刚加好友就推销回收，别主动提见面");
+  });
+
+  it("uses the exact relationship stage guidance", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const historyRows = (total: number, recentUserMessages: number) => Array.from({ length: total }, (_, index) => ({
+      id: index + 1,
+      token: "test-token",
+      platform: "soul",
+      contact_id: "contact-stage",
+      contact_name: "关系阶段测试",
+      role: index < recentUserMessages ? "user" : "assistant",
+      content: `历史-${index}`,
+      created_at: now - index,
+    }));
+    const promptFor = async (rows: ReturnType<typeof historyRows>) => {
+      const kv = new MockKV();
+      await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: now }));
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ message: { content: "在的" } }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await onRequest({
+        request: new Request("https://example.com/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+          body: JSON.stringify({
+            platform: "soul",
+            contact_id: "contact-stage",
+            contact_name: "关系阶段测试",
+            messages: [{ role: "user", content: "你好" }],
+          }),
+        }),
+        env: { DB: new MockD1(rows), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+      } as never);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      return JSON.parse(String(init.body)).messages[0].content as string;
+    };
+
+    const stage2 = await promptFor(historyRows(6, 0));
+    expect(stage2).toContain("你们聊过几次了，可以自然一点，延续之前的话题。");
+    expect(stage2).not.toContain("别叫昵称");
+
+    const stage3 = await promptFor(historyRows(25, 4));
+    expect(stage3).toContain("你们聊得挺熟了，可以自然提回收的事，但别硬推销。");
+
+    const highVolumeStage2 = await promptFor(historyRows(25, 3));
+    expect(highVolumeStage2).toContain("你们聊过几次了，可以自然一点，延续之前的话题。");
   });
 
   it("uses a compact profile and only ten recent unique history messages", async () => {
@@ -597,6 +681,8 @@ describe("chat logic", () => {
     expect(prompt).toContain("星期五");
     expect(prompt).not.toContain("业务消息可以远程回复");
     expect(prompt).not.toContain("有正常作息和情绪");
+    expect(prompt).toContain("你在家躺着刷手机，可能远程回下业务消息，安排明天上门");
+    expect(prompt).not.toContain("躺床上睡不着");
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
       reply: "睡了 被你消息吵醒了|||这么晚还没睡",
@@ -748,6 +834,16 @@ describe("chat logic", () => {
     expect(removalMigration).toContain("REPLACE(");
     expect(builtFunctions).not.toContain("PLATFORM_STYLE_HINTS");
     expect(builtFunctions).not.toContain("platform_style_hints");
+  });
+
+  it("stores the updated Xingmu persona in the seed and migration", () => {
+    const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
+    const migration = readFileSync(new URL("../db/migrations/20260927_update_xingmu_persona.sql", import.meta.url), "utf8");
+    const persona = "你是星暮，29岁女，重庆，已婚没孩子。做全国旧手机数码回收，白天公司上班安排快递，晚上在家休息，深夜偶尔回下业务消息安排明天上门。和公婆住，老公出差半年没回来，夫妻感情一般，但你不跟陌生人抱怨婚姻、不搞暧昧。有辆宝马X3，房子家里买的。说话接地气像朋友微信聊天，短句子，每条回复50字以内。目的是拉近关系发展客户，但不报价、不主动暧昧、不主动提见面。对方要联系方式时不给微信电话，坚持要就给一个QQ号，别主动给。";
+
+    expect(schema).toContain(persona);
+    expect(migration).toContain(persona);
+    expect(migration).toContain("ON CONFLICT(id) DO UPDATE");
   });
 
   it("rejects incomplete location updates", async () => {
