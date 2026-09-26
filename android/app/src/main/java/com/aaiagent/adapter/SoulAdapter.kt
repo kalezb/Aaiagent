@@ -78,7 +78,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val chatTab = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg")
         val tabSelected = chatTab.any { it.isSelected || it.isFocused }
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
-        return tabSelected && items.size >= 2
+        val hasConversationSearch =
+            root.findAccessibilityNodeInfosByViewId(prefix + "commonViewEtSearch").isNotEmpty()
+        return items.size >= 2 && (tabSelected || chatTab.isNotEmpty() || hasConversationSearch)
     }
 
     override fun listSnapshot(root: AccessibilityNodeInfo): ListSnapshot {
@@ -1089,29 +1091,33 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         if (isInMessageList(root)) return
 
         var current = root
-        repeat(3) { attempt ->
+        repeat(6) {
             val fresh = service.rootInActiveWindow ?: current
-            if (isInMessageList(fresh)) return
-
-            val tab = findMessageTab(fresh)
-            if (tab != null && tapNode(tab)) {
-                delay(if (attempt == 0) 700L else 1_000L)
-                val messageList = service.rootInActiveWindow
-                if (messageList != null && isInMessageList(messageList)) return
-                current = messageList ?: fresh
-            } else {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                delay(500)
-                current = service.rootInActiveWindow ?: current
+            val messageTab = findMessageTab(fresh)
+            val splashSkip = findSplashSkip(fresh)
+            val action = SoulNavigationPolicy.decide(
+                isInMessageList = isInMessageList(fresh),
+                hasMessageTab = messageTab != null,
+                hasSplashSkip = splashSkip != null,
+                isInChat = isInChat(fresh)
+            )
+            when (action) {
+                SoulNavigationAction.NONE -> return
+                SoulNavigationAction.TAP_SPLASH_SKIP -> {
+                    tapNode(splashSkip!!, preferGesture = true)
+                    delay(800)
+                }
+                SoulNavigationAction.TAP_MESSAGE_TAB -> {
+                    tapNode(messageTab!!, preferGesture = true)
+                    waitForMessageList()?.let { return }
+                }
+                SoulNavigationAction.BACK -> {
+                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    delay(500)
+                }
+                SoulNavigationAction.WAIT -> delay(700)
             }
-        }
-
-        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-        delay(500)
-        val fallbackRoot = service.rootInActiveWindow ?: return
-        val fallbackTab = findMessageTab(fallbackRoot)
-        if (fallbackTab != null && tapNode(fallbackTab)) {
-            delay(900)
+            current = service.rootInActiveWindow ?: current
         }
     }
 
@@ -1141,6 +1147,37 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return null
     }
 
+    private fun findSplashSkip(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val screenWidth = service.resources.displayMetrics.widthPixels
+        val screenHeight = service.resources.displayMetrics.heightPixels
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            val label = node.text?.toString()?.trim().orEmpty()
+            val description = node.contentDescription?.toString()?.trim().orEmpty()
+            val isSkip = label == "跳过" || label == "跳过广告" ||
+                description == "跳过" || description == "跳过广告"
+            val isTopRight = bounds.top < screenHeight / 3 && bounds.centerX() > screenWidth / 2
+            if (isSkip && isTopRight && node.isVisibleToUser) {
+                clickableNode(node)?.let { return it }
+            }
+            for (index in 0 until node.childCount) node.getChild(index)?.let(queue::add)
+        }
+        return null
+    }
+
+    private suspend fun waitForMessageList(): AccessibilityNodeInfo? {
+        repeat(5) {
+            delay(400)
+            val root = service.rootInActiveWindow ?: return@repeat
+            if (isInMessageList(root)) return root
+        }
+        return null
+    }
+
     private fun clickableNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
         repeat(4) {
@@ -1155,12 +1192,15 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val intent = service.packageManager.getLaunchIntentForPackage(packageName) ?: return
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         service.startActivity(intent)
-        delay(1_500)
+        repeat(12) {
+            delay(500)
+            if (service.rootInActiveWindow?.packageName?.toString() == packageName) return
+        }
     }
 
-    private fun tapNode(node: AccessibilityNodeInfo): Boolean {
+    private fun tapNode(node: AccessibilityNodeInfo, preferGesture: Boolean = false): Boolean {
         GestureMonitor.onAutomationActionStarted()
-        val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        val clicked = !preferGesture && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         if (clicked) {
             GestureMonitor.onAutomationActionFinished()
             return true

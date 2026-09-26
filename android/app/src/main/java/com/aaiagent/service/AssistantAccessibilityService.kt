@@ -46,12 +46,7 @@ class AssistantAccessibilityService : AccessibilityService() {
                     ?.let(::platformForPackage)
                     ?.let(engine::onContentChanged)
             }
-            AccessibilityEvent.TYPE_VIEW_CLICKED,
-            AccessibilityEvent.TYPE_VIEW_LONG_CLICKED,
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
-            AccessibilityEvent.TYPE_VIEW_SCROLLED,
-            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START,
-            AccessibilityEvent.TYPE_TOUCH_INTERACTION_END -> engine.onUserInteraction()
+            AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> engine.onUserInteraction()
         }
     }
 
