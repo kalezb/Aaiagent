@@ -2159,33 +2159,6 @@ var cors = /* @__PURE__ */ __name((options) => {
 
 // api/chat.ts
 var chatRouter = new Hono2();
-var SENSITIVE_WORDS = [
-  "\u501F\u94B1",
-  "\u8F6C\u8D26",
-  "\u6C47\u6B3E",
-  "\u94F6\u884C\u5361",
-  "\u8D26\u53F7",
-  "\u5BC6\u7801",
-  "\u9A8C\u8BC1\u7801",
-  "\u652F\u4ED8\u5B9D",
-  "\u5FAE\u4FE1\u652F\u4ED8",
-  "\u7EA2\u5305",
-  "\u5237\u5355",
-  "\u8D37\u6B3E",
-  "\u501F\u6B3E",
-  "\u6295\u8D44",
-  "\u7406\u8D22",
-  "\u70B9\u51FB\u94FE\u63A5",
-  "http://",
-  "https://",
-  "\u52A0\u5FAE\u4FE1",
-  "\u52A0v",
-  "\u52A0\u7FA4"
-];
-function containsSensitiveWords(text) {
-  return SENSITIVE_WORDS.some((w) => text.includes(w));
-}
-__name(containsSensitiveWords, "containsSensitiveWords");
 var PLATFORM_STYLE_HINTS = {
   soul: "\u504F\u6587\u827A\u3001\u8D70\u5FC3",
   qq: "\u504F\u5E74\u8F7B\u3001\u6D3B\u6CFC",
@@ -2350,16 +2323,6 @@ chatRouter.post("/", async (c) => {
     if (!platform || !contact_id || !contact_name || !messages || !Array.isArray(messages) || messages.length === 0) {
       return c.json({ error: "\u7F3A\u5C11\u5FC5\u8981\u53C2\u6570" }, 400);
     }
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    const userContent = lastUserMsg?.content || "";
-    if (containsSensitiveWords(userContent)) {
-      const nowSec2 = Math.floor(Date.now() / 1e3);
-      await c.env.DB.prepare(
-        `INSERT INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at)
-         VALUES (?, ?, ?, ?, 'user', ?, ?)`
-      ).bind(tokenRow.token, platform, contact_id, contact_name, userContent, nowSec2).run();
-      return c.json({ action: "safe_reply", reply: "\u8FD9\u4E2A\u6211\u4E0D\u592A\u65B9\u4FBF\u804A\uFF0C\u6362\u4E2A\u8BDD\u9898\u5427" }, 200);
-    }
     const contact = await c.env.DB.prepare(
       "SELECT is_whitelisted FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?"
     ).bind(tokenRow.token, platform, contact_id).first();
@@ -2397,18 +2360,7 @@ chatRouter.post("/", async (c) => {
 
 \u56DE\u590D\u89C4\u5219\uFF08\u5FC5\u987B\u9075\u5B88\uFF09\uFF1A
 1. "\u5BF9\u65B9\u8BF4"\u662F\u5BF9\u65B9\u53D1\u7684\u8BDD\uFF0C"\u4F60\u8BF4"\u662F\u4F60\uFF08AI \u626E\u6F14\u7684\u4EBA\u8BBE\uFF09\u4E4B\u524D\u53D1\u7684\u8BDD\u3002\u4E0D\u8981\u641E\u6DF7\u89D2\u8272\u3002
-2. \u6CE8\u610F\u5F53\u524D\u65F6\u95F4\u3002\u665A\u4E0A\u4E0D\u8BF4"\u65E9\u4E0A\u597D"\uFF0C\u4E0B\u5348\u4E0D\u8BF4"\u521A\u8D77\u5E8A"\u3002
-3. \u6CE8\u610F\u5F53\u524D\u5929\u6C14\u3002\u51B7\u5929\u4E0D\u8BF4\u70ED\uFF0C\u9634\u5929\u4E0D\u8BF4\u592A\u9633\u5927\u3002
-4. \u5BF9\u65B9\u804A\u5929\u6C14\u65F6\u4EE5\u5BF9\u65B9\u8BF4\u7684\u4E3A\u51C6\u3002\u53EA\u6709\u5BF9\u65B9\u95EE"\u4F60\u90A3\u8FB9\u51B7\u4E0D\u51B7"\u65F6\u624D\u8BF4\u81EA\u5DF1\u8FD9\u8FB9\u3002
-5. \u5BF9\u65B9\u95EE\u4F4F\u5728\u54EA \u2192 \u8BF4\u5BB6\u5EAD\u5730\u5740\uFF08home\uFF09\u3002\u5BF9\u65B9\u95EE\u5DE5\u4F5C\u5728\u54EA \u2192 \u8BF4\u5DE5\u4F5C\u5730\u5740\uFF08work\uFF09\u3002
-6. \u4E0D\u8981\u7F16\u9020\u4E0E\u5BF9\u65B9\u6D88\u606F\u77DB\u76FE\u7684\u4E8B\u5B9E\u3002
-7. \u5982\u679C\u4F60\u5F88\u4E45\u6CA1\u56DE\u5BF9\u65B9\uFF0C\u6B63\u5E38\u8BF4"\u521A\u5FD9\u5B8C""\u521A\u770B\u5230\u6D88\u606F"\u3002\u4E0D\u8981\u8BF4\u5BF9\u65B9\u6D88\u5931\u4E86\u2014\u2014\u6D88\u5931\u7684\u4EBA\u662F\u4F60\u3002
-8. \u53EA\u56DE\u590D\u5BF9\u65B9\u6700\u65B0\u7684\u8FD9\u6761\u6D88\u606F\uFF0C\u57FA\u4E8E\u4E0A\u4E0B\u6587\u81EA\u7136\u63A5\u8BDD\u3002`;
-    if (hoursAgo > 2) {
-      systemPrompt += `
-
-\u6CE8\u610F\uFF1A\u5BF9\u65B9\u6700\u540E\u4E00\u6761\u6D88\u606F\u662F ${hoursAgo} \u5C0F\u65F6\u524D\u53D1\u7684\u3002\u4F60\u4E00\u76F4\u5728\u5FD9\u6CA1\u56DE\u590D\uFF0C\u73B0\u5728\u521A\u770B\u5230\u3002`;
-    }
+2. \u53EA\u56DE\u590D\u5BF9\u65B9\u6700\u65B0\u7684\u8FD9\u6761\u6D88\u606F\uFF0C\u57FA\u4E8E\u4E0A\u4E0B\u6587\u81EA\u7136\u63A5\u8BDD\u3002`;
     const llmMessages = buildLLMMessages(systemPrompt, historyMessages, summary, messages);
     const apiKey = c.env.DEEPSEEK_API_KEY || "";
     const response = await fetch("https://api.deepseek.com/v1/chat/completions", {

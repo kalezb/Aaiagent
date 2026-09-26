@@ -231,21 +231,6 @@ afterEach(() => {
 });
 
 describe("chat logic", () => {
-  it("detects sensitive words", () => {
-    const sensitiveWords = [
-      "\u501f\u94b1",
-      "\u8d26\u53f7",
-      "\u5bc6\u7801",
-      "\u94f6\u884c\u5361",
-    ];
-    const containsSensitive = (text: string) =>
-      sensitiveWords.some((word) => text.includes(word));
-
-    expect(containsSensitive("\u6211\u60f3\u501f\u94b1")).toBe(true);
-    expect(containsSensitive("\u8d26\u53f7\u5bc6\u7801")).toBe(true);
-    expect(containsSensitive("\u4eca\u5929\u5929\u6c14\u771f\u597d")).toBe(false);
-  });
-
   it("limits history to 40 recent messages", () => {
     const messages = Array.from({ length: 50 }, (_, index) => ({
       content: `message-${index}`,
@@ -254,7 +239,7 @@ describe("chat logic", () => {
     expect(messages.slice(-40).at(-1)?.content).toBe("message-49");
   });
 
-  it("asks the model for short natural chat messages", async () => {
+  it("passes base persona, platform, location, time and role context to the model", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
@@ -272,6 +257,7 @@ describe("chat logic", () => {
         platform: "soul",
         contact_id: "期待下一步的我们",
         contact_name: "期待下一步的我们",
+        location: { home: { city: "重庆", district: "两江新区" }, work: { city: "重庆", district: "两江新区" } },
         messages: [{ role: "user", content: "今天忙不忙" }],
       }),
     });
@@ -281,17 +267,22 @@ describe("chat logic", () => {
     } as never);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ action: "send" });
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "在的 刚忙完|||你先忙你的|||晚点聊",
+    });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
     expect(payload.max_tokens).toBe(160);
-    expect(payload.messages[0].content).toContain("短句聊天风格");
-    expect(payload.messages[0].content).toContain("用 ||| 分隔");
-    expect(payload.messages[0].content).toContain("对方夸奖外貌、穿搭、身材、照片或动态时");
-    expect(payload.messages[0].content).toContain("直接自然接住夸奖");
+    expect(payload.messages[0].content).toContain("当前平台：soul");
+    expect(payload.messages[0].content).toContain("你住在重庆两江新区");
+    expect(payload.messages[0].content).toContain("在重庆两江新区上班");
+    expect(payload.messages[0].content).toContain("你说\"是你之前发的话");
+    expect(payload.messages[0].content).not.toContain("短句聊天风格");
+    expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
   });
 
-  it("labels the current message with its real time and uses it for stale context", async () => {
+  it("keeps real message time as context without applying a stale reply policy", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
     const kv = new MockKV();
@@ -323,108 +314,16 @@ describe("chat logic", () => {
       request,
       env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
     } as never);
-    expect(await response.json()).toMatchObject({ action: "send", reply: "中秋快乐 吃月饼没" });
+    expect(await response.json()).toMatchObject({
+      action: "send",
+      reply: "刚忙完 隔了几天才看到 ||| 中秋快乐 吃月饼没",
+    });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
-    expect(payload.messages[0].content).toContain("禁止编造自己正在做什么");
-    expect(payload.messages[0].content).toContain("对方最后一条消息是 74 小时前发的");
-    expect(payload.messages[0].content).toContain("不要假装刚刚看到");
-    expect(payload.messages[0].content).toContain("不提刚忙完");
+    expect(payload.messages[0].content).not.toContain("不要假装刚刚看到");
+    expect(payload.messages[0].content).not.toContain("不提刚忙完");
     expect(payload.messages.at(-1).content).toBe("[9月22日 06:59，距今约74小时] 对方说：中秋来了");
-  });
-
-  it("rejects hallucinated question wording on stale messages", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
-    const kv = new MockKV();
-    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ choices: [{ message: { content: "你这几个问号是啥意思" } }] }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const request = new Request("https://example.com/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
-      body: JSON.stringify({
-        platform: "soul",
-        contact_id: "stale-hallucination",
-        contact_name: "桃子幺幺",
-        messages: [{ role: "user", content: "回宿舍了", timestamp: "9月22日 22:44", created_at: 1790088240 }],
-      }),
-    });
-    const response = await onRequest({
-      request,
-      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
-    } as never);
-
-    expect(await response.json()).toMatchObject({ action: "send", reply: "嗯 回去早点休息" });
-  });
-
-  it("uses a past-context fallback for stale relative-time events", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
-    const kv = new MockKV();
-    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ choices: [{ message: { content: "聚餐挺好" } }] }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const request = new Request("https://example.com/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
-      body: JSON.stringify({
-        platform: "soul",
-        contact_id: "stale-relative-event",
-        contact_name: "桃子幺幺",
-        messages: [{ role: "user", content: "今天有聚餐", timestamp: "9月22日 22:44", created_at: 1790088240 }],
-      }),
-    });
-    const response = await onRequest({
-      request,
-      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
-    } as never);
-
-    expect(await response.json()).toMatchObject({ action: "send", reply: "前几天聚餐还开心吧" });
-  });
-
-  it("blocks unsupported current-state claims when the message time is unknown", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
-    const kv = new MockKV();
-    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ choices: [{ message: { content: "宿舍这个词 听着像还在念书|||我这边刚到家 天都黑透了" } }] }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const request = new Request("https://example.com/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
-      body: JSON.stringify({
-        platform: "soul",
-        contact_id: "stale-without-timestamp",
-        contact_name: "桃子幺幺",
-        messages: [{ role: "user", content: "回宿舍了" }],
-      }),
-    });
-    const response = await onRequest({
-      request,
-      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
-    } as never);
-
-    expect(await response.json()).toMatchObject({ action: "send", reply: "宿舍这个词 听着像还在念书" });
   });
 
   it("does not infer staleness from unrelated database history", async () => {
@@ -463,7 +362,7 @@ describe("chat logic", () => {
     expect(prompt).not.toMatch(/对方最后一条消息是 \d+ 小时前发的/);
   });
 
-  it("removes time and sleep comments when the other person did not mention time", async () => {
+  it("returns the model reply without post-processing", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
@@ -491,12 +390,12 @@ describe("chat logic", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      reply: "谢谢 你眼光不错",
+      reply: "谢谢 你眼光不错 ||| 你怎么这个点还醒着",
     });
   });
 });
 
-  it("treats 3am as a normal person's rest period in Beijing time", async () => {
+  it("passes Beijing time to the model without injecting a rest-period policy", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-24T19:44:00.000Z"));
     const kv = new MockKV();
@@ -528,9 +427,9 @@ describe("chat logic", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const prompt = JSON.parse(String(init.body)).messages[0].content;
     expect(prompt).toContain("2026-09-25 03:44:00");
-    expect(prompt).toContain("03:44:00（星期五）");
-    expect(prompt).toContain("业务消息可以远程回复");
-    expect(prompt).toContain("有正常作息和情绪");
+    expect(prompt).toContain("星期五");
+    expect(prompt).not.toContain("业务消息可以远程回复");
+    expect(prompt).not.toContain("有正常作息和情绪");
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
       reply: "睡了 被你消息吵醒了 ||| 这么晚还没睡",
@@ -1127,7 +1026,7 @@ describe("monitoring sync and customer profile batching", () => {
 
     expect(response.status).toBe(200);
     expect(db.historyRows).toHaveLength(1);
-    expect(db.historyRows[0]).toMatchObject({ role: "assistant", source: "ai", content: "在的" });
+    expect(db.historyRows[0]).toMatchObject({ role: "assistant", source: "ai", content: "在的 刚忙完" });
   });
 
   it("uses deepseek-flash JSON output once the 40-message profile batch is ready", async () => {

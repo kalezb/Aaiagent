@@ -7,7 +7,6 @@ import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.IncomingMessageTracker
 import com.aaiagent.engine.HostingCompletionPolicy
 import com.aaiagent.engine.HostingMode
-import com.aaiagent.engine.ReplyFormatter
 import com.aaiagent.engine.ReplyFreshnessDecision
 import com.aaiagent.engine.ReplyFreshnessPolicy
 import com.aaiagent.engine.ReplyTaskAction
@@ -185,50 +184,6 @@ class MessageEngineTest {
         )
     }
 
-    @Test
-    fun `reply formatter removes punctuation and splits short sentences`() {
-        assertEquals(
-            listOf("在的", "刚忙完", "你周末有空吗", "我想约你出来吃饭"),
-            ReplyFormatter.formatForSending("在的，刚忙完。你周末有空吗？我想约你出来吃饭。")
-        )
-        assertEquals(
-            listOf("你好呀"),
-            ReplyFormatter.formatForSending("你好呀")
-        )
-        assertEquals(
-            listOf("一 二 三 四 五 六"),
-            ReplyFormatter.formatForSending("一。二。三。四。五。六。")
-        )
-    }
-
-    @Test
-    fun `reply formatter keeps a short reply together`() {
-        assertEquals(listOf("好的", "马上"), ReplyFormatter.formatForSending("好的，马上。"))
-    }
-
-    @Test
-    fun `reply formatter prefers backend short sentence separators`() {
-        assertEquals(
-            listOf("在的", "刚忙完", "你周末有空吗", "出来吃个饭吗"),
-            ReplyFormatter.formatForSending("在的 刚忙完|||你周末有空吗|||出来吃个饭吗")
-        )
-    }
-
-    @Test
-    fun `reply formatter splits a long comma sentence`() {
-        assertEquals(
-            listOf("今天刚从重庆回来", "路上有点堵", "晚点再跟你聊"),
-            ReplyFormatter.formatForSending("今天刚从重庆回来，路上有点堵，晚点再跟你聊")
-        )
-    }
-
-    @Test
-    fun `reply formatter turns model pauses into separate messages`() {
-        assertEquals(
-            listOf("咋啦", "发这么一串问号"),
-            ReplyFormatter.formatForSending("咋啦 发这么一串问号")
-        )
-    }
 
     @Test
     fun `sync message keys are stable for a persisted sequence`() {

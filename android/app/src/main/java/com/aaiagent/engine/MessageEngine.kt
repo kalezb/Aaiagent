@@ -12,7 +12,6 @@ import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
 import com.aaiagent.network.ApiService
 import com.aaiagent.network.ChatRequest
 import com.aaiagent.network.ReplyTask
-import kotlin.random.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -53,8 +52,6 @@ class MessageEngine(
     private val lease = AutomationLease()
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     private val contexts = mutableMapOf<String, ConversationContext>()
-    private val mediaNudgeStore = MediaNudgeStore(repository)
-
     private var hostingJob: Job? = null
     private var lastBackendTaskPollAt: Long = 0L
     private var lastSyncFlushAt: Long = 0L
@@ -426,7 +423,6 @@ class MessageEngine(
             synchronized(context) {
                 context.lastIncomingFingerprint = incomingFingerprint(latestIncoming)
             }
-            if (incomingBatch.incoming.any { SensitiveWords.isHit(it.content) }) return
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 synchronized(context) {
                     context.lastRepliedIncomingFingerprint = visibleFingerprint
@@ -434,39 +430,7 @@ class MessageEngine(
                 returnToMessageList(adapter, leaseToken, "monitor batch recorded")
                 return
             }
-
-            val nudgeState = withContext(Dispatchers.IO) {
-                mediaNudgeStore.load(currentPlatform, context.contactId)
-            }
-            val nudge = MediaNudgePolicy.evaluate(
-                mediaType = incomingBatch.mediaTarget?.type,
-                visibleFingerprint = visibleFingerprint,
-                state = nudgeState
-            )
-            when (nudge.decision) {
-                MediaNudgeDecision.DUPLICATE -> {
-                    android.util.Log.d("AIA", "media nudge duplicate, skip without model")
-                    returnToMessageList(adapter, leaseToken, "duplicate media event")
-                    return
-                }
-                MediaNudgeDecision.STOP -> {
-                    val stopped = MediaNudgePolicy.markHandled(nudge.nextState, visibleFingerprint)
-                    withContext(Dispatchers.IO) {
-                        mediaNudgeStore.save(currentPlatform, context.contactId, stopped)
-                    }
-                    android.util.Log.d("AIA", "media nudge limit reached contact=${context.contactName}")
-                    returnToMessageList(adapter, leaseToken, "media nudge limit")
-                    return
-                }
-                MediaNudgeDecision.NORMAL, MediaNudgeDecision.FIXED_REPLY -> Unit
-            }
-            val reply = if (nudge.decision == MediaNudgeDecision.FIXED_REPLY) {
-                android.util.Log.d(
-                    "AIA",
-                    "media nudge fixed reply type=${incomingBatch.mediaTarget?.type} count=${nudge.nextState.consecutiveCount}"
-                )
-                nudge.reply ?: return
-            } else {
+            val reply = run {
                 val token = withContext(Dispatchers.IO) {
                     repository.getActiveToken()?.token?.trim()
                 }.orEmpty()
@@ -489,7 +453,7 @@ class MessageEngine(
                 )
                 messages = understanding.messages
 
-                understanding.fallbackReply ?: requestReply(
+                requestReply(
                     adapter = adapter,
                     context = context,
                     messages = messages,
@@ -506,7 +470,6 @@ class MessageEngine(
                     state = EngineState.AboutToSend
                     val sentAny = sendReply(adapter, context, reply, leaseToken, interactionEpoch)
                     if (sentAny) {
-                        persistHandledNudge(context, nudge.nextState, visibleFingerprint)
                         synchronized(context) {
                             context.lastRepliedIncomingFingerprint = visibleFingerprint
                         }
@@ -524,7 +487,6 @@ class MessageEngine(
                 HostingMode.SEMI_AUTO -> {
                     if (adapter is SoulAdapter) {
                         if (adapter.fillInputOnly(reply, context.contactName)) {
-                            persistHandledNudge(context, nudge.nextState, visibleFingerprint)
                             synchronized(context) {
                                 context.lastRepliedIncomingFingerprint = visibleFingerprint
                             }
@@ -579,13 +541,13 @@ class MessageEngine(
         leaseToken: String,
         interactionEpoch: Long
     ): MediaUnderstanding {
-        val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages, null)
+        val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages)
         if (mediaTarget.type == "text" || mediaTarget.type == "unknown") {
-            return MediaUnderstanding(messages, null)
+            return MediaUnderstanding(messages)
         }
 
-        val svc = service ?: return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
-        if (!canContinue(leaseToken, interactionEpoch)) return MediaUnderstanding(messages, null)
+        val svc = service ?: return MediaUnderstanding(messages)
+        if (!canContinue(leaseToken, interactionEpoch)) return MediaUnderstanding(messages)
         android.util.Log.d("AIA", "media understanding start type=${mediaTarget.type}")
 
         if (mediaTarget.type == "voice") {
@@ -594,28 +556,16 @@ class MessageEngine(
                 "AIA",
                 "voice transcription total=${result.total} transcribed=${result.transcribed}"
             )
-            if (result.isComplete || result.isPartial) {
-                val refreshedMessages = adapter.readMessages(svc.rootInActiveWindow ?: root)
-                return if (result.isComplete) {
-                    MediaUnderstanding(refreshedMessages, null)
-                } else {
-                    MediaUnderstanding(refreshedMessages, "有几条语音没听清 你打字发一下")
-                }
+            if (result.hasAny) {
+                return MediaUnderstanding(adapter.readMessages(svc.rootInActiveWindow ?: root))
             }
         }
 
-        val prompt = when (mediaTarget.type) {
-            "exchange" -> "这是社交聊天中的以图换图照片。请先识别图片主体、人物状态、生活场景和可聊话题，忽略截图方向与界面元素，用一到三句中文描述。"
-            "image" -> "这是社交聊天中的图片。请识别图片里可见的文字、物体、场景和可能表达的情绪，用一句到三句话描述。"
-            "sticker" -> "这是社交聊天中的表情包。请描述表情、动作、文字和它可能表达的聊天含义。"
-            "interaction" -> "这是社交聊天中的拍一拍或戳一戳互动。请只描述界面上能确认的互动内容。"
-            "voice" -> "这是社交聊天语音消息附近的截图。只描述能确认的文字或界面内容，不要猜测语音内容。"
-            else -> "简要描述这张聊天截图中的消息内容。"
-        }
+        val prompt = "识别这张聊天截图中对方消息的可见内容，只描述能够确认的信息。"
         val preparation = adapter.prepareVisualCapture(root, mediaTarget.type)
         if (preparation == null) {
             RuntimeJournal.recovery("隐私图片展开失败 type=${mediaTarget.type}")
-            return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
+            return MediaUnderstanding(messages)
         }
         val preparedRoot = preparation.root
         android.util.Log.d(
@@ -638,18 +588,17 @@ class MessageEngine(
                 )
             ) {
                 return MediaUnderstanding(
-                    replaceLatest(messages, mediaTarget, PrivacyPhotoPolicy.MODEL_CONTEXT),
-                    null
+                    replaceLatest(messages, mediaTarget, PrivacyPhotoPolicy.MODEL_CONTEXT)
                 )
             }
             RuntimeJournal.recovery("视觉识别跳过: 截图失败 type=${mediaTarget.type}")
-            return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
+            return MediaUnderstanding(messages)
         }
 
         val vision = api.describeVision(token, imageBase64, prompt = prompt)
         if (!vision.success || vision.description.isNullOrBlank()) {
             RuntimeJournal.recovery("视觉识别不可用: ${vision.error ?: "empty"}")
-            return MediaUnderstanding(messages, fallbackFor(mediaTarget.type))
+            return MediaUnderstanding(messages)
         }
         android.util.Log.d(
             "AIA",
@@ -664,10 +613,7 @@ class MessageEngine(
             "voice" -> "对方发送了语音，截图辅助识别："
             else -> "对方发送了媒体消息，识别结果："
         }
-        return MediaUnderstanding(
-            replaceLatest(messages, mediaTarget, label + vision.description.trim()),
-            null
-        )
+        return MediaUnderstanding(replaceLatest(messages, mediaTarget, label + vision.description.trim()))
     }
 
     private fun replaceLatest(
@@ -684,14 +630,6 @@ class MessageEngine(
         }
     }
 
-    private fun fallbackFor(type: String): String = when (type) {
-        "exchange" -> "以图换图没成功 先打字聊吧"
-        "voice" -> "语音我这边听不了 以后打字说吧"
-        "image" -> "图片我这边看不清 直接打字告诉我吧"
-        "sticker" -> "别发表情啦 打字说吧"
-        "interaction" -> "拍一拍收到啦 打字说吧"
-        else -> "这个我这边看不清 打字说吧"
-    }
 
     private suspend fun requestReply(
         adapter: PlatformAdapter,
@@ -795,44 +733,33 @@ class MessageEngine(
         leaseToken: String,
         interactionEpoch: Long
     ): Boolean {
-        val sentences = ReplyFormatter.formatForSending(reply)
-        if (sentences.isEmpty()) return false
-
-        var sentAny = false
-
-        for ((index, sentence) in sentences.withIndex()) {
-            if (!canContinue(leaseToken, interactionEpoch)) {
-                clearInputField()
-                return sentAny
-            }
-            if (!verifyCurrentChat(adapter, context.contactName)) {
-                RuntimeJournal.messageSent(false, "发送前联系人验证失败")
-                return sentAny
-            }
-
-            state = EngineState.Sending
-            val svc = service ?: return sentAny
-            val root = svc.rootInActiveWindow ?: return sentAny
-            val result = adapter.fillAndSend(svc, root, sentence, context.contactName)
-            if (result != PlatformAdapter.SendResult.SUCCESS) {
-                RuntimeJournal.messageSent(false, "发送未完成: $result")
-                if (result == PlatformAdapter.SendResult.BANNED) {
-                    state = EngineState.Error
-                    return sentAny
-                }
-                clearInputField()
-                return sentAny
-            }
-            RuntimeJournal.messageSent(true, "第${index + 1}/${sentences.size}句")
-            synchronized(context) { context.aiSentContents.add(sentence.trim()) }
-
-            sentAny = true
-
-            if (index < sentences.size - 1) {
-                delay(Random.nextLong(SPLIT_MIN_MS, SPLIT_MAX_MS))
-            }
+        val outgoing = reply.trim()
+        if (outgoing.isEmpty()) return false
+        if (!canContinue(leaseToken, interactionEpoch)) {
+            clearInputField()
+            return false
         }
-        return sentAny
+        if (!verifyCurrentChat(adapter, context.contactName)) {
+            RuntimeJournal.messageSent(false, "发送前联系人验证失败")
+            return false
+        }
+
+        state = EngineState.Sending
+        val svc = service ?: return false
+        val root = svc.rootInActiveWindow ?: return false
+        val result = adapter.fillAndSend(svc, root, outgoing, context.contactName)
+        if (result != PlatformAdapter.SendResult.SUCCESS) {
+            RuntimeJournal.messageSent(false, "发送未完成: $result")
+            if (result == PlatformAdapter.SendResult.BANNED) {
+                state = EngineState.Error
+                return false
+            }
+            clearInputField()
+            return false
+        }
+        RuntimeJournal.messageSent(true, "回复发送")
+        synchronized(context) { context.aiSentContents.add(outgoing) }
+        return true
     }
 
     private fun verifyCurrentChat(adapter: PlatformAdapter, expectedContactName: String): Boolean {
@@ -1027,17 +954,6 @@ class MessageEngine(
         )
     }
 
-    private suspend fun persistHandledNudge(
-        context: ConversationContext,
-        state: MediaNudgeState,
-        visibleFingerprint: String
-    ) {
-        val handled = MediaNudgePolicy.markHandled(state, visibleFingerprint)
-        withContext(Dispatchers.IO) {
-            mediaNudgeStore.save(context.platform, context.contactId, handled)
-        }
-    }
-
     private suspend fun returnToMessageList(
         adapter: PlatformAdapter,
         leaseToken: String,
@@ -1073,8 +989,7 @@ class MessageEngine(
     }
 
     private data class MediaUnderstanding(
-        val messages: List<PlatformAdapter.ChatMessage>,
-        val fallbackReply: String?
+        val messages: List<PlatformAdapter.ChatMessage>
     )
 
     companion object {
@@ -1087,7 +1002,5 @@ class MessageEngine(
         const val MAX_CHAT_WAIT_RETRIES = 5
         const val READ_MESSAGE_RETRIES = 4
         const val MAX_LLM_RETRIES = 3
-        const val SPLIT_MIN_MS = 1_000L
-        const val SPLIT_MAX_MS = 2_000L
     }
 }
