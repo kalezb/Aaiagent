@@ -167,7 +167,11 @@ class MessageEngine(
         if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
             val title = adapter.readChatTitle(activeRoot)
             if (!title.isNullOrBlank()) {
-                processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
+                if (isContactAllowed(title, title)) {
+                    processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
+                } else {
+                    returnToMessageList(adapter, leaseToken, "contact filtered")
+                }
                 return
             }
         }
@@ -179,7 +183,11 @@ class MessageEngine(
         }
         if (!canContinue(leaseToken, null)) return
 
-        val info = adapter.clickFirstUnreadConversation(listRoot, shouldClick = true)
+        val info = adapter.clickFirstUnreadConversation(
+            listRoot,
+            shouldClick = true,
+            contactFilter = ::isContactAllowed
+        )
         if (info == null) {
             state = EngineState.Idle
             return
@@ -234,6 +242,10 @@ class MessageEngine(
             reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "empty_content")
             return true
         }
+        if (!isContactAllowed(task.contactName, task.contactId)) {
+            reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "contact_filtered")
+            return true
+        }
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: run {
             reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "message_list_unavailable")
             return true
@@ -245,6 +257,11 @@ class MessageEngine(
         RuntimeJournal.clickConversation(conversation.contactName, true)
         val chatRoot = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: run {
             reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "chat_verification_failed")
+            return true
+        }
+        if (!isContactAllowed(conversation.contactName, conversation.contactId)) {
+            reportReplyTask(apiBaseUrl, deviceToken, task.taskId, "failed", "contact_filtered")
+            returnToMessageList(adapter, leaseToken, "manual task contact filtered")
             return true
         }
         if (!canContinue(leaseToken, null)) return true
@@ -270,6 +287,7 @@ class MessageEngine(
         task: ReplyTask,
         leaseToken: String
     ): Boolean {
+        if (!isContactAllowed(task.contactName, task.contactId)) return true
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: return true
         val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: return false
         RuntimeJournal.clickConversation(conversation.contactName, true)
@@ -298,6 +316,11 @@ class MessageEngine(
         contactName: String,
         leaseToken: String
     ) {
+        if (!isContactAllowed(contactName, contactId)) {
+            RuntimeJournal.recovery("联系人策略跳过 contact=$contactName")
+            returnToMessageList(adapter, leaseToken, "contact filtered")
+            return
+        }
         val context = getOrCreateContext(currentPlatform, contactId).also {
             it.contactName = contactName
             synchronized(it) {
@@ -990,6 +1013,15 @@ class MessageEngine(
     }
 
     fun currentState(): EngineState = state
+
+    private fun isContactAllowed(contactName: String?, contactId: String?): Boolean {
+        return ContactFilterPolicy.allowsContact(
+            contactName = contactName,
+            contactId = contactId,
+            whitelist = repository.getContactWhitelist(),
+            blacklist = repository.getContactBlacklist()
+        )
+    }
 
     fun shutdown() {
         stopHosting()

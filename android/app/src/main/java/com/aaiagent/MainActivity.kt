@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import com.aaiagent.data.db.AppDatabase
 import com.aaiagent.data.db.entity.UserLocationEntity
+import com.aaiagent.data.repository.ContactListCodec
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.engine.HostingMode
 import com.aaiagent.network.ApiService
@@ -49,6 +50,8 @@ class MainActivity : ComponentActivity() {
     private var homeDistrict by mutableStateOf("两江新区")
     private var workCity by mutableStateOf("重庆")
     private var workDistrict by mutableStateOf("两江新区")
+    private var contactWhitelist by mutableStateOf<List<String>>(emptyList())
+    private var contactBlacklist by mutableStateOf<List<String>>(emptyList())
     private val platformsStatus = mutableStateMapOf("soul" to false, "qq" to false, "immomo" to false, "lianxin" to false)
 
     // 验证状态
@@ -88,6 +91,8 @@ class MainActivity : ComponentActivity() {
             val loc = withContext(Dispatchers.IO) { repository.getLocation() }
             homeCity = loc["home"]?.get("city") ?: "重庆"; homeDistrict = loc["home"]?.get("district") ?: "两江新区"
             workCity = loc["work"]?.get("city") ?: "重庆"; workDistrict = loc["work"]?.get("district") ?: "两江新区"
+            contactWhitelist = withContext(Dispatchers.IO) { repository.getContactWhitelist() }
+            contactBlacklist = withContext(Dispatchers.IO) { repository.getContactBlacklist() }
             try {
                 loadPersonas()
                 loadServerConfig()
@@ -123,7 +128,9 @@ class MainActivity : ComponentActivity() {
                     platformSyncStatus = platformSyncStatus, onSyncPlatform = { syncPlatform(it) },
                     weatherEnabled = weatherEnabled, onWeatherToggle = { weatherEnabled = it; syncWeather() },
                     timeEnabled = timeEnabled, onTimeToggle = { timeEnabled = it; syncTime() },
-                    onOpenWhitelist = { /* TODO */ }, onOpenBlacklist = { /* TODO */ },
+                    contactWhitelist = contactWhitelist, contactBlacklist = contactBlacklist,
+                    onContactWhitelistChange = { updateContactWhitelist(it) },
+                    onContactBlacklistChange = { updateContactBlacklist(it) },
                     sendMode = sendMode, onSendModeChange = { sendMode = it }
                 )
             }
@@ -298,6 +305,18 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_time", "enabled" to timeEnabled.toString())) } catch (_: Exception) {}
         }
+    }
+
+    private fun updateContactWhitelist(values: List<String>) {
+        val normalized = ContactListCodec.normalize(values)
+        contactWhitelist = normalized
+        lifecycleScope.launch(Dispatchers.IO) { repository.setContactWhitelist(normalized) }
+    }
+
+    private fun updateContactBlacklist(values: List<String>) {
+        val normalized = ContactListCodec.normalize(values)
+        contactBlacklist = normalized
+        lifecycleScope.launch(Dispatchers.IO) { repository.setContactBlacklist(normalized) }
     }
 
     private fun platformDisplayName(p: String) = when(p) { "soul" -> "Soul"; "qq" -> "QQ"; "immomo" -> "陌陌"; "lianxin" -> "连信"; else -> p }

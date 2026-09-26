@@ -33,6 +33,12 @@ class AppRepository(private val db: AppDatabase) {
     fun getApiBaseUrl(): String = getConfig("api_base_url") ?: "https://ai-agent-api.pages.dev"
     fun getPersonaId(): String = getConfig("persona_id") ?: "female"
 
+    // Contact filters
+    fun getContactWhitelist(): List<String> = ContactListCodec.decode(getConfig(CONFIG_WHITELIST))
+    fun setContactWhitelist(values: List<String>) = setConfig(CONFIG_WHITELIST, ContactListCodec.encode(values))
+    fun getContactBlacklist(): List<String> = ContactListCodec.decode(getConfig(CONFIG_BLACKLIST))
+    fun setContactBlacklist(values: List<String>) = setConfig(CONFIG_BLACKLIST, ContactListCodec.encode(values))
+
     // Location
     fun getLocation(): Map<String, Map<String, String>> {
         val loc = db.userLocationDao().get() ?: UserLocationEntity()
@@ -110,3 +116,6 @@ class AppRepository(private val db: AppDatabase) {
         db.messageCacheDao().deleteOlderThan(cutoff)
     }
 }
+
+private const val CONFIG_WHITELIST = "contact_whitelist"
+private const val CONFIG_BLACKLIST = "contact_blacklist"

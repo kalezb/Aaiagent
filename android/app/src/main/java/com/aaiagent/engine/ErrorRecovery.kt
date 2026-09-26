@@ -17,7 +17,8 @@ object ErrorRecovery {
     suspend fun retryClickConversation(
         adapter: PlatformAdapter,
         service: AccessibilityService,
-        root: AccessibilityNodeInfo
+        root: AccessibilityNodeInfo,
+        contactFilter: (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
     ): PlatformAdapter.ConversationInfo? {
         for (attempt in 1..MAX_RETRY) {
             RuntimeJournal.recovery("重试点会话(第${attempt}次)")
@@ -26,7 +27,7 @@ object ErrorRecovery {
             delay(500)
 
             val newRoot = service.rootInActiveWindow ?: break
-            val info = adapter.clickFirstUnreadConversation(newRoot, shouldClick = true)
+            val info = adapter.clickFirstUnreadConversation(newRoot, shouldClick = true, contactFilter = contactFilter)
             if (info != null) {
                 RuntimeJournal.recovery("重试成功")
                 return info
@@ -39,7 +40,8 @@ object ErrorRecovery {
 
     suspend fun recoverReadMessages(
         adapter: PlatformAdapter,
-        service: AccessibilityService
+        service: AccessibilityService,
+        contactFilter: (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
     ): AccessibilityNodeInfo? {
         for (attempt in 1..MAX_RETRY) {
             RuntimeJournal.recovery("恢复读消息(第${attempt}次)")
@@ -54,7 +56,7 @@ object ErrorRecovery {
                 }
                 PageType.MESSAGE_LIST -> {
                     RuntimeJournal.recovery("在消息列表, 点会话")
-                    val info = adapter.clickFirstUnreadConversation(root, shouldClick = true)
+                    val info = adapter.clickFirstUnreadConversation(root, shouldClick = true, contactFilter = contactFilter)
                     if (info != null) {
                         delay(800)
                         return service.rootInActiveWindow

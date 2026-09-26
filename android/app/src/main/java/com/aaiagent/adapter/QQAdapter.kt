@@ -117,7 +117,8 @@ class QQAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
-        shouldClick: Boolean
+        shouldClick: Boolean,
+        contactFilter: (contactName: String, contactId: String) -> Boolean
     ): ConversationInfo? {
         // 1. 找会话列表 RecyclerView (o8n)
         val listNodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/o8n")
@@ -131,6 +132,7 @@ class QQAdapter(private val service: AccessibilityService) : PlatformAdapter {
             // 3. 读昵称
             val titles = item.findAccessibilityNodeInfosByViewId("$packageName:id/title")
             val contactName = titles.firstOrNull()?.text?.toString()?.trim() ?: continue
+            if (!contactFilter(contactName, contactName)) continue
 
             // 4. 查未读标记 (khc)
             val unreads = item.findAccessibilityNodeInfosByViewId("$packageName:id/khc")

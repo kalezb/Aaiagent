@@ -65,7 +65,11 @@ class LianxinAdapter(private val service: AccessibilityService) : PlatformAdapte
         return SendResult.SUCCESS
     }
 
-    override suspend fun clickFirstUnreadConversation(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? = null
+    override suspend fun clickFirstUnreadConversation(
+        root: AccessibilityNodeInfo,
+        shouldClick: Boolean,
+        contactFilter: (contactName: String, contactId: String) -> Boolean
+    ): ConversationInfo? = null
     override suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo) {
         if (!isInMessageList(root)) {
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)

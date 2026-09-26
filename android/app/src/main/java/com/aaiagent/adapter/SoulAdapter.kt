@@ -878,9 +878,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
-        shouldClick: Boolean
+        shouldClick: Boolean,
+        contactFilter: (contactName: String, contactId: String) -> Boolean
     ): ConversationInfo? {
-        tryFindUnread(root, shouldClick)?.let {
+        tryFindUnread(root, shouldClick, contactFilter)?.let {
             emptyScanStreak = 0
             return it
         }
@@ -888,7 +889,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
         emptyScanStreak++
         val topRoot = scrollListToTop(root)
-        tryFindUnread(topRoot, shouldClick)?.let {
+        tryFindUnread(topRoot, shouldClick, contactFilter)?.let {
             emptyScanStreak = 0
             return it
         }
@@ -900,13 +901,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         repeat(MAX_PATROL_SCROLLS) {
             if (!scrollConversationList(currentRoot, ScrollDirection.FORWARD)) return@repeat
             currentRoot = waitForStableListAfterScroll() ?: service.rootInActiveWindow ?: return@repeat
-            tryFindUnread(currentRoot, shouldClick)?.let { return it }
+            tryFindUnread(currentRoot, shouldClick, contactFilter)?.let { return it }
         }
         scrollListToTop(currentRoot)
         return null
     }
 
-    private fun tryFindUnread(root: AccessibilityNodeInfo, shouldClick: Boolean): ConversationInfo? {
+    private fun tryFindUnread(
+        root: AccessibilityNodeInfo,
+        shouldClick: Boolean,
+        contactFilter: (contactName: String, contactId: String) -> Boolean
+    ): ConversationInfo? {
         val badges = root.findAccessibilityNodeInfosByViewId(prefix + "unread_msg_number")
         for (badge in badges) {
             if (!badgeHasUnread(badge)) continue
@@ -916,6 +921,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val name = readChildText(item, "name")
             val preview = readChildText(item, "message") ?: ""
             val contactName = name ?: preview.ifEmpty { "unknown" }
+
+            if (!contactFilter(contactName, contactName)) continue
 
             if (shouldClick) {
                 val target = item.takeIf { it.isClickable && it.isVisibleToUser } ?: item

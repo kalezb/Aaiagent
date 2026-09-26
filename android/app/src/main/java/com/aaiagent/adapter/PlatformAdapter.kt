@@ -63,7 +63,8 @@ interface PlatformAdapter {
 
     suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
-        shouldClick: Boolean = true
+        shouldClick: Boolean = true,
+        contactFilter: (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
     ): ConversationInfo?
 
     suspend fun clickConversationByName(

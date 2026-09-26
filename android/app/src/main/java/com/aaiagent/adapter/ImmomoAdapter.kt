@@ -148,7 +148,8 @@ class ImmomoAdapter(private val service: AccessibilityService) : PlatformAdapter
 
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
-        shouldClick: Boolean
+        shouldClick: Boolean,
+        contactFilter: (contactName: String, contactId: String) -> Boolean
     ): ConversationInfo? {
         // 1. 找会话列表 RecyclerView
         val listNodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/recyclerview")
@@ -162,6 +163,7 @@ class ImmomoAdapter(private val service: AccessibilityService) : PlatformAdapter
             // 3. 读昵称
             val names = item.findAccessibilityNodeInfosByViewId("$packageName:id/chatlist_item_tv_name")
             val contactName = names.firstOrNull()?.text?.toString()?.trim() ?: continue
+            if (!contactFilter(contactName, contactName)) continue
 
             // 4. 查未读标记 (tv_status_new)
             val unreads = item.findAccessibilityNodeInfosByViewId(

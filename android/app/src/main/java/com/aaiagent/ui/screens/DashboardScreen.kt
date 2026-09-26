@@ -101,8 +101,10 @@ fun DashboardScreen(
     timeEnabled: Boolean,
     onTimeToggle: (Boolean) -> Unit,
     // 白黑名单
-    onOpenWhitelist: () -> Unit,
-    onOpenBlacklist: () -> Unit,
+    contactWhitelist: List<String>,
+    contactBlacklist: List<String>,
+    onContactWhitelistChange: (List<String>) -> Unit,
+    onContactBlacklistChange: (List<String>) -> Unit,
     // 发送方式
     sendMode: String,
     onSendModeChange: (String) -> Unit
@@ -151,7 +153,9 @@ fun DashboardScreen(
         // ═══ 卡片3: AI 托管控制 ═══
         Card3HostingControl(
             isHosting, engineState, hostingMode, onHostingModeChange, onToggleHosting,
-            sendMode, onSendModeChange, onOpenWhitelist, onOpenBlacklist
+            sendMode, onSendModeChange,
+            contactWhitelist, contactBlacklist,
+            onContactWhitelistChange, onContactBlacklistChange
         )
 
         Spacer(Modifier.height(12.dp))
@@ -386,14 +390,14 @@ private fun Card3HostingControl(
     hostingMode: HostingMode, onHostingModeChange: (HostingMode) -> Unit,
     onToggleHosting: (Boolean) -> Unit,
     sendMode: String, onSendModeChange: (String) -> Unit,
-    onOpenWhitelist: () -> Unit, onOpenBlacklist: () -> Unit
+    contactWhitelist: List<String>, contactBlacklist: List<String>,
+    onContactWhitelistChange: (List<String>) -> Unit,
+    onContactBlacklistChange: (List<String>) -> Unit
 ) {
     // 白名单管理弹窗
     var showWhitelist by remember { mutableStateOf(false) }
     var showBlacklist by remember { mutableStateOf(false) }
     var newContact by remember { mutableStateOf("") }
-    var whitelist by remember { mutableStateOf(listOf<String>()) }
-    var blacklist by remember { mutableStateOf(listOf<String>()) }
 
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -482,18 +486,18 @@ private fun Card3HostingControl(
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
-                    Modifier.weight(1f).clickable { showWhitelist = true },
+                    Modifier.weight(1f).clickable { newContact = ""; showWhitelist = true },
                     RoundedCornerShape(10.dp),
                     border = BorderStroke(1.5.dp, Green)
                 ) {
-                    Text(text = "白名单 (${whitelist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Green)
+                    Text(text = "白名单 (${contactWhitelist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Green)
                 }
                 Surface(
-                    Modifier.weight(1f).clickable { showBlacklist = true },
+                    Modifier.weight(1f).clickable { newContact = ""; showBlacklist = true },
                     RoundedCornerShape(10.dp),
                     border = BorderStroke(1.5.dp, Red)
                 ) {
-                    Text(text = "黑名单 (${blacklist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Red)
+                    Text(text = "黑名单 (${contactBlacklist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Red)
                 }
             }
         }
@@ -519,17 +523,20 @@ private fun Card3HostingControl(
                         }
                         Spacer(Modifier.width(8.dp))
                         TextButton(onClick = {
-                            if (newContact.isNotBlank()) { whitelist = whitelist + newContact.trim(); newContact = "" }
+                            if (newContact.isNotBlank()) {
+                                onContactWhitelistChange(contactWhitelist + newContact.trim())
+                                newContact = ""
+                            }
                         }) { Text("添加", color = Green) }
                     }
                     Spacer(Modifier.height(12.dp))
-                    if (whitelist.isEmpty()) {
+                    if (contactWhitelist.isEmpty()) {
                         Text("暂无白名单联系人", color = TextHint, fontSize = 13.sp)
                     } else {
-                        whitelist.forEach { name ->
+                        contactWhitelist.forEach { name ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(name, Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
-                                TextButton(onClick = { whitelist = whitelist - name }) { Text("删除", color = Red, fontSize = 12.sp) }
+                                TextButton(onClick = { onContactWhitelistChange(contactWhitelist - name) }) { Text("删除", color = Red, fontSize = 12.sp) }
                             }
                         }
                     }
@@ -559,17 +566,20 @@ private fun Card3HostingControl(
                         }
                         Spacer(Modifier.width(8.dp))
                         TextButton(onClick = {
-                            if (newContact.isNotBlank()) { blacklist = blacklist + newContact.trim(); newContact = "" }
+                            if (newContact.isNotBlank()) {
+                                onContactBlacklistChange(contactBlacklist + newContact.trim())
+                                newContact = ""
+                            }
                         }) { Text("添加", color = Red) }
                     }
                     Spacer(Modifier.height(12.dp))
-                    if (blacklist.isEmpty()) {
+                    if (contactBlacklist.isEmpty()) {
                         Text("暂无黑名单联系人", color = TextHint, fontSize = 13.sp)
                     } else {
-                        blacklist.forEach { name ->
+                        contactBlacklist.forEach { name ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(name, Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
-                                TextButton(onClick = { blacklist = blacklist - name }) { Text("删除", color = Red, fontSize = 12.sp) }
+                                TextButton(onClick = { onContactBlacklistChange(contactBlacklist - name) }) { Text("删除", color = Red, fontSize = 12.sp) }
                             }
                         }
                     }
