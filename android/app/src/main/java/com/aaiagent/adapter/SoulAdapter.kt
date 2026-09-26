@@ -17,6 +17,7 @@ import com.aaiagent.adapter.PlatformAdapter.SendResult
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.GestureMonitor
 import com.aaiagent.engine.SoulMessageTime
+import com.aaiagent.engine.StickerMatcher
 import com.aaiagent.engine.VoiceHandler
 import kotlinx.coroutines.delay
 
@@ -25,6 +26,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private val prefix = "cn.soulapp.android:id/"
     private var emptyScanStreak = 0
+
+    /** 最近一次 readMessages 发现的互动表情节点 bounds，供 StickerMatcher 截图识别 */
+    val pendingStickerRects = mutableListOf<Rect>()
 
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
         return root.packageName?.toString() == packageName &&
@@ -82,6 +86,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val screenWidth = service.resources.displayMetrics.widthPixels
         val messageItems = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
         val timestampTracker = SoulMessageTime.ContextTracker()
+        pendingStickerRects.clear()
 
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
@@ -121,16 +126,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val hasImage = item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
                 item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty()
-            val hasSticker = hasAnyVisibleViewId(item, STICKER_TARGET_IDS) ||
-                hasDescendantViewIdFragment(item, STICKER_ID_FRAGMENTS) ||
-                hasDescendantContentDescription(item, STICKER_CONTENT_DESCRIPTIONS)
-            val hasInteraction = hasAnyVisibleViewId(item, INTERACTION_TARGET_IDS)
             val hasExchange = isExchangeItem(item)
+            val stickerNode = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
+                .firstOrNull { it.isVisibleToUser }
             val type = SoulMediaType.resolve(
                 hasVoice = hasVoice,
                 hasImage = hasImage,
-                hasSticker = hasSticker,
-                hasInteraction = hasInteraction,
                 hasSnapPhoto = hasSnapPhoto,
                 hasText = text.isNotEmpty(),
                 hasExchange = hasExchange,
@@ -141,18 +142,23 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
                 type == "voice" -> SoulVoiceContent.resolve(voiceTranscription, text)
                 text.isNotEmpty() -> text
+                stickerNode != null -> {
+                    val rect = Rect()
+                    stickerNode.getBoundsInScreen(rect)
+                    pendingStickerRects.add(rect)
+                    "[Soul互动表情]"
+                }
                 type == "exchange" -> "[以图换图]"
                 type == "image" -> if (hasSnapPhoto) "[闪照]" else "[图片]"
-                type == "interaction" -> "[拍一拍]"
-                type == "sticker" -> "[表情]"
                 else -> ""
             }
+            val finalType = if (stickerNode != null && text.isEmpty()) "sticker" else type
             if (content.isNotEmpty()) {
                 messages.add(
                     ChatMessage(
                         sender = sender,
                         content = content,
-                        type = type,
+                        type = finalType,
                         timestampText = timestamp.text,
                         timestampMillis = timestamp.epochMillis
                     )
@@ -173,6 +179,29 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             root = root,
             isIncomingItem = { item -> readMessageSender(item, screenWidth) == "other" }
         )
+    }
+
+    /**
+     * 对 readMessages 标记的 "[Soul互动表情]" 消息做本地截图识别，替换为具体表情名。
+     * 返回替换后的 messages 副本。
+     */
+    suspend fun recognizePendingStickers(
+        messages: List<ChatMessage>
+    ): List<ChatMessage> {
+        if (pendingStickerRects.isEmpty()) return messages
+        val stickerIdx = messages.indices.filter { messages[it].type == "sticker" }
+        if (stickerIdx.isEmpty()) return messages
+        val result = messages.toMutableList()
+        var rectIdx = 0
+        for (i in stickerIdx) {
+            if (rectIdx >= pendingStickerRects.size) break
+            val rect = pendingStickerRects[rectIdx++]
+            val name = StickerMatcher.match(service, rect)
+            if (name != null) {
+                result[i] = result[i].copy(content = "[互动表情：$name]")
+            }
+        }
+        return result
     }
 
     override fun readVisualTargetBounds(
@@ -511,8 +540,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     private fun targetIdsFor(targetType: String?): List<String> {
         return when (targetType) {
             "image" -> IMAGE_TARGET_IDS
-            "sticker" -> STICKER_TARGET_IDS
-            "interaction" -> INTERACTION_TARGET_IDS
             "voice" -> VOICE_TARGET_IDS
             else -> VISUAL_TARGET_IDS
         }
@@ -1215,18 +1242,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "chat_image_url"
         )
         private val IMAGE_TARGET_IDS = INCOMING_IMAGE_TARGET_IDS + "item_snap_pic_receive_root"
-        private val STICKER_TARGET_IDS = listOf(
-            "gif_intimacy",
-            "iv_emoji",
-            "fl_reflect_emoji",
-            "iv_sticker",
-            "sticker_view",
-            "iv_gif",
-            "gif_view"
-        )
-        private val STICKER_ID_FRAGMENTS = listOf("emoji", "sticker", "gif_intimacy")
-        private val STICKER_CONTENT_DESCRIPTIONS = listOf("表情", "表情包", "贴纸")
-        private val INTERACTION_TARGET_IDS = listOf("la_light_interaction", "img_back_poke")
         private val VOICE_TARGET_IDS = listOf(
             "voice_bubble",
             "iv_voice",
@@ -1240,15 +1255,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "image",
             "image_content",
             "chat_image_url",
-            "gif_intimacy",
-            "iv_emoji",
-            "fl_reflect_emoji",
-            "iv_sticker",
-            "sticker_view",
-            "iv_gif",
-            "gif_view",
-            "la_light_interaction",
-            "img_back_poke",
             "item_snap_pic_receive_root",
             "voice_bubble",
             "iv_voice",

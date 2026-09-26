@@ -391,6 +391,10 @@ class MessageEngine(
         try {
             var root = chatRoot
             var messages = readMessagesWithRetry(adapter, root, context.contactName, leaseToken)
+            // Soul 互动表情本地识别
+            if (adapter is com.aaiagent.adapter.SoulAdapter) {
+                messages = adapter.recognizePendingStickers(messages)
+            }
             if (messages.isEmpty()) {
                 RuntimeJournal.readMessages(0, "")
                 if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "empty chat")
@@ -735,31 +739,35 @@ class MessageEngine(
     ): Boolean {
         val outgoing = reply.trim()
         if (outgoing.isEmpty()) return false
-        if (!canContinue(leaseToken, interactionEpoch)) {
-            clearInputField()
-            return false
-        }
-        if (!verifyCurrentChat(adapter, context.contactName)) {
-            RuntimeJournal.messageSent(false, "发送前联系人验证失败")
-            return false
-        }
 
-        state = EngineState.Sending
-        val svc = service ?: return false
-        val root = svc.rootInActiveWindow ?: return false
-        val result = adapter.fillAndSend(svc, root, outgoing, context.contactName)
-        if (result != PlatformAdapter.SendResult.SUCCESS) {
-            RuntimeJournal.messageSent(false, "发送未完成: $result")
-            if (result == PlatformAdapter.SendResult.BANNED) {
-                state = EngineState.Error
-                return false
+        // 代码层做"真人打字感"：按行拆成短段，去掉句末句号/逗号/～，逐段发，段间随机等几秒。
+        val segments = outgoing.split("\n")
+            .map { it.trim().trimEnd('。', '，', ',', '.', '~', '～').trim() }
+            .filter { it.isNotEmpty() && it.length <= 60 }
+        val parts = if (segments.isNotEmpty()) segments else listOf(outgoing.trimEnd('。', '，', '~', '～'))
+
+        var sentAny = false
+        for ((index, part) in parts.withIndex()) {
+            if (!canContinue(leaseToken, interactionEpoch)) { clearInputField(); break }
+            if (!verifyCurrentChat(adapter, context.contactName)) { RuntimeJournal.messageSent(false, "发送前联系人验证失败"); break }
+            if (index > 0) delay((1000L..3000L).random())
+            state = EngineState.Sending
+            val svc = service ?: break
+            val root = svc.rootInActiveWindow ?: break
+            val result = adapter.fillAndSend(svc, root, part, context.contactName)
+            if (result != PlatformAdapter.SendResult.SUCCESS) {
+                RuntimeJournal.messageSent(false, "发送未完成: $result")
+                if (result == PlatformAdapter.SendResult.BANNED) { state = EngineState.Error }
+                clearInputField()
+                break
             }
-            clearInputField()
-            return false
+            sentAny = true
         }
-        RuntimeJournal.messageSent(true, "回复发送")
-        synchronized(context) { context.aiSentContents.add(outgoing) }
-        return true
+        if (sentAny) {
+            RuntimeJournal.messageSent(true, "回复发送")
+            synchronized(context) { context.aiSentContents.add(outgoing) }
+        }
+        return sentAny
     }
 
     private fun verifyCurrentChat(adapter: PlatformAdapter, expectedContactName: String): Boolean {

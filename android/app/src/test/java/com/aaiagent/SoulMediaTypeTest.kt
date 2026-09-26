@@ -12,16 +12,6 @@ class SoulMediaTypeTest {
     }
 
     @Test
-    fun `sticker is recognized from the emoji marker`() {
-        assertEquals("sticker", resolve(hasSticker = true))
-    }
-
-    @Test
-    fun `interaction is recognized from poke markers`() {
-        assertEquals("interaction", resolve(hasInteraction = true))
-    }
-
-    @Test
     fun `snap photo is treated as image instead of being skipped`() {
         assertEquals("image", resolve(hasSnapPhoto = true, hasText = true))
     }
@@ -38,7 +28,7 @@ class SoulMediaTypeTest {
     fun `forwarded moment card is not mistaken for a sticker or image`() {
         assertEquals(
             "moment_card",
-            resolve(hasImage = true, hasSticker = true, hasMomentCard = true)
+            resolve(hasImage = true, hasMomentCard = true)
         )
     }
     @Test
@@ -67,8 +57,6 @@ class SoulMediaTypeTest {
     private fun resolve(
         hasVoice: Boolean = false,
         hasImage: Boolean = false,
-        hasSticker: Boolean = false,
-        hasInteraction: Boolean = false,
         hasSnapPhoto: Boolean = false,
         hasText: Boolean = false,
         hasExchange: Boolean = false,
@@ -77,8 +65,6 @@ class SoulMediaTypeTest {
         return SoulMediaType.resolve(
             hasVoice = hasVoice,
             hasImage = hasImage,
-            hasSticker = hasSticker,
-            hasInteraction = hasInteraction,
             hasSnapPhoto = hasSnapPhoto,
             hasText = hasText,
             hasExchange = hasExchange,
