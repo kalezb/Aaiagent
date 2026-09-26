@@ -95,6 +95,62 @@ function formatCurrentChatMessage(message, nowSec = Math.floor(Date.now() / 1000
   return (timeLabel ? "[" + timeLabel + "] " : "") + speaker + "：" + String(message?.content || "");
 }
 
+function sanitizeAssistantReply(value) {
+  let reply = String(value || "").trim();
+  const contextPrefix = /^\[[^\]\r\n]{1,100}\]\s*(?:你说|对方说|我说)\s*[：:]\s*/u;
+  const speakerPrefix = /^(?:你说|对方说|我说)\s*[：:]\s*/u;
+  const timestampPrefix = /^\[(?:(?:今天|昨天|前天)\s*)?\d{1,2}:\d{2}(?::\d{2})?(?:\s*，距今约\d+小时)?\]\s*/u;
+
+  // Keep this limited to the start of the reply so normal text mentioning these words is untouched.
+  while (reply) {
+    const before = reply;
+    reply = reply
+      .replace(contextPrefix, "")
+      .replace(speakerPrefix, "")
+      .replace(timestampPrefix, "")
+      .trimStart();
+    if (reply === before) break;
+  }
+  return reply;
+}
+
+// 根据当前小时给出"我此刻在干嘛"，让回复场景跟时间对得上（凌晨不说在跑客户）
+function currentActivityByHour(hour) {
+  if (hour >= 0 && hour < 7) return "现在是深夜，你躺床上睡不着在刷手机，所以回消息慢";
+  if (hour >= 7 && hour < 9) return "你刚起床，在洗漱吃早饭，手机放旁边";
+  if (hour >= 9 && hour < 12) return "你在回收店里整理收来的手机，偶尔来个客户";
+  if (hour >= 12 && hour < 14) return "你刚吃完饭，在店里坐着刷手机，有点困";
+  if (hour >= 14 && hour < 18) return "你在店里忙，收货验机跟客户谈事，不一定随时看手机";
+  if (hour >= 18 && hour < 21) return "你下班回到家，刚吃完饭，在沙发上玩手机";
+  return "你洗完澡躺床上了，准备睡，一边刷手机一边回";
+}
+
+// 统计这个联系人最近7天主动找过你几次、几天都来了，以及总对话轮数
+async function loadActivityStats(db, token, aliases, nowSec) {
+  const clauses = aliases.map(() => "(platform = ? AND contact_id = ?)");
+  const flat = aliases.flatMap((a) => [a.platform, a.contact_id]);
+  const since = nowSec - 7 * 86400;
+  const recent = await db.prepare(
+    "SELECT COUNT(*) AS total, COUNT(DISTINCT DATE(created_at, 'unixepoch', 'localtime')) AS active_days FROM chat_history WHERE token = ? AND role = 'user' AND (" + clauses.join(" OR ") + ") AND created_at > ?"
+  ).bind(token, ...flat, since).first();
+  const total = await db.prepare(
+    "SELECT COUNT(*) AS n FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ")"
+  ).bind(token, ...flat).first();
+  return {
+    activeDays: Number(recent?.active_days || 0),
+    userMsgs7d: Number(recent?.total || 0),
+    totalExchanges: Number(total?.n || 0),
+  };
+}
+
+// 关系阶段：1=刚加上 2=聊过几次 3=高频互动可谈业务
+function relationStage(totalExchanges, userMsgs7d) {
+  if (totalExchanges < 6) return 1;
+  if (totalExchanges < 25) return 2;
+  if (userMsgs7d >= 4) return 3;
+  return 2;
+}
+
 async function maybeExtractCustomerProfile(env, tokenRow, platform, contactId) {
   if (!env.DEEPSEEK_API_KEY) return;
   const token = tokenRow.token;
@@ -1124,17 +1180,29 @@ export const onRequest = async (context) => {
       const chinaTime = getChinaTimeContext(now2);
       const currentDatetime = chinaTime.currentDatetime;
       const weekday = chinaTime.weekday;
-      const platformStyle = PLATFORM_STYLE_HINTS[platform] || "\u81ea\u7136\u3001\u65e5\u5e38";
+      const platformStyle = PLATFORM_STYLE_HINTS[platform] || "自然、日常";
+      const currentHour = parseInt((currentDatetime.split(" ")[1] || "12:00:00").split(":")[0], 10) || 12;
+      const nowSec2 = Math.floor(Date.now() / 1000);
+      const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
+      const stage = relationStage(activity.totalExchanges, activity.userMsgs7d);
+      const stageText = stage === 1
+        ? "你们刚认识，先自然聊，不要显得太熟。"
+        : stage === 3
+          ? "你们最近互动频繁，可以自然熟络一点，但不要主动推销。"
+          : "你们聊过几次，可以延续之前的话题，别突然变陌生。";
+      const activityNow = currentActivityByHour(currentHour);
 
-      let systemPrompt = personaPrompt + "\n\n当前平台：" + platform + "，请用以下语气：" + platformStyle +
-        "\n\n现在是 " + currentDatetime + "（" + weekday + "）。" +
-        "\n你住在" + (location?.home?.city || "重庆") + (location?.home?.district || "") +
-        "，在" + (location?.work?.city || "重庆") + (location?.work?.district || "") + "上班。" +
-        "\n今天" + weather.condition + "，气温" + weather.temp + "°C。" +
-        "\n\n回复规则（必须遵守）：" +
-        "\n1. \"对方说\"是对方发的话，\"你说\"是你之前发的话，不要搞混角色。" +
-        "\n2. 只回复对方最新的一条消息，基于上下文自然接话。";
-      systemPrompt += "\n\n同一客户可能绑定 Soul、QQ、陌陌、连信上的多个账号，历史中的不同平台昵称都视为同一个人，记忆必须连续。";
+      let systemPrompt = personaPrompt +
+        "\n\n当前平台：" + platform + "，语气：" + platformStyle + "。" +
+        "\n\n【现在】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" +
+        "你住在" + (location?.home?.city || "重庆") + (location?.home?.district || "") + "，在" + (location?.work?.city || "重庆") + (location?.work?.district || "") + "上班，做旧手机回收。今天" + weather.condition + weather.temp + "度。" +
+        (activity.activeDays >= 2 ? "\n这个对象最近7天有" + activity.activeDays + "天都主动找过你，如果隔了很久没回别装作天天在聊。" : "") +
+        "\n" + stageText +
+        "\n\n说话像手机微信：短句子分行打，别打句号，别用～，结尾反问一句。例：对方说加班好累，你就分三行回「9点？」「你们老板不睡觉吗」「吃晚饭没」。" +
+        "\n上下文里的\"对方说\"是对方发的话，\"你说\"是你之前发的话，不要搞混角色。" +
+        "\n时间戳和“你说/对方说”只是上下文标记，不是回复内容，禁止写进回复。" +
+        "\n别刚加好友就推销回收，别主动提见面，别发联系方式，被质疑是AI就打哈哈带过，别和前面说过的话矛盾。" +
+        "\n同一客户绑定多平台账号的，都视为同一个人，记忆必须连续。";
 
       const llmMessages = [{ role: "system", content: systemPrompt }];
       if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
@@ -1159,7 +1227,7 @@ export const onRequest = async (context) => {
       if (!resp.ok) return json({ error: "LLM \u8c03\u7528\u5931\u8d25" }, 502);
       const data = await resp.json();
       const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
-      const reply = rawReply;
+      const reply = sanitizeAssistantReply(rawReply) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const nowSec = Math.floor(Date.now() / 1000);
 
       // User messages arrive through the idempotent sync outbox. Only write the generated AI

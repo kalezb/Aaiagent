@@ -362,6 +362,70 @@ describe("chat logic", () => {
     expect(prompt).not.toMatch(/对方最后一条消息是 \d+ 小时前发的/);
   });
 
+  it("removes leaked time and speaker prefixes from the model reply", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "\u91cd\u5e86", condition: "\u6674", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "[22:15] \u4f60\u8bf4\uff1a\u4e0d\u5c31\u90a3\u4e2ayyds\u561b \u6211\u770b\u5230\u4e86" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "contact-1",
+        contact_name: "contact-1",
+        messages: [{ role: "user", content: "\u77e5\u9053\u6211\u53d1\u7684\u4ec0\u4e48\u8868\u60c5\u4e0d\uff1f" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "\u4e0d\u5c31\u90a3\u4e2ayyds\u561b \u6211\u770b\u5230\u4e86",
+    });
+  });
+
+  it("does not remove speaker words that are part of normal reply text", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "\u91cd\u5e86", condition: "\u6674", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "\u4f60\u8bf4\u5462 \u6211\u8fd8\u5728\u770b\u6d88\u606f" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "contact-2",
+        contact_name: "contact-2",
+        messages: [{ role: "user", content: "\u5728\u5417" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "\u4f60\u8bf4\u5462 \u6211\u8fd8\u5728\u770b\u6d88\u606f",
+    });
+  });
+
   it("returns the model reply without post-processing", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
