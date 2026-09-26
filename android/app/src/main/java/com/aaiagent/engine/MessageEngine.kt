@@ -1014,12 +1014,15 @@ class MessageEngine(
 
     fun currentState(): EngineState = state
 
-    private fun isContactAllowed(contactName: String?, contactId: String?): Boolean {
+    private suspend fun isContactAllowed(contactName: String?, contactId: String?): Boolean {
+        val filters = withContext(Dispatchers.IO) {
+            repository.getContactWhitelist() to repository.getContactBlacklist()
+        }
         return ContactFilterPolicy.allowsContact(
             contactName = contactName,
             contactId = contactId,
-            whitelist = repository.getContactWhitelist(),
-            blacklist = repository.getContactBlacklist()
+            whitelist = filters.first,
+            blacklist = filters.second
         )
     }
 

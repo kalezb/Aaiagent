@@ -879,7 +879,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean,
-        contactFilter: (contactName: String, contactId: String) -> Boolean
+        contactFilter: suspend (contactName: String, contactId: String) -> Boolean
     ): ConversationInfo? {
         tryFindUnread(root, shouldClick, contactFilter)?.let {
             emptyScanStreak = 0
@@ -907,10 +907,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return null
     }
 
-    private fun tryFindUnread(
+    private suspend fun tryFindUnread(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean,
-        contactFilter: (contactName: String, contactId: String) -> Boolean
+        contactFilter: suspend (contactName: String, contactId: String) -> Boolean
     ): ConversationInfo? {
         val badges = root.findAccessibilityNodeInfosByViewId(prefix + "unread_msg_number")
         for (badge in badges) {

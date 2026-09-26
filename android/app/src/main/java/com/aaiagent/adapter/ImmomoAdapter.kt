@@ -149,7 +149,7 @@ class ImmomoAdapter(private val service: AccessibilityService) : PlatformAdapter
     override suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean,
-        contactFilter: (contactName: String, contactId: String) -> Boolean
+        contactFilter: suspend (contactName: String, contactId: String) -> Boolean
     ): ConversationInfo? {
         // 1. 找会话列表 RecyclerView
         val listNodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/recyclerview")

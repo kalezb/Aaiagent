@@ -18,7 +18,7 @@ object ErrorRecovery {
         adapter: PlatformAdapter,
         service: AccessibilityService,
         root: AccessibilityNodeInfo,
-        contactFilter: (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
+        contactFilter: suspend (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
     ): PlatformAdapter.ConversationInfo? {
         for (attempt in 1..MAX_RETRY) {
             RuntimeJournal.recovery("重试点会话(第${attempt}次)")
@@ -41,7 +41,7 @@ object ErrorRecovery {
     suspend fun recoverReadMessages(
         adapter: PlatformAdapter,
         service: AccessibilityService,
-        contactFilter: (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
+        contactFilter: suspend (contactName: String, contactId: String) -> Boolean = { _, _ -> true }
     ): AccessibilityNodeInfo? {
         for (attempt in 1..MAX_RETRY) {
             RuntimeJournal.recovery("恢复读消息(第${attempt}次)")
