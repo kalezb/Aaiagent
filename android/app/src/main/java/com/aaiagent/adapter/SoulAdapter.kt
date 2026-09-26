@@ -27,8 +27,19 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     private val prefix = "cn.soulapp.android:id/"
     private var emptyScanStreak = 0
 
-    /** 最近一次 readMessages 发现的互动表情节点 bounds，供 StickerMatcher 截图识别 */
-    val pendingStickerRects = mutableListOf<Rect>()
+    private data class LocatedMessage(
+        val top: Int,
+        val message: ChatMessage,
+        val stickerRect: Rect? = null
+    )
+
+    private data class PendingSticker(
+        val messageIndex: Int,
+        val rect: Rect
+    )
+
+    /** readMessages 把待识别表情和消息索引绑定，避免混入其他消息后错位。 */
+    private val pendingStickers = mutableListOf<PendingSticker>()
 
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
         return root.packageName?.toString() == packageName &&
@@ -82,11 +93,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     override fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage> {
-        val messages = mutableListOf<ChatMessage>()
         val screenWidth = service.resources.displayMetrics.widthPixels
         val messageItems = root.findAccessibilityNodeInfosByViewId(prefix + "item_root")
         val timestampTracker = SoulMessageTime.ContextTracker()
-        pendingStickerRects.clear()
+        val locatedMessages = mutableListOf<LocatedMessage>()
+        pendingStickers.clear()
 
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
@@ -123,9 +134,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
             val hasVoice = hasAnyVisibleViewId(item, VOICE_TARGET_IDS) ||
                 hasDescendantViewIdFragment(item, VOICE_ID_FRAGMENTS)
-            val hasImage = item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
-                item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
-                item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty()
+            val expressionContainer = item.findAccessibilityNodeInfosByViewId(prefix + "llExpression")
+                .firstOrNull { it.isVisibleToUser }
+            val expressionStickerNode = expressionContainer
+                ?.findAccessibilityNodeInfosByViewId(prefix + "image")
+                ?.firstOrNull { it.isVisibleToUser }
+            val hasImage = expressionStickerNode == null && (
+                item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
+                    item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
+                    item.findAccessibilityNodeInfosByViewId(prefix + "chat_image_url").isNotEmpty()
+                )
             val hasExchange = isExchangeItem(item)
             val lightInteractionNode = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
                 .firstOrNull { it.isVisibleToUser }
@@ -138,7 +156,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 !hasSnapPhoto &&
                 !hasExchange &&
                 momentCardContent == null
-            val stickerNode = lightInteractionNode ?: staticStickerNode?.takeIf { isBareStaticSticker }
+            val interactionKind = SoulInteractionKind.resolve(
+                hasLightInteraction = lightInteractionNode != null,
+                hasBareStaticSticker = staticStickerNode != null && isBareStaticSticker,
+                hasExpressionImage = expressionStickerNode != null
+            )
+            val stickerNode = when (interactionKind) {
+                SoulInteractionKind.LIGHT -> lightInteractionNode
+                SoulInteractionKind.STATIC -> staticStickerNode
+                SoulInteractionKind.EXPRESSION -> expressionStickerNode
+                else -> null
+            }
             val type = SoulMediaType.resolve(
                 hasVoice = hasVoice,
                 hasImage = hasImage,
@@ -152,31 +180,51 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
                 type == "voice" -> SoulVoiceContent.resolve(voiceTranscription, text)
                 text.isNotEmpty() -> text
-                stickerNode != null -> {
-                    val rect = Rect()
-                    stickerNode.getBoundsInScreen(rect)
-                    pendingStickerRects.add(rect)
-                    "[Soul互动表情]"
-                }
+                stickerNode != null -> "[Soul互动表情]"
                 type == "exchange" -> "[以图换图]"
                 type == "image" -> if (hasSnapPhoto) "[闪照]" else "[图片]"
                 else -> ""
             }
-            val finalType = if (stickerNode != null && text.isEmpty()) "sticker" else type
+            val finalType = if (stickerNode != null && text.isEmpty()) {
+                SoulInteractionMessage.TYPE
+            } else {
+                type
+            }
+            val stickerRect = stickerNode?.let {
+                Rect().also { rect -> it.getBoundsInScreen(rect) }
+            }
+            val itemBounds = Rect()
+            item.getBoundsInScreen(itemBounds)
             if (content.isNotEmpty()) {
-                messages.add(
-                    ChatMessage(
-                        sender = sender,
-                        content = content,
-                        type = finalType,
-                        timestampText = timestamp.text,
-                        timestampMillis = timestamp.epochMillis
+                locatedMessages.add(
+                    LocatedMessage(
+                        top = itemBounds.top,
+                        message = ChatMessage(
+                            sender = sender,
+                            content = content,
+                            type = finalType,
+                            timestampText = timestamp.text,
+                            timestampMillis = timestamp.epochMillis
+                        ),
+                        stickerRect = stickerRect
                     )
                 )
             }
         }
 
-        if (messages.isEmpty()) fallbackReadTextViews(root, messages, screenWidth)
+        locatedMessages.addAll(readSystemInteractionMessages(root))
+        val messages = mutableListOf<ChatMessage>()
+        if (locatedMessages.isEmpty()) {
+            fallbackReadTextViews(root, messages, screenWidth)
+            return messages
+        }
+
+        locatedMessages
+            .sortedBy { it.top }
+            .forEachIndexed { index, located ->
+                messages.add(located.message)
+                located.stickerRect?.let { pendingStickers.add(PendingSticker(index, it)) }
+            }
         return messages
     }
 
@@ -198,19 +246,20 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     suspend fun recognizePendingStickers(
         messages: List<ChatMessage>
     ): List<ChatMessage> {
-        if (pendingStickerRects.isEmpty()) return messages
-        val stickerIdx = messages.indices.filter { messages[it].type == "sticker" }
-        if (stickerIdx.isEmpty()) return messages
+        if (pendingStickers.isEmpty()) return messages
         val result = messages.toMutableList()
-        var rectIdx = 0
-        for (i in stickerIdx) {
-            if (rectIdx >= pendingStickerRects.size) break
-            val rect = pendingStickerRects[rectIdx++]
-            val name = StickerMatcher.match(service, rect)
-            if (name != null) {
-                val modelText = StickerMatcher.modelTextFor(name) ?: "[互动表情：$name]"
-                result[i] = result[i].copy(content = modelText, type = "text")
-            }
+        val validPending = pendingStickers.filter { pending ->
+            val index = pending.messageIndex
+            index in messages.indices && messages[index].type == SoulInteractionMessage.TYPE
+        }
+        val names = StickerMatcher.matchAll(service, validPending.map { it.rect })
+        validPending.forEachIndexed { index, pending ->
+            val name = names.getOrNull(index) ?: return@forEachIndexed
+            val modelText = StickerMatcher.modelTextFor(name) ?: "[互动表情：$name]"
+            result[pending.messageIndex] = result[pending.messageIndex].copy(
+                content = modelText,
+                type = "text"
+            )
         }
         return result
     }
@@ -1243,6 +1292,40 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             ?.trim()
     }
 
+    private fun readSystemInteractionMessages(root: AccessibilityNodeInfo): List<LocatedMessage> {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "text")
+            .asSequence()
+            .filter { it.isVisibleToUser && !isInsideMessageItem(it) }
+            .mapNotNull { node ->
+                val parsed = SoulInteractionMessage.parseSystemText(node.text?.toString().orEmpty())
+                    ?: return@mapNotNull null
+                val modelText = StickerMatcher.modelTextFor(parsed.displayName)
+                    ?: return@mapNotNull null
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.top <= 240 || rect.bottom >= 2140) return@mapNotNull null
+                LocatedMessage(
+                    top = rect.top,
+                    message = ChatMessage(
+                        sender = "other",
+                        content = modelText,
+                        type = "text"
+                    )
+                )
+            }
+            .distinctBy { it.top to it.message.content }
+            .toList()
+    }
+
+    private fun isInsideMessageItem(node: AccessibilityNodeInfo): Boolean {
+        return SoulNodeHierarchy.findIncludingSelf(
+            start = node,
+            parentOf = { it.parent },
+            viewIdOf = { it.viewIdResourceName },
+            targetViewId = prefix + "item_root"
+        ) != null
+    }
+
     companion object {
         private const val FULL_PATROL_AFTER_EMPTY_SCANS = 3
         private const val MAX_PATROL_SCROLLS = 3
@@ -1273,6 +1356,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "image",
             "image_content",
             "chat_image_url",
+            "llExpression",
+            "img_static",
+            "la_light_interaction",
             "item_snap_pic_receive_root",
             "voice_bubble",
             "iv_voice",
