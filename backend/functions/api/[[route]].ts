@@ -1,6 +1,3 @@
-const PLATFORM_STYLE_HINTS = {
-  soul: "偏文艺、走心", qq: "偏年轻、活泼", immomo: "直接、不绕弯", lianxin: "自然、日常",
-};
 const SUPPORTED_PLATFORMS = ["soul", "qq", "immomo", "lianxin"];
 
 function json(data, status) {
@@ -674,7 +671,6 @@ export const onRequest = async (context) => {
       return json({
         active_persona_id: persona?.id || "female",
         active_persona_name: persona?.name || "\u2606\u2622",
-        platform_style_hints: PLATFORM_STYLE_HINTS,
         location,
       });
     }
@@ -1180,7 +1176,6 @@ export const onRequest = async (context) => {
       const chinaTime = getChinaTimeContext(now2);
       const currentDatetime = chinaTime.currentDatetime;
       const weekday = chinaTime.weekday;
-      const platformStyle = PLATFORM_STYLE_HINTS[platform] || "自然、日常";
       const currentHour = parseInt((currentDatetime.split(" ")[1] || "12:00:00").split(":")[0], 10) || 12;
       const nowSec2 = Math.floor(Date.now() / 1000);
       const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
@@ -1193,7 +1188,7 @@ export const onRequest = async (context) => {
       const activityNow = currentActivityByHour(currentHour);
 
       let systemPrompt = personaPrompt +
-        "\n\n当前平台：" + platform + "，语气：" + platformStyle + "。" +
+        "\n\n当前平台：" + platform + "。" +
         "\n\n【现在】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" +
         "你住在" + (location?.home?.city || "重庆") + (location?.home?.district || "") + "，在" + (location?.work?.city || "重庆") + (location?.work?.district || "") + "上班，做旧手机回收。今天" + weather.condition + weather.temp + "度。" +
         (activity.activeDays >= 2 ? "\n这个对象最近7天有" + activity.activeDays + "天都主动找过你，如果隔了很久没回别装作天天在聊。" : "") +
@@ -1209,7 +1204,7 @@ export const onRequest = async (context) => {
       for (const msg of historyMessages) {
         const timeStr = formatChinaMessageTime(msg.created_at);
         const roleLabel = msg.role === "user" ? "\u5bf9\u65b9\u8bf4" : "\u4f60\u8bf4";
-        const platformLabel = PLATFORM_STYLE_HINTS[msg.platform] ? msg.platform : "未知平台";
+        const platformLabel = SUPPORTED_PLATFORMS.includes(msg.platform) ? msg.platform : "未知平台";
         llmMessages.push({ role: "user", content: "[" + platformLabel + " " + timeStr + "] " + roleLabel + "\uff1a" + msg.content });
       }
       for (const msg of messages) {

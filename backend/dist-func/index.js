@@ -2159,12 +2159,6 @@ var cors = /* @__PURE__ */ __name((options) => {
 
 // api/chat.ts
 var chatRouter = new Hono2();
-var PLATFORM_STYLE_HINTS = {
-  soul: "\u504F\u6587\u827A\u3001\u8D70\u5FC3",
-  qq: "\u504F\u5E74\u8F7B\u3001\u6D3B\u6CFC",
-  immomo: "\u76F4\u63A5\u3001\u4E0D\u7ED5\u5F2F",
-  lianxin: "\u81EA\u7136\u3001\u65E5\u5E38"
-};
 async function getWeather(city, kv, apiKey) {
   try {
     const cached = await kv.get("weather:cache", "json");
@@ -2349,10 +2343,9 @@ chatRouter.post("/", async (c) => {
     const currentDatetime = now.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const weekdays = ["\u5468\u65E5", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D"];
     const weekday = weekdays[now.getDay()];
-    const platformStyle = PLATFORM_STYLE_HINTS[platform] || "\u81EA\u7136\u3001\u65E5\u5E38";
     let systemPrompt = `${personaPrompt}
 
-\u5F53\u524D\u5E73\u53F0\uFF1A${platform}\uFF0C\u8BF7\u7528\u4EE5\u4E0B\u8BED\u6C14\uFF1A${platformStyle}
+\u5F53\u524D\u5E73\u53F0\uFF1A${platform}
 
 \u73B0\u5728\u662F ${currentDatetime}\uFF08${weekday}\uFF09\u3002
 \u4F60\u4F4F\u5728${location?.home?.city || "\u91CD\u5E86"}${location?.home?.district || ""}\uFF0C\u5728${location?.work?.city || "\u91CD\u5E86"}${location?.work?.district || ""}\u4E0A\u73ED\u3002
@@ -2604,12 +2597,6 @@ personaRouter.put("/", async (c) => {
 
 // api/config.ts
 var configRouter = new Hono2();
-var PLATFORM_STYLE_HINTS2 = {
-  soul: "\u504F\u6587\u827A\u3001\u8D70\u5FC3",
-  qq: "\u504F\u5E74\u8F7B\u3001\u6D3B\u6CFC",
-  immomo: "\u76F4\u63A5\u3001\u4E0D\u7ED5\u5F2F",
-  lianxin: "\u81EA\u7136\u3001\u65E5\u5E38"
-};
 configRouter.get("/", async (c) => {
   try {
     const authHeader = c.req.header("Authorization") || "";
@@ -2619,8 +2606,7 @@ configRouter.get("/", async (c) => {
     ).first();
     return c.json({
       active_persona_id: persona?.id || "male",
-      active_persona_name: persona?.name || "\u963F\u6770",
-      platform_style_hints: PLATFORM_STYLE_HINTS2
+      active_persona_name: persona?.name || "\u963F\u6770"
     }, 200);
   } catch (error) {
     console.error("Config error:", error);

@@ -275,6 +275,8 @@ describe("chat logic", () => {
     const payload = JSON.parse(String(init.body));
     expect(payload.max_tokens).toBe(160);
     expect(payload.messages[0].content).toContain("当前平台：soul");
+    expect(payload.messages[0].content).not.toContain("语气：");
+    expect(payload.messages[0].content).not.toContain("偏文艺");
     expect(payload.messages[0].content).toContain("你住在重庆两江新区");
     expect(payload.messages[0].content).toContain("在重庆两江新区上班");
     expect(payload.messages[0].content).toContain("你说\"是你之前发的话");
@@ -618,6 +620,33 @@ describe("chat logic", () => {
         work: { city: "上海", district: "浦东新区" },
       },
     });
+  });
+
+  it("does not return platform style restrictions in app config", async () => {
+    const response = await onRequest({
+      request: new Request("https://example.com/api/config", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
+      env: { DB: new MockD1(), KV: new MockKV() },
+    } as never);
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).not.toHaveProperty("platform_style_hints");
+  });
+
+  it("removes the voice and sticker repulsion rule from persona seed data", () => {
+    const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
+    const legacyMigration = readFileSync(new URL("../db/migrations/20260925_four_personas.sql", import.meta.url), "utf8");
+    const removalMigration = readFileSync(new URL("../db/migrations/20260926_remove_media_repulsion_rule.sql", import.meta.url), "utf8");
+    const builtFunctions = readFileSync(new URL("../dist-func/index.js", import.meta.url), "utf8");
+
+    expect(schema).not.toContain("对方发语音或表情后告知以后别发，你反感");
+    expect(legacyMigration).not.toContain("对方发语音或表情后告知以后别发，你反感");
+    expect(removalMigration).toContain("UPDATE personas");
+    expect(removalMigration).toContain("REPLACE(");
+    expect(builtFunctions).not.toContain("PLATFORM_STYLE_HINTS");
+    expect(builtFunctions).not.toContain("platform_style_hints");
   });
 
   it("rejects incomplete location updates", async () => {
