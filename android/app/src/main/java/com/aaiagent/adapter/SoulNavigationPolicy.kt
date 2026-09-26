@@ -22,3 +22,31 @@ object SoulNavigationPolicy {
         else -> SoulNavigationAction.WAIT
     }
 }
+
+object SoulConversationScanPolicy {
+    fun isMessageList(
+        conversationListVisible: Boolean,
+        searchVisible: Boolean,
+        visibleConversationCount: Int,
+        chatTabSelected: Boolean
+    ): Boolean {
+        if (!conversationListVisible) return false
+        if (searchVisible) return true
+        return visibleConversationCount > 0 && chatTabSelected
+    }
+
+    fun canUseUnreadBadge(
+        badgeVisible: Boolean,
+        itemVisible: Boolean,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        screenWidth: Int,
+        screenHeight: Int
+    ): Boolean {
+        if (!badgeVisible || !itemVisible) return false
+        if (right <= left || bottom <= top) return false
+        return right > 0 && bottom > 0 && left < screenWidth && top < screenHeight
+    }
+}

@@ -74,18 +74,28 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     override fun isInMessageList(root: AccessibilityNodeInfo): Boolean {
         if (root.packageName?.toString() != packageName) return false
-        if (root.findAccessibilityNodeInfosByViewId(prefix + "conversation_list").isNotEmpty()) return true
-        val chatTab = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg")
-        val tabSelected = chatTab.any { it.isSelected || it.isFocused }
-        val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
-        val hasConversationSearch =
-            root.findAccessibilityNodeInfosByViewId(prefix + "commonViewEtSearch").isNotEmpty()
-        return items.size >= 2 && (tabSelected || chatTab.isNotEmpty() || hasConversationSearch)
+        val conversationListVisible = root.findAccessibilityNodeInfosByViewId(prefix + "conversation_list")
+            .any(::isVisibleOnScreen)
+        if (!conversationListVisible) return false
+
+        val chatTabSelected = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg")
+            .any(::hasSelectedState)
+        val visibleConversationCount = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
+            .count(::isVisibleOnScreen)
+        val hasConversationSearch = root.findAccessibilityNodeInfosByViewId(prefix + "commonViewEtSearch")
+            .any(::isVisibleOnScreen)
+
+        return SoulConversationScanPolicy.isMessageList(
+            conversationListVisible = conversationListVisible,
+            searchVisible = hasConversationSearch,
+            visibleConversationCount = visibleConversationCount,
+            chatTabSelected = chatTabSelected
+        )
     }
 
     override fun listSnapshot(root: AccessibilityNodeInfo): ListSnapshot {
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
-            .filter { it.isVisibleToUser }
+            .filter(::isVisibleOnScreen)
         if (items.isEmpty()) return ListSnapshot()
         return ListSnapshot(
             itemCount = items.size,
@@ -936,7 +946,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         shouldClick: Boolean
     ): ConversationInfo? {
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
-            .filter { it.isVisibleToUser }
+            .filter(::isVisibleOnScreen)
         for (item in items) {
             val name = readChildText(item, "name") ?: continue
             if (!ConversationIdentity.matches(expectedName, name)) continue
@@ -991,6 +1001,23 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val item = findAncestorByViewId(badge, "item_content_root")
                 ?: badge.parent?.parent?.parent
                 ?: continue
+            val badgeBounds = Rect()
+            badge.getBoundsInScreen(badgeBounds)
+            val screenWidth = service.resources.displayMetrics.widthPixels
+            val screenHeight = service.resources.displayMetrics.heightPixels
+            if (!SoulConversationScanPolicy.canUseUnreadBadge(
+                    badgeVisible = isVisibleOnScreen(badge),
+                    itemVisible = isVisibleOnScreen(item),
+                    left = badgeBounds.left,
+                    top = badgeBounds.top,
+                    right = badgeBounds.right,
+                    bottom = badgeBounds.bottom,
+                    screenWidth = screenWidth,
+                    screenHeight = screenHeight
+                )
+            ) {
+                continue
+            }
             val name = readChildText(item, "name")
             val preview = readChildText(item, "message") ?: ""
             val contactName = name ?: preview.ifEmpty { "unknown" }
@@ -998,7 +1025,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             if (!contactFilter(contactName, contactName)) continue
 
             if (shouldClick) {
-                val target = item.takeIf { it.isClickable && it.isVisibleToUser } ?: item
+                val target = clickableNode(item) ?: continue
                 if (!tapNode(target)) {
                     return ConversationInfo(contactName, contactName, preview)
                 }
@@ -1039,7 +1066,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
         }
         val recycler = root.findAccessibilityNodeInfosByViewId(prefix + "recycler_view")
-            .firstOrNull { it.isScrollable && it.isVisibleToUser }
+            .firstOrNull { it.isScrollable && isVisibleOnScreen(it) }
         if (recycler != null) {
             GestureMonitor.onAutomationActionStarted()
             val result = recycler.performAction(action)
@@ -1051,7 +1078,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         queue.add(root)
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
-            if (node.isScrollable && node.isVisibleToUser) {
+            if (node.isScrollable && isVisibleOnScreen(node)) {
                 GestureMonitor.onAutomationActionStarted()
                 val result = node.performAction(action)
                 GestureMonitor.onAutomationActionFinished()
@@ -1182,10 +1209,35 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         var current: AccessibilityNodeInfo? = node
         repeat(4) {
             val candidate = current ?: return null
-            if (candidate.isClickable && candidate.isVisibleToUser) return candidate
+            if (candidate.isClickable && isVisibleOnScreen(candidate)) return candidate
             current = candidate.parent
         }
-        return node.takeIf { it.isVisibleToUser }
+        return node.takeIf(::isVisibleOnScreen)
+    }
+
+    private fun isVisibleOnScreen(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isVisibleToUser) return false
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return false
+        return Rect.intersects(
+            bounds,
+            Rect(
+                0,
+                0,
+                service.resources.displayMetrics.widthPixels,
+                service.resources.displayMetrics.heightPixels
+            )
+        )
+    }
+
+    private fun hasSelectedState(node: AccessibilityNodeInfo): Boolean {
+        if (node.isSelected || node.isFocused) return true
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            if (hasSelectedState(child)) return true
+        }
+        return false
     }
 
     override suspend fun bringToForeground(service: AccessibilityService) {
@@ -1235,7 +1287,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     private fun collectClickableNodes(node: AccessibilityNodeInfo, results: MutableList<AccessibilityNodeInfo>) {
-        if (node.isClickable && node.isVisibleToUser) results.add(node)
+        if (node.isClickable && isVisibleOnScreen(node)) results.add(node)
         for (index in 0 until node.childCount) {
             node.getChild(index)?.let { collectClickableNodes(it, results) }
         }

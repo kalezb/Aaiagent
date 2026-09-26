@@ -2,7 +2,10 @@ package com.aaiagent
 
 import com.aaiagent.adapter.SoulNavigationAction
 import com.aaiagent.adapter.SoulNavigationPolicy
+import com.aaiagent.adapter.SoulConversationScanPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SoulNavigationPolicyTest {
@@ -15,6 +18,82 @@ class SoulNavigationPolicyTest {
                 hasMessageTab = true,
                 hasSplashSkip = true,
                 isInChat = false
+            )
+        )
+    }
+
+    @Test
+    fun `hidden message list leftovers are not a message list`() {
+        assertFalse(
+            SoulConversationScanPolicy.isMessageList(
+                conversationListVisible = false,
+                searchVisible = false,
+                visibleConversationCount = 10,
+                chatTabSelected = false
+            )
+        )
+    }
+
+    @Test
+    fun `visible search confirms the message list`() {
+        assertTrue(
+            SoulConversationScanPolicy.isMessageList(
+                conversationListVisible = true,
+                searchVisible = true,
+                visibleConversationCount = 0,
+                chatTabSelected = false
+            )
+        )
+    }
+
+    @Test
+    fun `selected chat tab confirms the message list with visible rows`() {
+        assertTrue(
+            SoulConversationScanPolicy.isMessageList(
+                conversationListVisible = true,
+                searchVisible = false,
+                visibleConversationCount = 1,
+                chatTabSelected = true
+            )
+        )
+    }
+
+    @Test
+    fun `invisible or offscreen unread badge cannot be clicked`() {
+        assertFalse(
+            SoulConversationScanPolicy.canUseUnreadBadge(
+                badgeVisible = false,
+                itemVisible = true,
+                left = 900,
+                top = 500,
+                right = 950,
+                bottom = 550,
+                screenWidth = 1080,
+                screenHeight = 2400
+            )
+        )
+        assertFalse(
+            SoulConversationScanPolicy.canUseUnreadBadge(
+                badgeVisible = true,
+                itemVisible = true,
+                left = 1080,
+                top = 500,
+                right = 1130,
+                bottom = 550,
+                screenWidth = 1080,
+                screenHeight = 2400
+            )
+        )
+        assertTrue(
+            SoulConversationScanPolicy.canUseUnreadBadge(
+                badgeVisible = true,
+                itemVisible = true,
+                left = 984,
+                top = 494,
+                right = 1035,
+                bottom = 545,
+                screenWidth = 1080,
+                screenHeight = 2400
             )
         )
     }
