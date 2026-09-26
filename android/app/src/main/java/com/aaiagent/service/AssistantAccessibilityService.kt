@@ -6,7 +6,14 @@ import com.aaiagent.adapter.AdapterRegistry
 import com.aaiagent.data.db.AppDatabase
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.engine.EngineState
+import com.aaiagent.engine.HostingSessionPolicy
 import com.aaiagent.engine.MessageEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AssistantAccessibilityService : AccessibilityService() {
 
@@ -15,6 +22,8 @@ class AssistantAccessibilityService : AccessibilityService() {
     lateinit var repository: AppRepository
         private set
     private lateinit var adapterRegistry: AdapterRegistry
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var inheritedSession: HostingSessionPolicy.Session? = null
 
     var isEnabled = false
         private set
@@ -22,11 +31,18 @@ class AssistantAccessibilityService : AccessibilityService() {
     override fun onCreate() {
         android.util.Log.d("AIA", "AccessibilityService onCreate START")
         super.onCreate()
+
+        inheritedSession = sharedEngine?.takeIf { it.hostingEnabled }?.let {
+            HostingSessionPolicy.Session(it.currentPlatform, it.hostingMode)
+        } ?: HostingSessionPolicy.processSession()
+
+        sharedEngine?.shutdown()
         val db = AppDatabase.getInstance(this)
         repository = AppRepository(db)
         engine = MessageEngine(this, repository)
         adapterRegistry = AdapterRegistry(this)
         setSharedEngine(engine)
+
         android.util.Log.d("AIA", "AccessibilityService onCreate DONE")
     }
 
@@ -34,6 +50,53 @@ class AssistantAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         isEnabled = true
         android.util.Log.d("AIA", "AccessibilityService onServiceConnected DONE")
+        if (engine.hostingEnabled) return
+
+        inheritedSession?.let {
+            inheritedSession = null
+            startHostingSession(it, source = "service-recreated")
+            return
+        }
+
+        if (!HostingSessionPolicy.canRestoreFromPersistence()) {
+            android.util.Log.d("AIA", "hosting restore skipped because user stopped it in this process")
+            return
+        }
+
+        serviceScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                Quadruple(
+                    repository.getConfig(HostingSessionPolicy.ENABLED_KEY),
+                    repository.getActiveToken()?.token?.trim(),
+                    repository.getConfig(HostingSessionPolicy.PLATFORM_KEY),
+                    repository.getConfig(HostingSessionPolicy.MODE_KEY)
+                )
+            }
+            val session = HostingSessionPolicy.restoredSession(
+                enabledValue = saved.first,
+                token = saved.second,
+                platformValue = saved.third,
+                modeValue = saved.fourth
+            )
+            if (session == null) {
+                android.util.Log.d(
+                    "AIA",
+                    "hosting restore skipped enabled=${saved.first} hasToken=${!saved.second.isNullOrBlank()}"
+                )
+                return@launch
+            }
+            startHostingSession(session, source = "persisted-session")
+        }
+    }
+
+    private fun startHostingSession(session: HostingSessionPolicy.Session, source: String) {
+        HostingSessionPolicy.markStarted(session.platform, session.mode)
+        engine.hostingMode = session.mode
+        engine.startHosting(session.platform)
+        android.util.Log.d(
+            "AIA",
+            "hosting session restored source=$source platform=${session.platform} mode=${session.mode}"
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -85,6 +148,8 @@ class AssistantAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         engine.shutdown()
+        serviceScope.cancel()
+        clearSharedEngine(engine)
         super.onDestroy()
     }
 
@@ -95,5 +160,16 @@ class AssistantAccessibilityService : AccessibilityService() {
         fun setSharedEngine(engine: MessageEngine) {
             sharedEngine = engine
         }
+
+        fun clearSharedEngine(engine: MessageEngine) {
+            if (sharedEngine === engine) sharedEngine = null
+        }
     }
+
+    private data class Quadruple<A, B, C, D>(
+        val first: A,
+        val second: B,
+        val third: C,
+        val fourth: D
+    )
 }

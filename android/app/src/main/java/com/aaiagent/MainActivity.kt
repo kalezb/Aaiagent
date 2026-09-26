@@ -17,6 +17,7 @@ import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.data.repository.ContactListCodec
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.engine.HostingMode
+import com.aaiagent.engine.HostingSessionPolicy
 import com.aaiagent.network.ApiService
 import com.aaiagent.service.ForegroundService
 import com.aaiagent.ui.components.FloatingWindow
@@ -325,7 +326,6 @@ class MainActivity : ComponentActivity() {
 
     // ═══ 托管 ═══
     private fun toggleHosting(enable: Boolean) {
-        isHosting = enable; floatingWindow?.updateHostingState(enable)
         if (enable) {
             if (!tokenVerified) {
                 isHosting = false
@@ -334,37 +334,125 @@ class MainActivity : ComponentActivity() {
                 tokenVerifyStatus = "✗ 请先验证设备钥匙"
                 return
             }
-            startForegroundService(); val platform = enabledPlatforms.firstOrNull() ?: "soul"; platformsStatus[platform] = true
-            lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "true")) } catch (_: Exception) {} } }
+
             val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
-            if (engine != null) {
-                engine.hostingMode = hostingMode
-                engine.startHosting(platform)
-                // 启动状态轮询
-                statePollJob?.cancel()
-                statePollJob = lifecycleScope.launch {
-                    while (isHosting) {
-                        engineState = com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.currentState().toString()
-                        kotlinx.coroutines.delay(500)
-                    }
-                }
-            } else {
-                // 无障碍服务未启动，提示用户
+            if (engine == null) {
                 android.util.Log.e("AIA", "toggleHosting: sharedEngine is null! AccessibilityService not running.")
-                engineState = "无障碍服务未启动"
-                // 回滚状态
                 isHosting = false
                 floatingWindow?.updateHostingState(false)
                 platformsStatus.keys.forEach { platformsStatus[it] = false }
+                engineState = "无障碍服务未启动"
+                return
+            }
+
+            val platform = enabledPlatforms.firstOrNull() ?: "soul"
+            val mode = hostingMode
+            isHosting = true
+            floatingWindow?.updateHostingState(true)
+            platformsStatus[platform] = true
+            engineState = "启动中..."
+            HostingSessionPolicy.markStarted(platform, mode)
+            startForegroundService()
+
+            lifecycleScope.launch {
+                persistHostingSession(enabled = true, platform = platform, mode = mode)
+                val currentEngine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+                if (!isHosting || currentEngine == null) {
+                    HostingSessionPolicy.markStopped()
+                    return@launch
+                }
+                currentEngine.hostingMode = mode
+                currentEngine.startHosting(platform)
+                startHostingPolling(currentEngine)
+                if (token.isNotEmpty()) {
+                    try {
+                        ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "true"))
+                    } catch (_: Exception) {
+                    }
+                }
             }
         } else {
+            isHosting = false
+            floatingWindow?.updateHostingState(false)
+            HostingSessionPolicy.markStopped()
             com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.stopHosting()
-            platformsStatus.keys.forEach { platformsStatus[it] = false }; statePollJob?.cancel(); engineState = "IDLE"
-            lifecycleScope.launch { if (token.isNotEmpty()) { try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "false")) } catch (_: Exception) {} } }
+            platformsStatus.keys.forEach { platformsStatus[it] = false }
+            statePollJob?.cancel()
+            engineState = "IDLE"
+            lifecycleScope.launch {
+                persistHostingSession(
+                    enabled = false,
+                    platform = enabledPlatforms.firstOrNull() ?: "soul",
+                    mode = hostingMode
+                )
+                if (token.isNotEmpty()) {
+                    try {
+                        ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_hosting", "enabled" to "false"))
+                    } catch (_: Exception) {
+                    }
+                }
+            }
         }
     }
 
-    private fun startForegroundService() { val i = Intent(this, ForegroundService::class.java); if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i) else startService(i) }
+    private fun startForegroundService() {
+        val intent = Intent(this, ForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+    }
+
+    private fun startHostingPolling(engine: com.aaiagent.engine.MessageEngine) {
+        statePollJob?.cancel()
+        statePollJob = lifecycleScope.launch {
+            while (isHosting) {
+                engineState = engine.currentState().toString()
+                kotlinx.coroutines.delay(500)
+            }
+        }
+    }
+
+    private suspend fun persistHostingSession(
+        enabled: Boolean,
+        platform: String,
+        mode: HostingMode
+    ) = withContext(Dispatchers.IO) {
+        repository.setConfig(HostingSessionPolicy.ENABLED_KEY, enabled.toString())
+        repository.setConfig(HostingSessionPolicy.PLATFORM_KEY, platform)
+        repository.setConfig(HostingSessionPolicy.MODE_KEY, mode.name)
+    }
+
+    private fun resumeRequestedHosting() {
+        lifecycleScope.launch {
+            val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine ?: return@launch
+            if (engine.hostingEnabled) return@launch
+
+            val session = HostingSessionPolicy.processSession() ?: run {
+                if (!HostingSessionPolicy.canRestoreFromPersistence()) return@launch
+                val saved = withContext(Dispatchers.IO) {
+                    listOf(
+                        repository.getConfig(HostingSessionPolicy.ENABLED_KEY),
+                        repository.getActiveToken()?.token?.trim(),
+                        repository.getConfig(HostingSessionPolicy.PLATFORM_KEY),
+                        repository.getConfig(HostingSessionPolicy.MODE_KEY)
+                    )
+                }
+                HostingSessionPolicy.restoredSession(
+                    enabledValue = saved[0],
+                    token = saved[1],
+                    platformValue = saved[2],
+                    modeValue = saved[3]
+                )
+            } ?: return@launch
+
+            engine.hostingMode = session.mode
+            engine.startHosting(session.platform)
+            HostingSessionPolicy.markStarted(session.platform, session.mode)
+            isHosting = true
+            hostingMode = session.mode
+            platformsStatus[session.platform] = true
+            startHostingPolling(engine)
+        }
+    }
+
     private fun requestPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -380,6 +468,7 @@ class MainActivity : ComponentActivity() {
         } else {
             platformsStatus.keys.forEach { platformsStatus[it] = false }
         }
+        resumeRequestedHosting()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
         if (floatingWindow == null || floatingWindow?.isShowing() == false) { floatingWindow = FloatingWindow(this); floatingWindow?.show(hosting = isHosting, toggleListener = { toggleHosting(it) }, longClickListener = { startActivity(Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT }) }) }
     }
