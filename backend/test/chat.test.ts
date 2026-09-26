@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { onRequest } from "../functions/api/[[route]]";
+import { getMessageDelayPolicy, onRequest, sanitizeStaleAssistantReply } from "../functions/api/[[route]]";
 
 class MockD1 {
   constructor(
@@ -438,48 +438,131 @@ describe("chat logic", () => {
     expect(promptMessages.some((message) => String(message.content).includes("明天的安排呢"))).toBe(true);
   });
 
-  it("keeps real message time as context without applying a stale reply policy", async () => {
+  it("classifies message delay bands without spending extra model calls", () => {
+    const now = Math.floor(Date.parse("2026-09-25T00:59:00.000Z") / 1000);
+    const policyFor = (ageSeconds: number) => getMessageDelayPolicy({
+      role: "user",
+      content: "在吗",
+      created_at: now - ageSeconds,
+    }, now);
+
+    expect(policyFor(60).level).toBe("immediate");
+    expect(policyFor(10 * 60).level).toBe("short_wait");
+    expect(policyFor(60 * 60).level).toBe("acknowledge");
+    expect(policyFor(3 * 3600).level).toBe("explicit_delay");
+    expect(policyFor(10 * 3600).level).toBe("dayparted");
+    expect(policyFor(2 * 86400).level).toBe("past_1_3d");
+    expect(policyFor(5 * 86400).level).toBe("past_4_7d");
+    expect(policyFor(10 * 86400).level).toBe("past_7_30d");
+    expect(policyFor(40 * 86400).level).toBe("past_over_30d");
+    expect(policyFor(60).prompt).toBe("");
+  });
+
+  it("keeps expired invitations and stable business questions logically aligned", () => {
+    const now = Math.floor(Date.parse("2026-09-25T00:59:00.000Z") / 1000);
+    const oldInvite = getMessageDelayPolicy({
+      role: "user",
+      content: "明天有空吗",
+      created_at: now - 2 * 86400,
+    }, now);
+    expect(oldInvite.prompt).toContain("已经失效的邀约");
+    expect(sanitizeStaleAssistantReply("明天可以 我有空", oldInvite)).toBe("那会儿没看到 你现在还有事吗");
+
+    const oldBusiness = getMessageDelayPolicy({
+      role: "user",
+      content: "现在还收手机吗",
+      created_at: now - 3 * 86400,
+    }, now);
+    expect(oldBusiness.prompt).toContain("刚看到你前几天问的");
+    expect(sanitizeStaleAssistantReply("刚看到你前几天问的 还收的 你现在要处理吗", oldBusiness))
+      .toBe("刚看到你前几天问的 还收的 你现在要处理吗");
+  });
+
+  it("injects a compact time fact and removes an invalid late-night question", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-09-25T00:59:00.000Z"));
+    vi.setSystemTime(new Date("2026-09-24T21:14:00.000Z"));
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ choices: [{ message: { content: "刚忙完 隔了几天才看到 ||| 中秋快乐 吃月饼没" } }] }),
+        JSON.stringify({ choices: [{ message: { content: "谢谢 你眼光不错|||你怎么这个点还醒着" } }] }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const request = new Request("https://example.com/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
-      body: JSON.stringify({
-        platform: "soul",
-        contact_id: "桃子幺幺",
-        contact_name: "桃子幺幺",
-        messages: [{
-          role: "user",
-          content: "中秋来了",
-          timestamp: "9月22日 06:59",
-          created_at: Math.floor(Date.parse("2026-09-21T22:59:00.000Z") / 1000),
-        }],
-      }),
-    });
     const response = await onRequest({
-      request,
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "桃子幺幺",
+          contact_name: "桃子幺幺",
+          messages: [{
+            role: "user",
+            content: "你这高跟鞋真好看",
+            timestamp: "9月25日 02:21",
+            created_at: Math.floor(Date.parse("2026-09-24T18:21:00.000Z") / 1000),
+          }],
+        }),
+      }),
       env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
     } as never);
-    expect(await response.json()).toMatchObject({
-      action: "send",
-      reply: "刚忙完 隔了几天才看到|||中秋快乐 吃月饼没",
-    });
 
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "谢谢 你眼光不错",
+    });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
-    expect(payload.messages[0].content).not.toContain("不要假装刚刚看到");
-    expect(payload.messages[0].content).not.toContain("不提刚忙完");
-    expect(payload.messages.at(-1).content).toBe("[9月22日 06:59，距今约74小时] 对方说：中秋来了");
+    expect(payload.messages[0].content).toContain("【消息时效】");
+    expect(payload.messages[0].content).toContain("已隔 2 小时 53 分");
+    expect(payload.messages[0].content).toContain("禁止问“这个点还没睡”");
+    expect(payload.messages.at(-1).content).toContain("[9月25日 02:21] 对方说：你这高跟鞋真好看");
+  });
+
+  it("uses past mode for old greetings instead of pretending the message just arrived", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T21:14:00.000Z"));
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "刚忙完 刚看到你消息|||在的 前几天有点忙" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "桃子幺幺",
+          contact_name: "桃子幺幺",
+          messages: [{
+            role: "user",
+            content: "在吗",
+            timestamp: "9月21日 06:59",
+            created_at: Math.floor(Date.parse("2026-09-20T22:59:00.000Z") / 1000),
+          }],
+        }),
+      }),
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "在的 前几天有点忙",
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const prompt = JSON.parse(String(init.body)).messages[0].content;
+    expect(prompt).toContain("已进入过去模式");
+    expect(prompt).toContain("刚看到你前几天发的");
+    expect(prompt).toContain("已隔 3 天 22 小时");
   });
 
   it("does not infer staleness from unrelated database history", async () => {

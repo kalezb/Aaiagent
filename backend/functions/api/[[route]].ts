@@ -81,6 +81,206 @@ function requestMessageEpochSeconds(message) {
   return raw > 1_000_000_000_000 ? Math.floor(raw / 1000) : Math.floor(raw);
 }
 
+function formatChinaClock(epochSeconds) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: CHINA_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(epochSeconds * 1000));
+}
+
+function formatChineseDuration(seconds) {
+  const totalMinutes = Math.max(0, Math.floor(seconds / 60));
+  if (totalMinutes < 60) return totalMinutes + " 分钟";
+  const totalHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (totalHours < 24) return totalHours + " 小时" + (minutes ? " " + minutes + " 分" : "");
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return days + " 天" + (hours ? " " + hours + " 小时" : "");
+}
+
+function classifyIncomingMessage(value) {
+  const text = String(value || "");
+  if (/(?:还|现在)收(?:手机|旧手机)?|收手机|收旧手机|回收|上门|换机|旧手机|手机.*(?:卖|出)/u.test(text)) return "business";
+  if (/(?:(?:明天|今天|今晚|下午|晚上|周末|晚点).*(?:有空|见|约|来|吃饭)|有空吗|见个面)/u.test(text)) return "expired_invite";
+  if (/(?:晚安|睡了|睡不着)/u.test(text)) return "night";
+  if (/(?:在吗|在不在|你好|嗨|哈喽|早上好|中午好|下午好|晚上好|干嘛呢|干什么)|\b(?:hello|hi)\b/iu.test(text)) return "greeting";
+  if (/(?:心情|难受|不开心|烦|好累|孤独|想你)/u.test(text)) return "emotion";
+  return "normal";
+}
+
+export function getMessageDelayPolicy(message, nowSec = Math.floor(Date.now() / 1000)) {
+  const epoch = requestMessageEpochSeconds(message);
+  const messageType = classifyIncomingMessage(message?.content);
+  if (!epoch) return {
+    hasTimestamp: false,
+    ageSeconds: null,
+    level: "unknown",
+    messageType,
+    pastMode: false,
+    prompt: "对方消息没有可靠发送时间。不要默认说刚刚、刚看到、这个点或刚忙完，只根据消息内容回复。",
+  };
+
+  const ageSeconds = Math.max(0, nowSec - epoch);
+  let level = "immediate";
+  if (ageSeconds > 5 * 60 && ageSeconds <= 30 * 60) level = "short_wait";
+  else if (ageSeconds > 30 * 60 && ageSeconds <= 2 * 3600) level = "acknowledge";
+  else if (ageSeconds > 2 * 3600 && ageSeconds <= 6 * 3600) level = "explicit_delay";
+  else if (ageSeconds > 6 * 3600 && ageSeconds <= 24 * 3600) level = "dayparted";
+  else if (ageSeconds > 24 * 3600 && ageSeconds <= 3 * 86400) level = "past_1_3d";
+  else if (ageSeconds > 3 * 86400 && ageSeconds <= 7 * 86400) level = "past_4_7d";
+  else if (ageSeconds > 7 * 86400 && ageSeconds <= 30 * 86400) level = "past_7_30d";
+  else if (ageSeconds > 30 * 86400) level = "past_over_30d";
+
+  const timing = "对方发：" + formatChinaClock(epoch) + "，现在：" + formatChinaClock(nowSec) + "，已隔 " + formatChineseDuration(ageSeconds) + "。";
+  const pastMode = ageSeconds > 24 * 3600;
+  if (level === "immediate") return { hasTimestamp: true, ageSeconds, level, messageType, pastMode, prompt: "" };
+  if (level === "short_wait") return {
+    hasTimestamp: true,
+    ageSeconds,
+    level,
+    messageType,
+    pastMode,
+    prompt: timing + "自然接话，不强调等待。",
+  };
+  if (level === "acknowledge") return {
+    hasTimestamp: true,
+    ageSeconds,
+    level,
+    messageType,
+    pastMode,
+    prompt: timing + "必要时可以自然说刚看到，不要解释具体忙什么。",
+  };
+  if (level === "explicit_delay") return {
+    hasTimestamp: true,
+    ageSeconds,
+    level,
+    messageType,
+    pastMode,
+    prompt: timing + "必须承认已经隔了一段时间，禁止问“这个点还没睡”或暗示消息刚收到。",
+  };
+  if (level === "dayparted") return {
+    hasTimestamp: true,
+    ageSeconds,
+    level,
+    messageType,
+    pastMode,
+    prompt: timing + "说明时可以说刚看到你早上、下午或昨晚发的，不要虚构刚忙完。",
+  };
+
+  let typeRule = "这是旧消息，只回应原话中现在仍成立的内容，不逐条补答，也不编造这几天在做什么。";
+  if (messageType === "business") {
+    typeRule = "这是仍可能有效的回收问题，可以简短回答；先承认看过旧消息，例如“刚看到你前几天问的”，再回答当前是否还能处理。";
+  } else if (messageType === "expired_invite") {
+    typeRule = "这是已经失效的邀约，不能回答明天可以、有空、到时候或好啊；改成“那会儿没看到 你现在还有事吗”。";
+  } else if (messageType === "night") {
+    typeRule = "不要隔几天补一句晚安、早点睡或追问当时状态，只简短回应对方现在是否还好。";
+  } else if (messageType === "emotion") {
+    typeRule = "不要假装当时就在陪聊，只简短问问对方现在是否还好。";
+  } else if (messageType === "greeting") {
+    typeRule = "可以简短回“在的 刚看到你前几天发的”，不要装作刚刚收到。";
+  }
+  if (level === "past_4_7d") typeRule = "只说隔了几天才看到，不编造这几天做了什么。" + typeRule;
+  if (level === "past_7_30d" || level === "past_over_30d") typeRule = "消息已经过去较久，谨慎回复，不追问已经失效的话题。" + typeRule;
+  if (level === "past_over_30d" && messageType !== "business" && messageType !== "normal") typeRule = "这更像一条已经失效的旧消息，优先跳过式处理，只做最简单的回应。" + typeRule;
+  return {
+    hasTimestamp: true,
+    ageSeconds,
+    level,
+    messageType,
+    pastMode,
+    prompt: timing + "已进入过去模式。" + typeRule,
+  };
+}
+
+function resolveIncomingDelayPolicy(messages, historyMessages, nowSec) {
+  let incomingIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") {
+      incomingIndex = index;
+      break;
+    }
+  }
+  if (incomingIndex < 0) return null;
+  const incoming = messages[incomingIndex];
+  const direct = getMessageDelayPolicy(incoming, nowSec);
+  if (direct.hasTimestamp) return { ...direct, inferredTimestamp: false };
+
+  let visibleTime = 0;
+  for (let index = incomingIndex - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role !== "user") continue;
+    visibleTime = requestMessageEpochSeconds(messages[index]);
+    if (visibleTime) break;
+  }
+  if (!visibleTime) {
+    for (let index = historyMessages.length - 1; index >= 0; index -= 1) {
+      if (historyMessages[index]?.role !== "user") continue;
+      visibleTime = requestMessageEpochSeconds(historyMessages[index]);
+      if (visibleTime) break;
+    }
+  }
+  if (!visibleTime) return { ...direct, inferredTimestamp: false };
+  const inferred = getMessageDelayPolicy({ ...incoming, created_at: visibleTime }, nowSec);
+  return {
+    ...inferred,
+    inferredTimestamp: true,
+    prompt: "当前消息没有显示时间，按最近可见的对方发送时间判断。" + inferred.prompt,
+  };
+}
+
+function staleReplyFallback(policy) {
+  if (!policy?.hasTimestamp) return "";
+  if (policy.pastMode) {
+    if (policy.messageType === "business") return "刚看到你前几天问的 还收的 你现在要处理吗";
+    if (policy.messageType === "expired_invite") return "那会儿没看到 你现在还有事吗";
+    if (policy.messageType === "night" || policy.messageType === "emotion") return "刚看到你前几天发的 最近还好吧";
+    return "刚看到你前几天发的";
+  }
+  return "在的 刚看到";
+}
+
+function cleanStaleReplySegment(value, policy) {
+  let reply = String(value || "").trim();
+  if (!reply || !policy?.hasTimestamp) return reply;
+  if (policy.pastMode && policy.messageType === "expired_invite" && /(?:明天|今天|晚点|周末|到时候|我有空|可以|好啊)/u.test(reply)) {
+    return staleReplyFallback(policy);
+  }
+  if (policy.pastMode && (policy.messageType === "night" || policy.messageType === "emotion") && /^(?:晚安|早点休息|睡吧|我睡了)[啊呀吧。！!]*$/u.test(reply)) {
+    return staleReplyFallback(policy);
+  }
+  if (Number(policy.ageSeconds || 0) >= 2 * 3600) {
+    reply = reply
+      .replace(/(?:你|你这边)?(?:怎么|还|这么晚)?这个点(?:还)?(?:没睡|不睡|醒着)(?:吗)?/gu, "")
+      .replace(/(?:大)?半夜(?:还)?(?:不睡|没睡|醒着)(?:吗)?/gu, "")
+      .replace(/这么晚(?:还)?(?:没睡|不睡|醒着)(?:吗)?/gu, "");
+  }
+  if (policy.pastMode) {
+    reply = reply
+      .replace(/(?:我)?刚忙完/gu, "")
+      .replace(/(?:我)?刚到家/gu, "")
+      .replace(/(?:我)?刚看到(?:你)?(?:的)?消息/gu, "")
+      .replace(/(?:我)?刚刚看到/gu, "")
+      .replace(/(?:你)?现在还在外面吗/gu, "")
+      .replace(/(?:我)?这几天(?:一直)?在忙/gu, "");
+  }
+  return reply
+    .replace(/^[，,。！？!?\s]+|[，,。！？!?\s]+$/gu, "")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+}
+
+export function sanitizeStaleAssistantReply(value, policy) {
+  const original = String(value || "").trim();
+  if (!original || !policy?.hasTimestamp || policy.level === "immediate") return original;
+  const segments = original
+    .split("|||")
+    .map((segment) => cleanStaleReplySegment(segment, policy))
+    .filter((segment) => segment.length > 0);
+  return segments.length ? segments.join("|||") : staleReplyFallback(policy);
+}
+
 function formatCurrentChatMessage(message, nowSec = Math.floor(Date.now() / 1000)) {
   const epoch = requestMessageEpochSeconds(message);
   const speaker = message?.role === "assistant" ? "你说" : "对方说";
@@ -1247,6 +1447,7 @@ export const onRequest = async (context) => {
           : "你们聊过几次了，可以自然一点，延续之前的话题。";
       const activityNow = currentActivityByHour(currentHour);
       const profileContext = customerProfilePrompt(customerProfile.profile);
+      const messageDelay = resolveIncomingDelayPolicy(messages, historyMessages, nowSec2);
 
       let systemPrompt = personaPrompt +
         "\n\n当前平台：" + platform + "。" +
@@ -1264,6 +1465,7 @@ export const onRequest = async (context) => {
         "\n不主动暧昧、不主动提见面，对方撩你就自然带过别接茬。" +
         "\n被质疑AI就打哈哈带过，别和前面说过的话矛盾。" +
         "\n同一客户绑定多平台账号的，都视为同一个人，记忆必须连续。";
+      if (messageDelay?.prompt) systemPrompt += "\n\n【消息时效】" + messageDelay.prompt;
 
       const llmMessages = [{ role: "system", content: systemPrompt }];
       if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
@@ -1288,7 +1490,8 @@ export const onRequest = async (context) => {
       if (!resp.ok) return json({ error: "LLM \u8c03\u7528\u5931\u8d25" }, 502);
       const data = await resp.json();
       const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
-      const reply = sanitizeAssistantReply(rawReply) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
+      const cleanedReply = sanitizeAssistantReply(rawReply);
+      const reply = sanitizeStaleAssistantReply(cleanedReply, messageDelay) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const nowSec = Math.floor(Date.now() / 1000);
 
       // User messages arrive through the idempotent sync outbox. Only write the generated AI
