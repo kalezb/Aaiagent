@@ -55,4 +55,19 @@ class LocalMediaReplyPolicyTest {
 
         assertNull(LocalMediaReplyPolicy.replyFor(batch))
     }
+
+    @Test
+    fun `older voice emoji followed by text stays on the model path`() {
+        val batch = requireNotNull(
+            IncomingMessageBatch.select(
+                listOf(
+                    ChatMessage("other", "[语音互动表情]", SoulMediaType.VOICE_EMOJI),
+                    ChatMessage("other", "你明天几点起来", "text")
+                )
+            )
+        )
+
+        assertEquals("你明天几点起来", batch.latestIncoming.content)
+        assertNull(LocalMediaReplyPolicy.replyFor(batch))
+    }
 }
