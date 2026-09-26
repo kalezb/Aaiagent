@@ -438,10 +438,10 @@ class MessageEngine(
                 "incoming batch size=${incomingBatch.incoming.size} media=${incomingBatch.mediaTarget?.type ?: "text"} latest=${latestIncoming.content}"
             )
             RuntimeJournal.readMessages(messages.size, latestIncoming.content)
-            val visibleFingerprint = eventFingerprint(context, messages)
+            val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
             if (IncomingConversationTracker.isAlreadyHandled(
                 handledFingerprint = context.lastRepliedIncomingFingerprint,
-                currentFingerprint = visibleFingerprint
+                currentFingerprint = incomingBatchFingerprint
             )) {
                 android.util.Log.d("AIA", "conversation already handled, skip duplicate reply")
                 returnToMessageList(adapter, leaseToken, "duplicate batch")
@@ -452,12 +452,19 @@ class MessageEngine(
             }
             if (hostingMode == HostingMode.MONITOR_ONLY) {
                 synchronized(context) {
-                    context.lastRepliedIncomingFingerprint = visibleFingerprint
+                    context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
                 }
                 returnToMessageList(adapter, leaseToken, "monitor batch recorded")
                 return
             }
-            val reply = run {
+            val localMediaReply = LocalMediaReplyPolicy.replyFor(incomingBatch)
+            if (localMediaReply != null) {
+                android.util.Log.d(
+                    "AIA",
+                    "local media reply type=${incomingBatch.mediaTarget?.type ?: "voice"}"
+                )
+            }
+            val reply = localMediaReply ?: run {
                 val token = withContext(Dispatchers.IO) {
                     repository.getActiveToken()?.token?.trim()
                 }.orEmpty()
@@ -476,7 +483,8 @@ class MessageEngine(
                     api = api,
                     token = token,
                     leaseToken = leaseToken,
-                    interactionEpoch = interactionEpoch
+                    interactionEpoch = interactionEpoch,
+                    expectedContactName = context.contactName
                 )
                 messages = understanding.messages
 
@@ -498,7 +506,7 @@ class MessageEngine(
                     val sentAny = sendReply(adapter, context, reply, leaseToken, interactionEpoch)
                     if (sentAny) {
                         synchronized(context) {
-                            context.lastRepliedIncomingFingerprint = visibleFingerprint
+                            context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
                         }
                         if (HostingCompletionPolicy.shouldReturnToMessageList(
                                 mode = hostingMode,
@@ -515,7 +523,7 @@ class MessageEngine(
                     if (adapter is SoulAdapter) {
                         if (adapter.fillInputOnly(reply, context.contactName)) {
                             synchronized(context) {
-                                context.lastRepliedIncomingFingerprint = visibleFingerprint
+                                context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
                             }
                         }
                     }
@@ -566,10 +574,11 @@ class MessageEngine(
         api: ApiService,
         token: String,
         leaseToken: String,
-        interactionEpoch: Long
+        interactionEpoch: Long,
+        expectedContactName: String
     ): MediaUnderstanding {
         val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages)
-        if (mediaTarget.type == "text" || mediaTarget.type == "unknown") {
+        if (mediaTarget.type == "text" || mediaTarget.type == "unknown" || mediaTarget.type == "voice_emoji") {
             return MediaUnderstanding(messages)
         }
 
@@ -588,7 +597,7 @@ class MessageEngine(
             }
         }
 
-        val prompt = "识别这张聊天截图中对方消息的可见内容，只描述能够确认的信息。"
+        val prompt = ImageUnderstandingPolicy.VISION_PROMPT
         val preparation = adapter.prepareVisualCapture(root, mediaTarget.type)
         if (preparation == null) {
             RuntimeJournal.recovery("隐私图片展开失败 type=${mediaTarget.type}")
@@ -607,6 +616,16 @@ class MessageEngine(
             )
         } finally {
             adapter.finishVisualCapture(preparedRoot)
+        }
+        if (restoreAfterVisualCapture(
+                svc = svc,
+                adapter = adapter,
+                expectedContactName = expectedContactName,
+                leaseToken = leaseToken,
+                interactionEpoch = interactionEpoch
+            ) == null
+        ) {
+            return MediaUnderstanding(messages)
         }
         if (imageBase64.isNullOrEmpty()) {
             if (PrivacyPhotoPolicy.shouldUseModelContext(
@@ -632,15 +651,42 @@ class MessageEngine(
             "vision result type=${mediaTarget.type} length=${vision.description.length}"
         )
 
-        val label = when (mediaTarget.type) {
-            "exchange" -> "对方发来了以图换图照片，视觉识别："
-            "image" -> "对方发送了图片，视觉识别："
-            "sticker" -> "对方发送了表情，视觉识别："
-            "interaction" -> "对方发起了拍一拍或戳一戳互动，视觉识别："
-            "voice" -> "对方发送了语音，截图辅助识别："
-            else -> "对方发送了媒体消息，识别结果："
+        return MediaUnderstanding(
+            replaceLatest(
+                messages,
+                mediaTarget,
+                ImageUnderstandingPolicy.modelFacts(mediaTarget.type, vision.description)
+            )
+        )
+    }
+
+    private suspend fun restoreAfterVisualCapture(
+        svc: AccessibilityService,
+        adapter: PlatformAdapter,
+        expectedContactName: String,
+        leaseToken: String,
+        interactionEpoch: Long
+    ): AccessibilityNodeInfo? {
+        repeat(VISUAL_RETURN_RETRIES) { attempt ->
+            if (!canContinue(leaseToken, interactionEpoch)) return null
+            val root = svc.rootInActiveWindow
+            if (root?.packageName?.toString() == adapter.packageName && adapter.isInChat(root)) {
+                if (ConversationIdentity.matches(expectedContactName, adapter.readChatTitle(root))) {
+                    android.util.Log.d("AIA", "visual capture returned to verified chat")
+                    return root
+                }
+            }
+            if (attempt < VISUAL_RETURN_RETRIES - 1) {
+                if (root?.packageName?.toString() == adapter.packageName) {
+                    svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                } else {
+                    adapter.bringToForeground(svc)
+                }
+                delay(650)
+            }
         }
-        return MediaUnderstanding(replaceLatest(messages, mediaTarget, label + vision.description.trim()))
+        RuntimeJournal.recovery("媒体处理后未回到联系人聊天页: $expectedContactName")
+        return null
     }
 
     private fun replaceLatest(
@@ -760,14 +806,15 @@ class MessageEngine(
         leaseToken: String,
         interactionEpoch: Long
     ): Boolean {
-        val outgoing = reply.trim()
+        val outgoing = AssistantReplySanitizer.clean(reply)
         if (outgoing.isEmpty()) return false
 
         // 代码层做"真人打字感"：按行拆成短段，去掉句末句号/逗号/～，逐段发，段间随机等几秒。
-        val segments = outgoing.split("\n")
+        val segments = outgoing.split(Regex("\\r?\\n|\\|\\|\\|"))
             .map { it.trim().trimEnd('。', '，', ',', '.', '~', '～').trim() }
             .filter { it.isNotEmpty() && it.length <= 60 }
         val parts = if (segments.isNotEmpty()) segments else listOf(outgoing.trimEnd('。', '，', '~', '～'))
+        android.util.Log.d("AIA", "outgoing reply sanitized segments=${parts.size} length=${outgoing.length}")
 
         var sentAny = false
         for ((index, part) in parts.withIndex()) {
@@ -974,16 +1021,6 @@ class MessageEngine(
         return IncomingMessageTracker.fingerprint(content)
     }
 
-    private fun eventFingerprint(
-        context: ConversationContext,
-        messages: List<PlatformAdapter.ChatMessage>
-    ): String {
-        return Deduplicator.fingerprint(
-            platform = context.platform,
-            contactId = context.contactId,
-            content = IncomingMessageBatch.visibleFingerprint(messages)
-        )
-    }
 
     private suspend fun returnToMessageList(
         adapter: PlatformAdapter,
@@ -1044,6 +1081,7 @@ class MessageEngine(
         const val SYNC_FLUSH_INTERVAL_MS = 10_000L
         const val MAX_CHAT_WAIT_RETRIES = 5
         const val READ_MESSAGE_RETRIES = 4
+        const val VISUAL_RETURN_RETRIES = 4
         const val MAX_LLM_RETRIES = 3
     }
 }

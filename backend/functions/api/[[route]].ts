@@ -93,12 +93,21 @@ function formatCurrentChatMessage(message, nowSec = Math.floor(Date.now() / 1000
 }
 
 function sanitizeAssistantReply(value) {
-  let reply = String(value || "").trim();
-  const contextPrefix = /^\[[^\]\r\n]{1,100}\]\s*(?:你说|对方说|我说)\s*[：:]\s*/u;
-  const speakerPrefix = /^(?:你说|对方说|我说)\s*[：:]\s*/u;
-  const timestampPrefix = /^\[(?:(?:今天|昨天|前天)\s*)?\d{1,2}:\d{2}(?::\d{2})?(?:\s*，距今约\d+小时)?\]\s*/u;
+  return String(value || "")
+    .split(/(\r?\n|\|\|\|)/u)
+    .map((part) => part === "\n" || part === "\r\n" || part === "|||" ? part : sanitizeAssistantReplySegment(part))
+    .filter((part) => part.length > 0)
+    .join("");
+}
 
-  // Keep this limited to the start of the reply so normal text mentioning these words is untouched.
+function sanitizeAssistantReplySegment(value) {
+  let reply = String(value || "").trim();
+  const contextPrefix = /^\[[^\]\r\n]{1,100}\]\s*(?:你说|对方说|我说|对方|我)\s*[：:]\s*/u;
+  const speakerPrefix = /^(?:你说|对方说|我说|对方|我)\s*[：:]\s*/u;
+  // The bracket only needs a clock-like token to be treated as leaked context.
+  const timestampPrefix = /^\[[^\]\r\n]{0,100}(?::\d{2}|距今约\d+小时)[^\]\r\n]{0,100}\]\s*/u;
+
+  // Only strip labels at a segment start. Normal phrases such as “你说呢” stay intact.
   while (reply) {
     const before = reply;
     reply = reply
@@ -108,7 +117,7 @@ function sanitizeAssistantReply(value) {
       .trimStart();
     if (reply === before) break;
   }
-  return reply;
+  return reply.trim();
 }
 
 // 根据当前小时给出"我此刻在干嘛"，让回复场景跟时间对得上（凌晨不说在跑客户）

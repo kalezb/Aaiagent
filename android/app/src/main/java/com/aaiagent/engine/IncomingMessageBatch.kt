@@ -46,6 +46,7 @@ object IncomingMessageBatch {
     )
 
     private val MEDIA_PRIORITY = mapOf(
+        "voice_emoji" to 6,
         "exchange" to 5,
         "image" to 4,
         "voice" to 3,

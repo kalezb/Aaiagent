@@ -84,6 +84,7 @@ class IncomingMessageBatchTest {
         assertEquals(IncomingMessageBatch.fingerprint(newBatch), IncomingMessageBatch.fingerprint(fullBatch))
     }
 
+
     @Test
     fun `visible fingerprint distinguishes a repeated interaction after our reply`() {
         val firstPoke = ChatMessage("other", "[拍一拍]", "interaction")

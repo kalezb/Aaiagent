@@ -12,6 +12,14 @@ class SoulMediaTypeTest {
     }
 
     @Test
+    fun `voice emoji has priority over ordinary voice markers`() {
+        assertEquals(
+            "voice_emoji",
+            resolve(hasVoiceEmoji = true, hasVoice = true, hasText = true)
+        )
+    }
+
+    @Test
     fun `snap photo is treated as image instead of being skipped`() {
         assertEquals("image", resolve(hasSnapPhoto = true, hasText = true))
     }
@@ -55,6 +63,7 @@ class SoulMediaTypeTest {
     }
 
     private fun resolve(
+        hasVoiceEmoji: Boolean = false,
         hasVoice: Boolean = false,
         hasImage: Boolean = false,
         hasSnapPhoto: Boolean = false,
@@ -63,6 +72,7 @@ class SoulMediaTypeTest {
         hasMomentCard: Boolean = false
     ): String {
         return SoulMediaType.resolve(
+            hasVoiceEmoji = hasVoiceEmoji,
             hasVoice = hasVoice,
             hasImage = hasImage,
             hasSnapPhoto = hasSnapPhoto,

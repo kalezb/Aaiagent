@@ -318,7 +318,7 @@ describe("chat logic", () => {
     } as never);
     expect(await response.json()).toMatchObject({
       action: "send",
-      reply: "刚忙完 隔了几天才看到 ||| 中秋快乐 吃月饼没",
+      reply: "刚忙完 隔了几天才看到|||中秋快乐 吃月饼没",
     });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -396,6 +396,38 @@ describe("chat logic", () => {
     });
   });
 
+  it("removes leaked prefixes from later reply lines and pipe segments", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "给谁 你对象啊|||你说：我眯了啊 明天还一堆单子|||[09/25 03:40] 明天还得跑单子" } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const request = new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        platform: "soul",
+        contact_id: "contact-3",
+        contact_name: "contact-3",
+        messages: [{ role: "user", content: "在吗" }],
+      }),
+    });
+    const response = await onRequest({
+      request,
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "给谁 你对象啊|||我眯了啊 明天还一堆单子|||明天还得跑单子",
+    });
+  });
+
   it("does not remove speaker words that are part of normal reply text", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "\u91cd\u5e86", condition: "\u6674", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
@@ -456,7 +488,7 @@ describe("chat logic", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      reply: "谢谢 你眼光不错 ||| 你怎么这个点还醒着",
+      reply: "谢谢 你眼光不错|||你怎么这个点还醒着",
     });
   });
 });
@@ -498,7 +530,7 @@ describe("chat logic", () => {
     expect(prompt).not.toContain("有正常作息和情绪");
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      reply: "睡了 被你消息吵醒了 ||| 这么晚还没睡",
+      reply: "睡了 被你消息吵醒了|||这么晚还没睡",
     });
   });
 

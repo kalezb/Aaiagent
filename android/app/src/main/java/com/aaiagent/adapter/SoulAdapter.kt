@@ -134,6 +134,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
             val hasVoice = hasAnyVisibleViewId(item, VOICE_TARGET_IDS) ||
                 hasDescendantViewIdFragment(item, VOICE_ID_FRAGMENTS)
+            val hasVoiceEmoji = SoulVoiceMediaKind.isVoiceEmoji(
+                hasEmojiIcon = hasAnyVisibleViewId(item, VOICE_EMOJI_ICON_IDS),
+                hasVoicePlay = hasAnyVisibleViewId(item, VOICE_EMOJI_PLAY_IDS),
+                hasPlayStart = hasAnyVisibleViewId(item, VOICE_EMOJI_START_IDS),
+                hasNormalVoiceBubble = hasAnyVisibleViewId(item, REGULAR_VOICE_IDS)
+            )
             val expressionContainer = item.findAccessibilityNodeInfosByViewId(prefix + "llExpression")
                 .firstOrNull { it.isVisibleToUser }
             val expressionStickerNode = expressionContainer
@@ -152,6 +158,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val isBareStaticSticker = text.isEmpty() &&
                 voiceTranscription.isEmpty() &&
                 !hasVoice &&
+                !hasVoiceEmoji &&
                 !hasImage &&
                 !hasSnapPhoto &&
                 !hasExchange &&
@@ -168,6 +175,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 else -> null
             }
             val type = SoulMediaType.resolve(
+                hasVoiceEmoji = hasVoiceEmoji,
                 hasVoice = hasVoice,
                 hasImage = hasImage,
                 hasSnapPhoto = hasSnapPhoto,
@@ -178,7 +186,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
             val content = when {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
-                type == "voice" -> SoulVoiceContent.resolve(voiceTranscription, text)
+                type == SoulMediaType.VOICE_EMOJI -> "[语音互动表情]"
+                type == SoulMediaType.VOICE -> SoulVoiceContent.resolve(voiceTranscription, text)
                 text.isNotEmpty() -> text
                 stickerNode != null -> "[Soul互动表情]"
                 type == "exchange" -> "[以图换图]"
@@ -601,6 +610,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return when (targetType) {
             "image" -> IMAGE_TARGET_IDS
             "voice" -> VOICE_TARGET_IDS
+            "voice_emoji" -> emptyList()
             else -> VISUAL_TARGET_IDS
         }
     }
@@ -865,11 +875,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val expected = compact(text)
             val matched = visibleMessages.takeLast(8).any { compact(it.content) == expected }
             val inputCleared = isInChat(root) && currentInputText().isNullOrBlank()
+            val selfAdvanced = selfMessages.size > beforeSelfCount
             android.util.Log.d(
                 "AIA",
-                "send verify attempt=${attempt + 1} matched=$matched inputCleared=$inputCleared self=${selfMessages.size}/$beforeSelfCount last=${visibleMessages.lastOrNull()?.content}"
+                "send verify attempt=${attempt + 1} matched=$matched selfAdvanced=$selfAdvanced inputCleared=$inputCleared self=${selfMessages.size}/$beforeSelfCount last=${visibleMessages.lastOrNull()?.content}"
             )
-            if (matched || inputCleared) return SendResult.SUCCESS
+            if (matched || selfAdvanced || inputCleared) return SendResult.SUCCESS
         }
         return SendResult.NOT_VERIFIED
     }
@@ -1351,6 +1362,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "audioContent",
             "audioContentLayout"
         )
+        private val VOICE_EMOJI_ICON_IDS = listOf("iv_emoji")
+        private val VOICE_EMOJI_PLAY_IDS = listOf("layout_voice_play")
+        private val VOICE_EMOJI_START_IDS = listOf("iv_start")
+        private val REGULAR_VOICE_IDS = listOf("voice_bubble")
         private val VOICE_ID_FRAGMENTS = listOf("voice", "audiocontent")
         private val VISUAL_TARGET_IDS = listOf(
             "image",
