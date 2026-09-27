@@ -144,6 +144,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val expressionStickerNode = expressionContainer
                 ?.findAccessibilityNodeInfosByViewId(prefix + "image")
                 ?.firstOrNull { it.isVisibleToUser }
+            // llExpression is Soul's ordinary sticker card, not one of the 14
+            // light-interaction templates. Keep it on the local fixed-reply path.
             val hasImage = expressionStickerNode == null && (
                 item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
                     item.findAccessibilityNodeInfosByViewId(prefix + "image_content").isNotEmpty() ||
@@ -164,13 +166,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 momentCardContent == null
             val interactionKind = SoulInteractionKind.resolve(
                 hasLightInteraction = lightInteractionNode != null,
-                hasBareStaticSticker = staticStickerNode != null && isBareStaticSticker,
-                hasExpressionImage = expressionStickerNode != null
+                hasBareStaticSticker = staticStickerNode != null && isBareStaticSticker
             )
             val stickerNode = when (interactionKind) {
                 SoulInteractionKind.LIGHT -> lightInteractionNode
                 SoulInteractionKind.STATIC -> staticStickerNode
-                SoulInteractionKind.EXPRESSION -> expressionStickerNode
                 else -> null
             }
             val type = SoulMediaType.resolve(
@@ -180,13 +180,15 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 hasSnapPhoto = hasSnapPhoto,
                 hasText = text.isNotEmpty(),
                 hasExchange = hasExchange,
-                hasMomentCard = momentCardContent != null
+                hasMomentCard = momentCardContent != null,
+                hasSticker = expressionStickerNode != null
             )
 
             val content = when {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
                 type == SoulMediaType.VOICE_EMOJI -> "[语音互动表情]"
                 type == SoulMediaType.VOICE -> SoulVoiceContent.resolve(voiceTranscription, text)
+                type == SoulMediaType.STICKER -> "[表情]"
                 text.isNotEmpty() -> text
                 stickerNode != null -> "[Soul互动表情]"
                 type == "exchange" -> "[以图换图]"

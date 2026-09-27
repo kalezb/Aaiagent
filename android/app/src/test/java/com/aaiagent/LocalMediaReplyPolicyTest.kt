@@ -32,6 +32,31 @@ class LocalMediaReplyPolicyTest {
     }
 
     @Test
+    fun `ordinary Soul sticker uses a fixed local reply without model work`() {
+        val batch = requireNotNull(
+            IncomingMessageBatch.select(
+                listOf(ChatMessage("other", "[表情]", SoulMediaType.STICKER))
+            )
+        )
+
+        assertEquals(LocalMediaReplyPolicy.STICKER_REPLY, LocalMediaReplyPolicy.replyFor(batch))
+    }
+
+    @Test
+    fun `older sticker followed by text stays on the model path`() {
+        val batch = requireNotNull(
+            IncomingMessageBatch.select(
+                listOf(
+                    ChatMessage("other", "[表情]", SoulMediaType.STICKER),
+                    ChatMessage("other", "刚才是你发的吗", "text")
+                )
+            )
+        )
+
+        assertNull(LocalMediaReplyPolicy.replyFor(batch))
+    }
+
+    @Test
     fun `text only does not use a local media reply`() {
         val batch = requireNotNull(
             IncomingMessageBatch.select(

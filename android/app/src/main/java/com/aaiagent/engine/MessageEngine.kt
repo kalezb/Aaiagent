@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.aaiagent.adapter.AdapterRegistry
 import com.aaiagent.adapter.PlatformAdapter
 import com.aaiagent.adapter.SoulAdapter
+import com.aaiagent.adapter.SoulMediaType
 import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
@@ -697,7 +698,11 @@ class MessageEngine(
         expectedContactName: String
     ): MediaUnderstanding {
         val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages)
-        if (mediaTarget.type == "text" || mediaTarget.type == "unknown" || mediaTarget.type == "voice_emoji") {
+        if (mediaTarget.type == "text" ||
+            mediaTarget.type == "unknown" ||
+            mediaTarget.type == SoulMediaType.VOICE_EMOJI ||
+            mediaTarget.type == SoulMediaType.STICKER
+        ) {
             return MediaUnderstanding(messages)
         }
 

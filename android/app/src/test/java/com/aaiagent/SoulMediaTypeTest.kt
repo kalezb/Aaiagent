@@ -39,6 +39,14 @@ class SoulMediaTypeTest {
             resolve(hasImage = true, hasMomentCard = true)
         )
     }
+
+    @Test
+    fun `ordinary Soul sticker has its own local media type`() {
+        assertEquals(
+            "sticker",
+            resolve(hasSticker = true, hasImage = true)
+        )
+    }
     @Test
     fun `text is used when no media marker exists`() {
         assertEquals("text", resolve(hasText = true))
@@ -69,7 +77,8 @@ class SoulMediaTypeTest {
         hasSnapPhoto: Boolean = false,
         hasText: Boolean = false,
         hasExchange: Boolean = false,
-        hasMomentCard: Boolean = false
+        hasMomentCard: Boolean = false,
+        hasSticker: Boolean = false
     ): String {
         return SoulMediaType.resolve(
             hasVoiceEmoji = hasVoiceEmoji,
@@ -78,7 +87,8 @@ class SoulMediaTypeTest {
             hasSnapPhoto = hasSnapPhoto,
             hasText = hasText,
             hasExchange = hasExchange,
-            hasMomentCard = hasMomentCard
+            hasMomentCard = hasMomentCard,
+            hasSticker = hasSticker
         )
     }
 }

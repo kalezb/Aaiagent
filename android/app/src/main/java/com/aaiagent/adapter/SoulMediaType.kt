@@ -1,6 +1,7 @@
 package com.aaiagent.adapter
 
 object SoulMediaType {
+    const val STICKER = "sticker"
     const val VOICE = "voice"
     const val VOICE_EMOJI = "voice_emoji"
 
@@ -11,13 +12,15 @@ object SoulMediaType {
         hasSnapPhoto: Boolean,
         hasText: Boolean,
         hasExchange: Boolean = false,
-        hasMomentCard: Boolean = false
+        hasMomentCard: Boolean = false,
+        hasSticker: Boolean = false
     ): String {
         return when {
             hasMomentCard -> SoulMomentCard.TYPE
             hasExchange -> "exchange"
             hasVoiceEmoji -> VOICE_EMOJI
             hasVoice -> VOICE
+            hasSticker -> STICKER
             hasImage || hasSnapPhoto -> "image"
             hasText -> "text"
             else -> "unknown"
