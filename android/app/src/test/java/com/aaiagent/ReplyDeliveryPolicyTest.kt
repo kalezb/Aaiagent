@@ -44,6 +44,21 @@ class ReplyDeliveryPolicyTest {
     }
 
     @Test
+    fun `long single reply is split into short chat bubbles`() {
+        val longReply = "在的 刚忙完 你想聊什么就直说 我看到消息会回你 不用一直等我"
+        val parts = ReplyDeliveryPolicy.expandLongReply(listOf(longReply))
+
+        assertTrue(parts.size in 2..3)
+        assertTrue(parts.all { it.length <= 24 })
+        assertEquals(longReply.replace(" ", ""), parts.joinToString("").replace(" ", ""))
+    }
+
+    @Test
+    fun `short reply is not split just to imitate typing`() {
+        assertEquals(listOf("不语音哈 打字可以"), ReplyDeliveryPolicy.expandLongReply(listOf("不语音哈 打字可以")))
+    }
+
+    @Test
     fun `new or disappearing incoming history invalidates a pending reply`() {
         assertTrue(ReplyDeliveryPolicy.incomingChanged("old", "new"))
         assertTrue(ReplyDeliveryPolicy.incomingChanged("old", ""))

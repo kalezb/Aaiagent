@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getMessageDelayPolicy, onRequest, sanitizeStaleAssistantReply } from "../functions/api/[[route]]";
+import { isVoiceCallRequest, sanitizeNewContactBusinessReply } from "../functions/api/_reply_policy";
 
 class MockD1 {
   constructor(
@@ -339,7 +340,10 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("【当前平台】soul。");
     expect(payload.messages[0].content).not.toContain("语气：");
     expect(payload.messages[0].content).not.toContain("偏文艺");
-    expect(payload.messages[0].content).toContain("你住在重庆两江新区，工作地在重庆两江新区");
+    expect(payload.messages[0].content).toContain("你住在重庆两江新区，但不要主动提工作地点");
+    expect(payload.messages[0].content).not.toContain("工作地在重庆两江新区");
+    expect(payload.messages[0].content).toContain("【新客边界】");
+    expect(payload.messages[0].content).toContain("禁止主动提工作、手机、回收、旧设备")
     expect(payload.messages[0].content).toContain("“对方说”是客户说的，“你说”是你之前说的");
     expect(payload.messages[0].content).not.toContain("短句聊天风格");
     expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
@@ -348,6 +352,52 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("不报价，不催单，不主动暧昧，不主动提见面");
     expect(payload.messages[0].content).toContain("对方要联系方式只给QQ");
     expect(payload.messages[0].content).not.toContain("别刚加好友就推销回收，别主动提见面");
+  });
+
+  it("answers a voice-chat request locally without spending a model call", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          request_id: "voice-request-1",
+          platform: "soul",
+          contact_id: "voice-new",
+          contact_name: "摆烂随心享快乐",
+          messages: [{ role: "user", content: "你好呀小姐姐，可以和你语音聊天吗" }],
+        }),
+      }),
+      env: { DB: new MockD1(), KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "不语音哈 打字可以",
+      local: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("detects voice invitations without matching refusal wording", () => {
+    expect(isVoiceCallRequest("可以和你语音聊天吗")).toBe(true);
+    expect(isVoiceCallRequest("晚点打个电话吧")).toBe(true);
+    expect(isVoiceCallRequest("我不方便语音")).toBe(false);
+  });
+
+  it("removes accidental business talk for a new contact but keeps explicit business answers", () => {
+    expect(sanitizeNewContactBusinessReply(
+      "这会儿不方便语音 你是想咨询手机回收吗|||还是随便聊聊",
+      1,
+      "可以语音吗",
+    )).toBe("还是随便聊聊");
+    expect(sanitizeNewContactBusinessReply(
+      "新旧手机和老年机都能收",
+      1,
+      "现在还收手机吗",
+    )).toBe("新旧手机和老年机都能收");
   });
 
   it("uses the exact relationship stage guidance", async () => {
@@ -797,7 +847,8 @@ describe("chat logic", () => {
     expect(prompt).toContain("星期五");
     expect(prompt).not.toContain("业务消息可以远程回复");
     expect(prompt).not.toContain("有正常作息和情绪");
-    expect(prompt).toContain("你在家躺着刷手机，可能远程回下业务消息，安排明天上门");
+    expect(prompt).toContain("现在是深夜，你在家休息，偶尔看下手机");
+    expect(prompt).not.toContain("远程回下业务消息")
     expect(prompt).not.toContain("躺床上睡不着");
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
@@ -964,11 +1015,15 @@ describe("chat logic", () => {
   it("stores four aligned personas in the seed and production migration", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = readFileSync(new URL("../db/migrations/20260928_device_persona_and_pending_replies.sql", import.meta.url), "utf8");
+    const newContactMigration = readFileSync(new URL("../db/migrations/20260928_new_contact_natural_reply.sql", import.meta.url), "utf8");
     const persona = "你是星暮，29岁女，重庆，已婚没孩子。做全国旧手机数码回收，白天公司上班安排快递，晚上在家休息，深夜偶尔回下业务消息安排明天上门。和公婆住，老公出差半年没回来，夫妻感情一般，但你不跟陌生人抱怨婚姻、不搞暧昧。有辆宝马X3，房子家里买的。说话接地气像朋友微信聊天，短句子，每条回复50字以内。目的是拉近关系发展客户，但不报价、不主动暧昧、不主动提见面。对方要联系方式时不给微信电话，坚持要就给一个QQ号，别主动给。";
 
     expect(schema).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
     expect(migration).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
-    expect(schema).toContain("新旧手机、能开机或不能开机的");
+    expect(schema).toContain("你平时有自己的手机数码生意");
+    expect(schema).not.toContain("你负责全国二手手机和数码设备回收");
+    expect(newContactMigration).toContain("不靠陌生人推销");
+    expect(newContactMigration).toContain("只有对方明确问工作")
     expect(migration).toContain("UPDATE personas");
     expect(migration).toContain("active_persona_id");
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS pending_replies");

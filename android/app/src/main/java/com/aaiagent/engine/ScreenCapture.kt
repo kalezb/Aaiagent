@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 object ScreenCapture {
@@ -18,6 +19,27 @@ object ScreenCapture {
     ): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
 
+        repeat(CAPTURE_ATTEMPTS) { attempt ->
+            val result = captureOnce(
+                service = service,
+                targetBounds = targetBounds,
+                quality = quality,
+                rejectMostlyBlack = rejectMostlyBlack
+            )
+            if (!result.isNullOrEmpty()) return result
+            if (attempt < CAPTURE_ATTEMPTS - 1) {
+                delay(CAPTURE_RETRY_DELAYS_MS[attempt])
+            }
+        }
+        return null
+    }
+
+    private suspend fun captureOnce(
+        service: AccessibilityService,
+        targetBounds: Rect?,
+        quality: Int,
+        rejectMostlyBlack: Boolean
+    ): String? {
         val screenshot = suspendCancellableCoroutine<AccessibilityService.ScreenshotResult?> { continuation ->
             try {
                 service.takeScreenshot(
@@ -93,4 +115,7 @@ object ScreenCapture {
         val bottom = (targetBounds.bottom + padding).coerceIn(top + 1, bitmap.height)
         return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
     }
+
+    private const val CAPTURE_ATTEMPTS = 3
+    private val CAPTURE_RETRY_DELAYS_MS = longArrayOf(1_100L, 1_500L)
 }

@@ -437,8 +437,11 @@ class MessageEngine(
             var root = chatRoot
             var messages = readMessagesWithRetry(adapter, root, context.contactName, leaseToken)
             // Soul 互动表情本地识别
+            var failedStickerIndexes = emptySet<Int>()
             if (adapter is com.aaiagent.adapter.SoulAdapter) {
-                messages = adapter.recognizePendingStickers(messages)
+                val recognition = adapter.recognizePendingStickers(messages)
+                messages = recognition.messages
+                failedStickerIndexes = recognition.failedIndexes
             }
             if (messages.isEmpty()) {
                 RuntimeJournal.readMessages(0, "")
@@ -519,6 +522,12 @@ class MessageEngine(
                 return
             }
             val incomingBatch = IncomingMessageBatch.select(messages) ?: return
+            if (failedStickerIndexes.any { index -> messages.getOrNull(index) in incomingBatch.incoming }) {
+                RuntimeJournal.recovery("互动表情截图失败，保留聊天页下次重试")
+                delay(1_000)
+                state = EngineState.Idle
+                return
+            }
             val latestIncoming = incomingBatch.latestIncoming
             android.util.Log.d(
                 "AIA",
@@ -576,6 +585,12 @@ class MessageEngine(
                     expectedContactName = context.contactName
                 )
                 messages = understanding.messages
+                if (understanding.retryInPlace) {
+                    RuntimeJournal.recovery("媒体加载未完成，保留聊天页下次重试: ${understanding.reason}")
+                    delay(1_000)
+                    state = EngineState.Idle
+                    return
+                }
 
                 requestReply(
                     adapter = adapter,
@@ -706,7 +721,7 @@ class MessageEngine(
         val preparation = adapter.prepareVisualCapture(root, mediaTarget.type)
         if (preparation == null) {
             RuntimeJournal.recovery("隐私图片展开失败 type=${mediaTarget.type}")
-            return MediaUnderstanding(messages)
+            return MediaUnderstanding(messages, retryInPlace = true, reason = "图片展开失败")
         }
         val preparedRoot = preparation.root
         android.util.Log.d(
@@ -730,7 +745,7 @@ class MessageEngine(
                 interactionEpoch = interactionEpoch
             ) == null
         ) {
-            return MediaUnderstanding(messages)
+            return MediaUnderstanding(messages, retryInPlace = true, reason = "视觉页面返回失败")
         }
         if (imageBase64.isNullOrEmpty()) {
             if (PrivacyPhotoPolicy.shouldUseModelContext(
@@ -743,13 +758,13 @@ class MessageEngine(
                 )
             }
             RuntimeJournal.recovery("视觉识别跳过: 截图失败 type=${mediaTarget.type}")
-            return MediaUnderstanding(messages)
+            return MediaUnderstanding(messages, retryInPlace = true, reason = "截图失败")
         }
 
         val vision = api.describeVision(token, imageBase64, prompt = prompt)
         if (!vision.success || vision.description.isNullOrBlank()) {
             RuntimeJournal.recovery("视觉识别不可用: ${vision.error ?: "empty"}")
-            return MediaUnderstanding(messages)
+            return MediaUnderstanding(messages, retryInPlace = true, reason = "视觉接口失败")
         }
         android.util.Log.d(
             "AIA",
@@ -932,7 +947,7 @@ class MessageEngine(
             .map { it.trim().trimEnd('。', '，', ',', '.', '~', '～').trim() }
             .filter { it.isNotEmpty() && it.length <= 60 }
         val rawParts = if (segments.isNotEmpty()) segments else listOf(outgoing.trimEnd('。', '，', '~', '～'))
-        val parts = ReplyDeliveryPolicy.prepareParts(rawParts)
+        val parts = ReplyDeliveryPolicy.prepareParts(ReplyDeliveryPolicy.expandLongReply(rawParts))
         if (parts.isEmpty()) return ReplyDeliveryResult(ReplyDeliveryStatus.FAILED, 0, 0)
         android.util.Log.d("AIA", "outgoing reply sanitized segments=${parts.size} length=${outgoing.length}")
 
@@ -982,7 +997,9 @@ class MessageEngine(
             if (!verifyCurrentChatWithRetry(adapter, context.contactName)) {
                 RuntimeJournal.messageSent(false, "发送前联系人验证失败")
                 clearInputField()
-                break
+                if (!reopenConversationForDelivery(adapter, context, leaseToken)) {
+                    break
+                }
             }
             state = EngineState.Sending
             val svc = service ?: break
@@ -1042,6 +1059,23 @@ class MessageEngine(
             if (attempt < retries - 1) delay(retryDelayMs)
         }
         return false
+    }
+
+    private suspend fun reopenConversationForDelivery(
+        adapter: PlatformAdapter,
+        context: ConversationContext,
+        leaseToken: String
+    ): Boolean {
+        if (!canContinue(leaseToken, null)) return false
+        if (GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)) return false
+        val svc = service ?: return false
+        val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: return false
+        val conversation = adapter.clickConversationByName(listRoot, context.contactName, true) ?: return false
+        RuntimeJournal.clickConversation(conversation.contactName, true)
+        val recovered = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: return false
+        if (recovered.packageName?.toString() != adapter.packageName) return false
+        android.util.Log.d("AIA", "reply delivery reopened verified chat contact=${context.contactName}")
+        return true
     }
 
     private fun verifyCurrentChat(adapter: PlatformAdapter, expectedContactName: String): Boolean {
@@ -1335,7 +1369,9 @@ class MessageEngine(
     }
 
     private data class MediaUnderstanding(
-        val messages: List<PlatformAdapter.ChatMessage>
+        val messages: List<PlatformAdapter.ChatMessage>,
+        val retryInPlace: Boolean = false,
+        val reason: String = ""
     )
 
     companion object {

@@ -1,4 +1,4 @@
-import { buildLayeredSystemPrompt, loadOrCreatePendingReply, replyGenerationSettings } from "./_reply_policy";
+import { buildLayeredSystemPrompt, loadOrCreatePendingReply, localVoiceRequestReply, replyGenerationSettings, sanitizeNewContactBusinessReply } from "./_reply_policy";
 
 const SUPPORTED_PLATFORMS = ["soul", "qq", "immomo", "lianxin"];
 
@@ -367,13 +367,13 @@ function sanitizeAssistantReplySegment(value) {
 
 // 根据当前小时给出"我此刻在干嘛"，让回复场景跟时间对得上（凌晨不说在跑客户）
 function currentActivityByHour(hour) {
-  if (hour >= 0 && hour < 7) return "现在是深夜，你在家躺着刷手机，可能远程回下业务消息，安排明天上门";
-  if (hour >= 7 && hour < 9) return "你刚起床，在洗漱吃早饭，手机放旁边";
-  if (hour >= 9 && hour < 12) return "你在回收店里整理收来的手机，偶尔来个客户";
-  if (hour >= 12 && hour < 14) return "你刚吃完饭，在店里坐着刷手机，有点困";
-  if (hour >= 14 && hour < 18) return "你在店里忙，收货验机跟客户谈事，不一定随时看手机";
-  if (hour >= 18 && hour < 21) return "你下班回到家，刚吃完饭，在沙发上玩手机";
-  return "你洗完澡躺床上了，准备睡，一边刷手机一边回";
+  if (hour >= 0 && hour < 7) return "现在是深夜，你在家休息，偶尔看下手机";
+  if (hour >= 7 && hour < 9) return "你早上在家，刚收拾好，手机放旁边";
+  if (hour >= 9 && hour < 12) return "你在忙自己的事，间隙会看下手机";
+  if (hour >= 12 && hour < 14) return "你中午刚吃完饭，在休息";
+  if (hour >= 14 && hour < 18) return "你下午在忙，不一定随时看手机";
+  if (hour >= 18 && hour < 21) return "你晚上回到家，吃完饭在休息";
+  return "你在家休息，准备洗漱";
 }
 
 // 统计这个联系人最近7天主动找过你几次、几天都来了，以及总对话轮数
@@ -1450,7 +1450,8 @@ export const onRequest = async (context) => {
         return json({ action: "skip" });
       }
 
-      const localChallengeReply = localAiChallengeReply(messages, requestId);
+      const localVoiceReply = localVoiceRequestReply(messages);
+      const localChallengeReply = localVoiceReply || localAiChallengeReply(messages, requestId);
       if (localChallengeReply) {
         const pending = await loadOrCreatePendingReply(env.DB, {
           token: tokenRow.token,
@@ -1550,6 +1551,7 @@ export const onRequest = async (context) => {
         weather,
         activity,
         stageText,
+        relationStageLevel: stage,
         messageDelay,
         messages,
         historyMessages,
@@ -1583,7 +1585,8 @@ export const onRequest = async (context) => {
       timing.llm_ms = Date.now() - llmStartedAt;
       const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const cleanedReply = sanitizeAssistantReply(rawReply);
-      const reply = sanitizeStaleAssistantReply(cleanedReply, messageDelay) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
+      const staleSafeReply = sanitizeStaleAssistantReply(cleanedReply, messageDelay) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
+      const reply = sanitizeNewContactBusinessReply(staleSafeReply, stage, latestIncomingText(messages));
       const nowSec = Math.floor(Date.now() / 1000);
 
       const pending = await loadOrCreatePendingReply(env.DB, {

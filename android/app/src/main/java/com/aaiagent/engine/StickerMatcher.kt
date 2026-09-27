@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.util.Log
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.math.roundToInt
 
@@ -17,6 +18,11 @@ import kotlin.math.roundToInt
  * 14 种互动表情。
  */
 object StickerMatcher {
+    data class MatchResult(
+        val names: List<String?>,
+        val captureSucceeded: Boolean
+    )
+
 
     data class Sticker(val type: String, val displayName: String, val meaning: String)
 
@@ -88,15 +94,25 @@ object StickerMatcher {
         service: AccessibilityService,
         boundsList: List<Rect>
     ): List<String?> {
-        if (boundsList.isEmpty()) return emptyList()
+        return matchAllDetailed(service, boundsList).names
+    }
+
+    suspend fun matchAllDetailed(
+        service: AccessibilityService,
+        boundsList: List<Rect>
+    ): MatchResult {
+        if (boundsList.isEmpty()) return MatchResult(emptyList(), captureSucceeded = true)
         warmup(service)
-        val refs = referenceTemplates ?: return List(boundsList.size) { null }
-        if (refs.isEmpty()) return List(boundsList.size) { null }
+        val refs = referenceTemplates ?: return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
+        if (refs.isEmpty()) return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
 
         val screen = takeFullScreenshotBitmap(service)
-            ?: return List(boundsList.size) { null }
+            ?: return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
         return try {
-            boundsList.map { bounds -> matchCropped(screen, bounds, refs) }
+            MatchResult(
+                names = boundsList.map { bounds -> matchCropped(screen, bounds, refs) },
+                captureSucceeded = true
+            )
         } finally {
             screen.recycle()
         }
@@ -157,6 +173,15 @@ object StickerMatcher {
     }
 
     private suspend fun takeFullScreenshotBitmap(service: AccessibilityService): Bitmap? {
+        repeat(SCREENSHOT_ATTEMPTS) { attempt ->
+            val bitmap = takeFullScreenshotBitmapOnce(service)
+            if (bitmap != null) return bitmap
+            if (attempt < SCREENSHOT_ATTEMPTS - 1) delay(SCREENSHOT_RETRY_DELAYS_MS[attempt])
+        }
+        return null
+    }
+
+    private suspend fun takeFullScreenshotBitmapOnce(service: AccessibilityService): Bitmap? {
         val result = suspendCancellableCoroutine<AccessibilityService.ScreenshotResult?> { continuation ->
             try {
                 service.takeScreenshot(
@@ -316,4 +341,7 @@ object StickerMatcher {
     private const val MAX_TEMPLATE_DISTANCE = 22.0
     private const val STRONG_MATCH_DISTANCE = 12.0
     private const val MIN_BEST_GAP = 1.0
+
+    private const val SCREENSHOT_ATTEMPTS = 3
+    private val SCREENSHOT_RETRY_DELAYS_MS = longArrayOf(1_100L, 1_500L)
 }

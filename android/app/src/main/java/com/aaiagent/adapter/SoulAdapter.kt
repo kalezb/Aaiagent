@@ -253,24 +253,32 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
      */
     suspend fun recognizePendingStickers(
         messages: List<ChatMessage>
-    ): List<ChatMessage> {
-        if (pendingStickers.isEmpty()) return messages
+    ): StickerRecognitionResult {
+        if (pendingStickers.isEmpty()) return StickerRecognitionResult(messages)
         val result = messages.toMutableList()
         val validPending = pendingStickers.filter { pending ->
             val index = pending.messageIndex
             index in messages.indices && messages[index].type == SoulInteractionMessage.TYPE
         }
-        val names = StickerMatcher.matchAll(service, validPending.map { it.rect })
+        val match = StickerMatcher.matchAllDetailed(service, validPending.map { it.rect })
         validPending.forEachIndexed { index, pending ->
-            val name = names.getOrNull(index) ?: return@forEachIndexed
+            val name = match.names.getOrNull(index) ?: return@forEachIndexed
             val modelText = StickerMatcher.modelTextFor(name) ?: "[互动表情：$name]"
             result[pending.messageIndex] = result[pending.messageIndex].copy(
                 content = modelText,
                 type = "text"
             )
         }
-        return result
+        return StickerRecognitionResult(
+            messages = result,
+            failedIndexes = if (match.captureSucceeded) emptySet() else validPending.map { it.messageIndex }.toSet()
+        )
     }
+
+    data class StickerRecognitionResult(
+        val messages: List<ChatMessage>,
+        val failedIndexes: Set<Int> = emptySet()
+    )
 
     override fun readVisualTargetBounds(
         root: AccessibilityNodeInfo,
