@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI 托管助手 UI 预览</title>
+  <link rel="stylesheet" href="./preview.css">
+</head>
+<body data-theme="obsidian">
+  <main class="preview-page">
+    <div class="preview-toolbar">
+      <span>UI 方案预览</span>
+      <nav class="preview-toolbar__links" aria-label="切换预览方案">
+        <a href="?theme=obsidian" data-preview-link="obsidian">A</a>
+        <a href="?theme=mist" data-preview-link="mist">B</a>
+        <a href="?theme=jade" data-preview-link="jade">C</a>
+        <a href="./index.html">全部</a>
+      </nav>
+    </div>
+
+    <section class="app-shell" aria-label="AI 托管助手界面预览">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <i data-lucide="sparkles"></i>
+          </div>
+          <div>
+            <h1>AI 托管助手</h1>
+            <p>消息管理控制台</p>
+          </div>
+        </div>
+        <div class="connection-pill">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span data-connection-text>平台已连接</span>
+        </div>
+      </header>
+
+      <div class="app-content">
+        <section class="hero" data-hosting-hero>
+          <div class="hero__top">
+            <div>
+              <p class="eyebrow">Hosting Control</p>
+              <h2 data-hosting-title>开启 AI 托管</h2>
+              <p class="hero__copy" data-hosting-subtitle>开启后将按所选模式运行</p>
+            </div>
+            <div class="status-orb" aria-hidden="true">
+              <i data-lucide="power"></i>
+            </div>
+          </div>
+
+          <div class="hero__actions">
+            <button class="primary-toggle" type="button" data-hosting-toggle aria-pressed="false">
+              <span class="primary-toggle__text">
+                <strong>托管总开关</strong>
+                <span>一键控制消息处理状态</span>
+              </span>
+              <span class="toggle-track" aria-hidden="true">
+                <span class="toggle-knob"></span>
+              </span>
+            </button>
+            <button class="icon-button" type="button" data-action="运行状态正常" aria-label="查看运行状态">
+              <i data-lucide="activity"></i>
+            </button>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>托管方式</h3>
+            <span>开启后生效</span>
+          </div>
+          <div class="mode-grid" role="group" aria-label="托管方式">
+            <button class="mode-button active" type="button" data-mode="full" aria-pressed="true">
+              <i data-lucide="zap"></i>
+              <strong>全自动</strong>
+              <span>读、回、发</span>
+            </button>
+            <button class="mode-button" type="button" data-mode="semi" aria-pressed="false">
+              <i data-lucide="pen-line"></i>
+              <strong>半自动</strong>
+              <span>生成后确认</span>
+            </button>
+            <button class="mode-button" type="button" data-mode="monitor" aria-pressed="false">
+              <i data-lucide="eye"></i>
+              <strong>仅记录</strong>
+              <span>只读不操作</span>
+            </button>
+          </div>
+          <p class="mode-note" data-mode-note>自动读消息、生成回复、发送并返回列表。</p>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>今日状态</h3>
+            <span>实时更新</span>
+          </div>
+          <div class="card-grid">
+            <article class="metric-card">
+              <div class="metric-card__icon"><i data-lucide="message-square-text"></i></div>
+              <strong>28</strong>
+              <span>已处理消息</span>
+            </article>
+            <article class="metric-card">
+              <div class="metric-card__icon"><i data-lucide="users"></i></div>
+              <strong>12</strong>
+              <span>活跃客户</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>设备权限</h3>
+            <span>3 项已开启</span>
+          </div>
+          <article class="permission-card">
+            <div class="permission-row">
+              <div class="permission-name">
+                <span class="permission-name__icon"><i data-lucide="mouse-pointer-click"></i></span>
+                <div>
+                  <strong>无障碍服务</strong>
+                  <span>用于读取和操作聊天界面</span>
+                </div>
+              </div>
+              <button class="switch on" type="button" data-switch aria-label="切换无障碍服务" aria-pressed="true"></button>
+            </div>
+            <div class="permission-row">
+              <div class="permission-name">
+                <span class="permission-name__icon"><i data-lucide="bell-ring"></i></span>
+                <div>
+                  <strong>通知监听</strong>
+                  <span>辅助识别新消息</span>
+                </div>
+              </div>
+              <button class="switch on" type="button" data-switch aria-label="切换通知监听" aria-pressed="true"></button>
+            </div>
+            <div class="permission-row">
+              <div class="permission-name">
+                <span class="permission-name__icon"><i data-lucide="battery-charging"></i></span>
+                <div>
+                  <strong>后台稳定运行</strong>
+                  <span>减少系统中断</span>
+                </div>
+              </div>
+              <button class="switch on" type="button" data-switch aria-label="切换后台运行" aria-pressed="true"></button>
+            </div>
+          </article>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>平台与人设</h3>
+            <span>当前配置</span>
+          </div>
+          <article class="identity-card">
+            <div class="identity-top">
+              <div class="persona-block">
+                <div class="avatar">星</div>
+                <div>
+                  <strong>星暮 · 女客服</strong>
+                  <span>自然聊天 · 长期关系</span>
+                </div>
+              </div>
+              <div class="identity-badges">
+                <span class="badge connected"><i data-lucide="circle-check"></i>Soul 已连接</span>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>位置设置</h3>
+            <span>用于聊天上下文</span>
+          </div>
+          <article class="location-card">
+            <div class="location-row">
+              <div class="location-icon"><i data-lucide="home"></i></div>
+              <div>
+                <strong>家庭地址</strong>
+                <span>重庆 · 两江新区</span>
+              </div>
+              <button type="button" data-action="已进入家庭地址设置">修改</button>
+            </div>
+            <div class="location-row">
+              <div class="location-icon"><i data-lucide="briefcase-business"></i></div>
+              <div>
+                <strong>工作地址</strong>
+                <span>重庆 · 两江新区</span>
+              </div>
+              <button type="button" data-action="已进入工作地址设置">修改</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h3>运行记录</h3>
+            <span>最近动态</span>
+          </div>
+          <article class="activity-card">
+            <div class="activity-item">
+              <span class="activity-dot" aria-hidden="true"></span>
+              <div>
+                <strong>平台连接正常</strong>
+                <span>Soul 消息服务可用</span>
+              </div>
+              <span class="activity-time" data-clock>--:--</span>
+            </div>
+            <div class="activity-item">
+              <span class="activity-dot" aria-hidden="true"></span>
+              <div>
+                <strong>聊天记录同步完成</strong>
+                <span>本地数据已更新</span>
+              </div>
+              <span class="activity-time">刚刚</span>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item active" type="button" data-nav="home">
+          <i data-lucide="layout-dashboard"></i>
+          <span>控制台</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="messages">
+          <i data-lucide="message-circle"></i>
+          <span>消息</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="contacts">
+          <i data-lucide="contact-round"></i>
+          <span>客户</span>
+        </button>
+        <button class="nav-item" type="button" data-nav="settings">
+          <i data-lucide="settings-2"></i>
+          <span>设置</span>
+        </button>
+      </nav>
+    </section>
+  </main>
+
+  <div class="toast" data-toast role="status" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script src="./preview.js"></script>
+</body>
+</html>
