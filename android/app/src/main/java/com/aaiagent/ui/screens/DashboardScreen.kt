@@ -1,4 +1,4 @@
-﻿package com.aaiagent.ui.screens
+package com.aaiagent.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -6,38 +6,101 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.engine.HostingMode
-import com.aaiagent.ui.theme.*
-
-// ── Types ──
+import com.aaiagent.ui.theme.SkyBg
+import com.aaiagent.ui.theme.SkyBlue
+import com.aaiagent.ui.theme.SkyBlueDeep
+import com.aaiagent.ui.theme.SkyBlueSoft
+import com.aaiagent.ui.theme.SkyCyan
+import com.aaiagent.ui.theme.SkyDanger
+import com.aaiagent.ui.theme.SkyDangerSoft
+import com.aaiagent.ui.theme.SkyGreen
+import com.aaiagent.ui.theme.SkyGreenSoft
+import com.aaiagent.ui.theme.SkyLine
+import com.aaiagent.ui.theme.SkyLineStrong
+import com.aaiagent.ui.theme.SkySurface
+import com.aaiagent.ui.theme.SkySurfaceRaised
+import com.aaiagent.ui.theme.SkyText
+import com.aaiagent.ui.theme.SkyTextMuted
+import com.aaiagent.ui.theme.SkyTextSecondary
+import com.aaiagent.ui.theme.SkyWarm
+import com.aaiagent.ui.theme.SkyWarmSoft
 
 data class PermissionStatus(
     val accessibility: Boolean = false,
@@ -54,39 +117,66 @@ data class PersonaItem(
     val isActive: Boolean = false
 )
 
-fun checkPermissionStatus(context: Context): PermissionStatus {
-    val acc = try { Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.contains(context.packageName) == true } catch (_: Exception) { false }
-    val notif = try { Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")?.contains(context.packageName) == true } catch (_: Exception) { false }
-    val battery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) { val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager; pm.isIgnoringBatteryOptimizations(context.packageName) } else true
-    val overlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(context) else true
-    return PermissionStatus(acc, notif, battery, overlay)
+private enum class ContactKind {
+    WHITELIST,
+    BLACKLIST
 }
 
-fun platformDisplayName(p: String) = when (p) { "soul" -> "Soul"; "qq" -> "QQ"; "immomo" -> "陌陌"; "lianxin" -> "连信"; else -> p }
+fun checkPermissionStatus(context: Context): PermissionStatus {
+    val accessibility = runCatching {
+        Settings.Secure.getString(
+            context.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )?.contains(context.packageName) == true
+    }.getOrDefault(false)
 
-// ══════════════════════ DASHBOARD ══════════════════════
+    val notification = runCatching {
+        Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners"
+        )?.contains(context.packageName) == true
+    }.getOrDefault(false)
+
+    val batteryOptimization = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val manager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        manager.isIgnoringBatteryOptimizations(context.packageName)
+    } else {
+        true
+    }
+
+    val overlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        Settings.canDrawOverlays(context)
+    } else {
+        true
+    }
+
+    return PermissionStatus(accessibility, notification, batteryOptimization, overlay)
+}
+
+fun platformDisplayName(platform: String): String = when (platform) {
+    "soul" -> "Soul"
+    "qq" -> "QQ"
+    "immomo" -> "陌陌"
+    "lianxin" -> "连信"
+    else -> platform
+}
 
 @Composable
 fun DashboardScreen(
     isHosting: Boolean,
     engineState: String,
-    lastReply: String?,
-    platformsStatus: Map<String, Boolean>,
     enabledPlatforms: Set<String>,
     onTogglePlatform: (String, Boolean) -> Unit,
     personas: List<PersonaItem>,
     activePersonaId: String,
     onPersonaChange: (String) -> Unit,
     token: String,
-    apiBase: String,
     onTokenChange: (String) -> Unit,
-    onApiBaseChange: (String) -> Unit,
     location: UserLocationEntity,
     onLocationSave: (String, String, String, String) -> Unit,
     hostingMode: HostingMode,
     onHostingModeChange: (HostingMode) -> Unit,
     onToggleHosting: (Boolean) -> Unit,
-    // 验证状态
     personaVerifyStatus: String,
     onVerifyPersona: () -> Unit,
     locationSaveStatus: String,
@@ -95,102 +185,351 @@ fun DashboardScreen(
     onVerifyToken: () -> Unit,
     platformSyncStatus: String,
     onSyncPlatform: (String) -> Unit,
-    // 天气/时间感知
     weatherEnabled: Boolean,
     onWeatherToggle: (Boolean) -> Unit,
     timeEnabled: Boolean,
     onTimeToggle: (Boolean) -> Unit,
-    // 白黑名单
     contactWhitelist: List<String>,
     contactBlacklist: List<String>,
     onContactWhitelistChange: (List<String>) -> Unit,
-    onContactBlacklistChange: (List<String>) -> Unit,
-    // 发送方式
-    sendMode: String,
-    onSendModeChange: (String) -> Unit
+    onContactBlacklistChange: (List<String>) -> Unit
 ) {
-    val ctx = LocalContext.current
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val versionName = remember(ctx) {
+    val versionName = remember(context) {
         runCatching {
-            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull() ?: "unknown"
     }
-    var perms by remember { mutableStateOf(checkPermissionStatus(ctx)) }
+    var permissions by remember { mutableStateOf(checkPermissionStatus(context)) }
+    var contactDialog by remember { mutableStateOf<ContactKind?>(null) }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) perms = checkPermissionStatus(ctx)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permissions = checkPermissionStatus(context)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val activePlatform = DashboardUiPolicy.activePlatform(enabledPlatforms)
+    val corePermissionsReady = permissions.accessibility && permissions.notification
+    val tokenReady = tokenVerifyStatus.startsWith("✓")
+    val connectionText = DashboardUiPolicy.connectionText(
+        isHosting = isHosting,
+        platform = activePlatform,
+        corePermissionsReady = corePermissionsReady,
+        tokenReady = tokenReady
+    )
+    val grantedPermissions = DashboardUiPolicy.healthyPermissionCount(
+        permissions.accessibility,
+        permissions.notification,
+        permissions.batteryOptimization,
+        permissions.overlay
+    )
+
     Column(
-        Modifier.fillMaxSize().background(Bg).verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 32.dp)
+        Modifier
+            .fillMaxSize()
+            .background(SkyBg)
+            .verticalScroll(rememberScrollState())
+            .padding(top = 16.dp, bottom = 36.dp)
     ) {
-        // 标题栏
-        Text(text = "AI 托管助手", modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Text(text = "v$versionName · Soul · DeepSeek", modifier = Modifier.padding(horizontal = 20.dp),
-            fontSize = 11.sp, color = TextSecondary)
-
-        Spacer(Modifier.height(12.dp))
-
-        // ═══ 卡片1: 设备权限 ═══
-        Card1Permissions(perms, ctx)
-
-        Spacer(Modifier.height(12.dp))
-
-        // ═══ 卡片2: 平台与人设 ═══
-        Card2PlatformPersona(
-            enabledPlatforms, onTogglePlatform, platformSyncStatus, onSyncPlatform,
-            personas, activePersonaId, onPersonaChange, personaVerifyStatus, onVerifyPersona,
-            location, onLocationSave, locationSaveStatus, onSaveLocation
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        // ═══ 卡片3: AI 托管控制 ═══
-        Card3HostingControl(
-            isHosting, engineState, hostingMode, onHostingModeChange, onToggleHosting,
-            sendMode, onSendModeChange,
-            contactWhitelist, contactBlacklist,
-            onContactWhitelistChange, onContactBlacklistChange
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        // ═══ 卡片4: 设置 ═══
-        Card4Settings(
-            token, onTokenChange, tokenVerifyStatus, onVerifyToken,
-            weatherEnabled, onWeatherToggle, timeEnabled, onTimeToggle
+        DashboardHeader(
+            versionName = versionName,
+            connectionText = connectionText,
+            connected = corePermissionsReady
         )
 
         Spacer(Modifier.height(16.dp))
-        Text(text = "AI 托管助手 v$versionName · 基于 DeepSeek Chat", modifier = Modifier.padding(horizontal = 20.dp), fontSize = 11.sp, color = TextHint)
+
+        HostingHero(
+            isHosting = isHosting,
+            engineState = engineState,
+            hostingMode = hostingMode,
+            platform = activePlatform,
+            onToggleHosting = onToggleHosting
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "今日状态", trailing = "实时更新")
+        OverviewStats(
+            isHosting = isHosting,
+            platform = activePlatform,
+            whitelistCount = contactWhitelist.size,
+            blacklistCount = contactBlacklist.size
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "托管方式", trailing = "先选模式，再开托管")
+        HostingModeSelector(hostingMode, onHostingModeChange)
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "快捷管理", trailing = "点按整行切换")
+        QuickManagement(
+            permissions = permissions,
+            context = context,
+            weatherEnabled = weatherEnabled,
+            onWeatherToggle = onWeatherToggle,
+            timeEnabled = timeEnabled,
+            onTimeToggle = onTimeToggle
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "平台与人设", trailing = "当前使用配置")
+        PlatformPersonaCard(
+            enabledPlatforms = enabledPlatforms,
+            onTogglePlatform = onTogglePlatform,
+            syncPlatform = onSyncPlatform,
+            personas = personas,
+            activePersonaId = activePersonaId,
+            onPersonaChange = onPersonaChange,
+            personaVerifyStatus = personaVerifyStatus,
+            onVerifyPersona = onVerifyPersona,
+            platformSyncStatus = platformSyncStatus
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "位置上下文", trailing = "用于自然聊天")
+        LocationCard(
+            location = location,
+            onLocationSave = onLocationSave,
+            locationSaveStatus = locationSaveStatus,
+            onSaveLocation = onSaveLocation
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "客户策略", trailing = "白名单优先，黑名单拦截")
+        ContactStrategyCard(
+            whitelistCount = contactWhitelist.size,
+            blacklistCount = contactBlacklist.size,
+            onOpenWhitelist = { contactDialog = ContactKind.WHITELIST },
+            onOpenBlacklist = { contactDialog = ContactKind.BLACKLIST }
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionHeader(title = "设备与安全", trailing = "运行健康")
+        DeviceSecurityCard(
+            token = token,
+            onTokenChange = onTokenChange,
+            tokenVerifyStatus = tokenVerifyStatus,
+            onVerifyToken = onVerifyToken,
+            grantedPermissions = grantedPermissions
+        )
+    }
+
+    when (contactDialog) {
+        ContactKind.WHITELIST -> ContactManagementDialog(
+            title = "白名单管理",
+            emptyText = "暂无白名单联系人",
+            contacts = contactWhitelist,
+            accent = SkyGreen,
+            onDismiss = { contactDialog = null },
+            onChange = onContactWhitelistChange
+        )
+
+        ContactKind.BLACKLIST -> ContactManagementDialog(
+            title = "黑名单管理",
+            emptyText = "暂无黑名单联系人",
+            contacts = contactBlacklist,
+            accent = SkyDanger,
+            onDismiss = { contactDialog = null },
+            onChange = onContactBlacklistChange
+        )
+
+        null -> Unit
     }
 }
 
-// ══════════════════════ 卡片1: 设备权限 ══════════════════════
+@Composable
+private fun DashboardHeader(
+    versionName: String,
+    connectionText: String,
+    connected: Boolean
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            modifier = Modifier.size(46.dp),
+            shape = RoundedCornerShape(15.dp),
+            color = SkyText
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.SmartToy,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(23.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "AI 托管助手",
+                color = SkyText,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "v$versionName · 控制台",
+                color = SkyTextMuted,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = SkySurfaceRaised,
+            border = BorderStroke(1.dp, SkyLine)
+        ) {
+            Row(
+                Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(if (connected) SkyGreen else SkyWarm)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = connectionText,
+                    color = if (connected) SkyTextSecondary else SkyWarm,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
 
 @Composable
-private fun Card1Permissions(perms: PermissionStatus, ctx: Context) {
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+private fun HostingHero(
+    isHosting: Boolean,
+    engineState: String,
+    hostingMode: HostingMode,
+    platform: String,
+    onToggleHosting: (Boolean) -> Unit
+) {
+    val subtitle = if (isHosting) {
+        DashboardUiPolicy.modeActionText(hostingMode)
+    } else {
+        "先选择下方托管方式，再开启 AI 托管。"
+    }
+    val liveState = engineState.takeIf { it.isNotBlank() && it != "IDLE" }
+    val buttonNote = when {
+        isHosting && liveState != null -> "${platformDisplayName(platform)} · $liveState"
+        isHosting -> "${platformDisplayName(platform)} · 正在运行"
+        else -> DashboardUiPolicy.modeActionText(hostingMode)
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = if (isHosting) SkyBlueSoft else SkySurfaceRaised,
+        border = BorderStroke(
+            1.dp,
+            if (isHosting) SkyBlue.copy(alpha = 0.45f) else SkyLine
+        )
     ) {
         Column(Modifier.padding(18.dp)) {
-            Text(text = "🔒 设备权限", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.height(14.dp))
-            PermItem("无障碍读取与操作", perms.accessibility) { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-            PermItem("通知读取", perms.notification) { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-            PermItem("电池优化白名单", perms.batteryOptimization) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                    i.data = Uri.parse("package:" + ctx.packageName)
-                    ctx.startActivity(i)
+            Text(
+                text = "托管总控",
+                color = SkyBlueDeep,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black
+            )
+            Spacer(Modifier.height(7.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "托管状态",
+                        color = SkyText,
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        text = subtitle,
+                        color = SkyTextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+                Surface(
+                    modifier = Modifier.size(46.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    color = if (isHosting) SkyBlue else SkySurface,
+                    border = BorderStroke(1.dp, if (isHosting) SkyBlue else SkyLine)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.PowerSettingsNew,
+                            contentDescription = null,
+                            tint = if (isHosting) Color.White else SkyTextMuted,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleHosting(!isHosting) },
+                shape = RoundedCornerShape(17.dp),
+                color = if (isHosting) SkyBlue else SkySurface,
+                border = BorderStroke(
+                    1.dp,
+                    if (isHosting) SkyBlue else SkyLineStrong
+                )
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = if (isHosting) "已开启 AI 托管" else "请开启 AI 托管",
+                            color = if (isHosting) Color.White else SkyText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = buttonNote,
+                            color = if (isHosting) Color.White.copy(alpha = 0.78f) else SkyTextMuted,
+                            fontSize = 10.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    SkySwitch(
+                        checked = isHosting,
+                        onCheckedChange = onToggleHosting,
+                        darkBackground = isHosting
+                    )
                 }
             }
         }
@@ -198,139 +537,494 @@ private fun Card1Permissions(perms: PermissionStatus, ctx: Context) {
 }
 
 @Composable
-private fun PermItem(title: String, granted: Boolean, onClick: () -> Unit) {
+private fun SectionHeader(title: String, trailing: String? = null) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable(enabled = !granted, onClick = onClick),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, Modifier.weight(1f), fontSize = 15.sp, color = TextPrimary)
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = if (granted) GreenLight else Color.Transparent,
-            border = if (granted) null else BorderStroke(1.5.dp, Green)
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            color = SkyText,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+        if (!trailing.isNullOrBlank()) {
+            Text(
+                text = trailing,
+                color = SkyTextMuted,
+                fontSize = 10.sp
+            )
+        }
+    }
+    Spacer(Modifier.height(9.dp))
+}
+
+@Composable
+private fun OverviewStats(
+    isHosting: Boolean,
+    platform: String,
+    whitelistCount: Int,
+    blacklistCount: Int
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        StatCard(
+            value = if (isHosting) "运行" else "待机",
+            label = "托管",
+            valueColor = if (isHosting) SkyGreen else SkyWarm,
+            modifier = Modifier.weight(1f)
+        )
+        StatCard(
+            value = platformDisplayName(platform),
+            label = "当前平台",
+            valueColor = SkyBlue,
+            modifier = Modifier.weight(1f)
+        )
+        StatCard(
+            value = whitelistCount.toString(),
+            label = "白名单",
+            valueColor = SkyCyan,
+            modifier = Modifier.weight(1f)
+        )
+        StatCard(
+            value = blacklistCount.toString(),
+            label = "黑名单",
+            valueColor = SkyDanger,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun StatCard(
+    value: String,
+    label: String,
+    valueColor: Color,
+    modifier: Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(15.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
+    ) {
+        Column(
+            Modifier.padding(horizontal = 5.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                if (granted) "已授权 ✓" else "去设置 →",
-                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                color = if (granted) Green else Green
+                text = value,
+                color = valueColor,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = label,
+                color = SkyTextMuted,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
-// ══════════════════════ 卡片2: 平台与人设 ══════════════════════
-
 @Composable
-private fun Card2PlatformPersona(
-    enabledPlatforms: Set<String>, onTogglePlatform: (String, Boolean) -> Unit,
-    platformSyncStatus: String, onSyncPlatform: (String) -> Unit,
-    personas: List<PersonaItem>, activePersonaId: String, onPersonaChange: (String) -> Unit,
-    personaVerifyStatus: String, onVerifyPersona: () -> Unit,
-    location: UserLocationEntity, onLocationSave: (String, String, String, String) -> Unit,
-    locationSaveStatus: String, onSaveLocation: () -> Unit
+private fun HostingModeSelector(
+    hostingMode: HostingMode,
+    onHostingModeChange: (HostingMode) -> Unit
 ) {
-    val active = personas.find { it.id == activePersonaId }
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(Modifier.padding(18.dp)) {
-            Text(text = "🧠 平台与人设", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.height(14.dp))
+    val modes = listOf(
+        Triple(HostingMode.FULL_AUTO, "全自动", Icons.Default.Bolt),
+        Triple(HostingMode.SEMI_AUTO, "半自动", Icons.Default.EditNote),
+        Triple(HostingMode.MONITOR_ONLY, "仅记录", Icons.Default.Visibility)
+    )
 
-            // 平台选择
-            Text(text = "平台选择", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("soul", "qq", "immomo", "lianxin").forEach { p ->
-                    val sel = enabledPlatforms.contains(p)
-                    val label = platformDisplayName(p)
-                    Surface(
-                        Modifier.weight(1f).clickable {
-                            onTogglePlatform(p, !sel)
-                            onSyncPlatform(p)
-                        },
-                        RoundedCornerShape(20.dp),
-                        color = if (sel) Green else GrayBg,
-                        border = if (sel) null else BorderStroke(1.dp, Gray)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(17.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
+    ) {
+        Row(
+            Modifier.padding(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            modes.forEach { (mode, label, icon) ->
+                val selected = hostingMode == mode
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onHostingModeChange(mode) },
+                    shape = RoundedCornerShape(13.dp),
+                    color = if (selected) SkySurface else Color.Transparent,
+                    border = if (selected) BorderStroke(1.dp, SkyBlue.copy(alpha = 0.28f)) else null
+                ) {
+                    Column(
+                        Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(text = label, modifier = Modifier.padding(vertical = 10.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                            color = if (sel) White else TextSecondary)
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = if (selected) SkyBlue else SkyTextMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            text = label,
+                            color = if (selected) SkyBlue else SkyTextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = when (mode) {
+                                HostingMode.FULL_AUTO -> "读、回、发"
+                                HostingMode.SEMI_AUTO -> "生成后确认"
+                                HostingMode.MONITOR_ONLY -> "只读不操作"
+                            },
+                            color = SkyTextMuted,
+                            fontSize = 9.sp,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
-            if (platformSyncStatus.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
-                Text(platformSyncStatus, fontSize = 11.sp, color = if (platformSyncStatus.startsWith("✓")) Green else Red)
-            }
+        }
+    }
+}
 
-            Spacer(Modifier.height(16.dp))
-
-            // 客服人设
-            Text(text = "客服人设", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Persona dropdown
-                var exp by remember { mutableStateOf(false) }
-                Box(Modifier.weight(1f)) {
-                    Surface(
-                        Modifier.fillMaxWidth().clickable { exp = true },
-                        RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Divider)
-                    ) {
-                        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(active?.let { PersonaPresentation.displayName(it) } ?: "未选择", Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
-                            Text(text = "▼", fontSize = 10.sp, color = TextSecondary)
-                        }
+@Composable
+private fun QuickManagement(
+    permissions: PermissionStatus,
+    context: Context,
+    weatherEnabled: Boolean,
+    onWeatherToggle: (Boolean) -> Unit,
+    timeEnabled: Boolean,
+    onTimeToggle: (Boolean) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
+    ) {
+        Column {
+            PermissionRow(
+                icon = Icons.Default.Smartphone,
+                title = "手机设备权限",
+                subtitle = "查看应用权限和运行状态",
+                granted = permissions.overlay,
+                accent = SkyBlue,
+                onClick = {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
+            )
+            RowDivider()
+            PermissionRow(
+                icon = Icons.Default.AccessibilityNew,
+                title = "无障碍服务",
+                subtitle = "读取聊天页并执行自动操作",
+                granted = permissions.accessibility,
+                accent = SkyCyan,
+                onClick = {
+                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }
+            )
+            RowDivider()
+            PermissionRow(
+                icon = Icons.Default.Notifications,
+                title = "通知监听",
+                subtitle = "作为消息触发的备用来源",
+                granted = permissions.notification,
+                accent = SkyBlue,
+                onClick = {
+                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+            )
+            RowDivider()
+            PermissionRow(
+                icon = Icons.Default.BatteryChargingFull,
+                title = "电池优化",
+                subtitle = "避免后台运行被系统中断",
+                granted = permissions.batteryOptimization,
+                accent = SkyWarm,
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
                     }
-                    DropdownMenu(expanded = exp, onDismissRequest = { exp = false }) {
-                        personas.forEach { p ->
-                            DropdownMenuItem(
-                                text = { Text(PersonaPresentation.displayName(p), fontSize = 14.sp) },
-                                onClick = { onPersonaChange(p.id); exp = false }
+                }
+            )
+            RowDivider()
+            PermissionRow(
+                icon = Icons.Default.PictureInPictureAlt,
+                title = "悬浮窗权限",
+                subtitle = "用于显示托管状态悬浮按钮",
+                granted = permissions.overlay,
+                accent = SkyGreen,
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    }
+                }
+            )
+            RowDivider()
+            ToggleRow(
+                icon = Icons.Default.Cloud,
+                title = "天气感知",
+                subtitle = "让回复符合当前天气",
+                checked = weatherEnabled,
+                accent = SkyBlue,
+                onCheckedChange = onWeatherToggle
+            )
+            RowDivider()
+            ToggleRow(
+                icon = Icons.Default.Schedule,
+                title = "时间感知",
+                subtitle = "让回复符合当前作息和时间",
+                checked = timeEnabled,
+                accent = SkyCyan,
+                onCheckedChange = onTimeToggle
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    granted: Boolean,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        QuickIcon(icon, accent)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = SkyText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = subtitle,
+                color = SkyTextMuted,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            text = if (granted) "已开启" else "去设置",
+            color = if (granted) SkyBlue else SkyWarm,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.width(4.dp))
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = SkyLineStrong,
+            modifier = Modifier.size(17.dp)
+        )
+    }
+}
+
+@Composable
+private fun ToggleRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    accent: Color,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        QuickIcon(icon, accent)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = SkyText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = subtitle,
+                color = SkyTextMuted,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        SkySwitch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun QuickIcon(icon: ImageVector, accent: Color) {
+    Surface(
+        modifier = Modifier.size(36.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = accent.copy(alpha = 0.10f)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 59.dp)
+            .height(1.dp)
+            .background(SkyLine)
+    )
+}
+
+@Composable
+private fun PlatformPersonaCard(
+    enabledPlatforms: Set<String>,
+    onTogglePlatform: (String, Boolean) -> Unit,
+    syncPlatform: (String) -> Unit,
+    personas: List<PersonaItem>,
+    activePersonaId: String,
+    onPersonaChange: (String) -> Unit,
+    personaVerifyStatus: String,
+    onVerifyPersona: () -> Unit,
+    platformSyncStatus: String
+) {
+    val activePersona = personas.firstOrNull { it.id == activePersonaId }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                text = "选择平台",
+                color = SkyTextMuted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            listOf("soul", "qq", "immomo", "lianxin")
+                .chunked(2)
+                .forEach { rowPlatforms ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        rowPlatforms.forEach { platform ->
+                            PlatformOption(
+                                platform = platform,
+                                selected = enabledPlatforms.contains(platform),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    val enable = !enabledPlatforms.contains(platform)
+                                    onTogglePlatform(platform, enable)
+                                    if (enable) syncPlatform(platform)
+                                }
                             )
                         }
                     }
+                    Spacer(Modifier.height(7.dp))
                 }
+            if (platformSyncStatus.isNotBlank()) {
+                Text(
+                    text = platformSyncStatus,
+                    color = if (platformSyncStatus.startsWith("✓")) SkyGreen else SkyDanger,
+                    fontSize = 10.sp
+                )
+                Spacer(Modifier.height(10.dp))
+            }
+
+            Text(
+                text = "选择客服",
+                color = SkyTextMuted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PersonaSelector(
+                    personas = personas,
+                    activePersona = activePersona,
+                    modifier = Modifier.weight(1f),
+                    onSelect = onPersonaChange
+                )
                 Spacer(Modifier.width(8.dp))
-                VerifyButton(
-                    label = "确认切换",
+                SkySmallAction(
+                    label = "同步",
                     status = personaVerifyStatus,
                     onClick = onVerifyPersona
                 )
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            // 位置设置
-            Text(text = "位置设置", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Text(text = "🏠 家庭地址", fontSize = 14.sp, color = TextPrimary)
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LocField(location.homeCity, { onLocationSave(it, location.homeDistrict, location.workCity, location.workDistrict) }, "城市", Modifier.weight(1f))
-                LocField(location.homeDistrict, { onLocationSave(location.homeCity, it, location.workCity, location.workDistrict) }, "区域", Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(text = "💼 工作地址", fontSize = 14.sp, color = TextPrimary)
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LocField(location.workCity, { onLocationSave(location.homeCity, location.homeDistrict, it, location.workDistrict) }, "城市", Modifier.weight(1f))
-                LocField(location.workDistrict, { onLocationSave(location.homeCity, location.homeDistrict, location.workCity, it) }, "区域", Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SaveButton("确认保存", locationSaveStatus, onSaveLocation, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(10.dp))
-            // Current status
-            Surface(Modifier.fillMaxWidth(), RoundedCornerShape(8.dp), color = GreenLight) {
+            if (personaVerifyStatus.isNotBlank()) {
+                Spacer(Modifier.height(7.dp))
                 Text(
-                    "当前：${platformDisplayName(enabledPlatforms.firstOrNull() ?: "soul")} | ${active?.let { PersonaPresentation.displayName(it) } ?: "未选择"}\n家：${location.homeCity}${location.homeDistrict} | 班：${location.workCity}${location.workDistrict}",
-                    Modifier.padding(10.dp), fontSize = 12.sp, color = TextPrimary, lineHeight = 18.sp
+                    text = personaVerifyStatus,
+                    color = if (personaVerifyStatus.startsWith("✓")) SkyGreen else SkyDanger,
+                    fontSize = 10.sp
                 )
             }
         }
@@ -338,337 +1032,676 @@ private fun Card2PlatformPersona(
 }
 
 @Composable
-private fun LocField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier) {
-    Surface(modifier, RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
-        Box(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
-            if (value.isEmpty()) Text(placeholder, color = TextHint, fontSize = 13.sp)
-            BasicTextField(value = value, onValueChange = onChange, textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp), singleLine = true, modifier = Modifier.fillMaxWidth())
-        }
-    }
-}
-
-@Composable
-private fun VerifyButton(label: String, status: String, onClick: () -> Unit) {
-    val isSuccess = status.startsWith("✓")
-    val isFail = status.startsWith("✗")
-    val bg = when { isSuccess -> GreenLight; isFail -> RedLight; else -> Color.Transparent }
-    val border = when { isSuccess -> Green; isFail -> Red; else -> Green }
-    val txt = when { isSuccess -> "✓ ${label.removeSuffix("验证")}已同步"; isFail -> "✗ 同步失败"; else -> label }
-    val txtColor = when { isSuccess -> Green; isFail -> Red; else -> Green }
-    Surface(
-        Modifier.clickable(enabled = !isSuccess) { onClick() },
-        RoundedCornerShape(8.dp), color = bg,
-        border = BorderStroke(1.5.dp, border)
-    ) {
-        Text(txt, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            fontSize = 13.sp, fontWeight = FontWeight.Medium, color = txtColor)
-    }
-}
-
-@Composable
-private fun SaveButton(label: String, status: String, onClick: () -> Unit, modifier: Modifier) {
-    val isSuccess = status.startsWith("✓")
-    val txt = when { isSuccess -> "✓ ${label.removePrefix("保存")}已保存"; status.isNotEmpty() && !isSuccess -> "✗ 保存失败"; else -> label }
-    Button(
-        onClick = onClick, modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = if (isSuccess) GreenLight else Green),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
-    ) {
-        Text(txt, color = if (isSuccess) Green else White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-// ══════════════════════ 卡片3: AI 托管控制 ══════════════════════
-
-// ══════════════════════ 卡片3: AI 托管控制 ══════════════════════
-
-
-@Composable
-private fun Card3HostingControl(
-    isHosting: Boolean, engineState: String,
-    hostingMode: HostingMode, onHostingModeChange: (HostingMode) -> Unit,
-    onToggleHosting: (Boolean) -> Unit,
-    sendMode: String, onSendModeChange: (String) -> Unit,
-    contactWhitelist: List<String>, contactBlacklist: List<String>,
-    onContactWhitelistChange: (List<String>) -> Unit,
-    onContactBlacklistChange: (List<String>) -> Unit
+private fun PlatformOption(
+    platform: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
 ) {
-    // 白名单管理弹窗
-    var showWhitelist by remember { mutableStateOf(false) }
-    var showBlacklist by remember { mutableStateOf(false) }
-    var newContact by remember { mutableStateOf("") }
-
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        color = if (selected) SkyBlueSoft else SkySurface,
+        border = BorderStroke(1.dp, if (selected) SkyBlue else SkyLine)
     ) {
-        Column(Modifier.padding(18.dp)) {
-            Text(text = "⚡ AI 托管控制", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.height(14.dp))
-
-            // 托管模式选择（始终可见，开启托管前先选模式）
-            Text(text = "托管模式", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(
-                    HostingMode.FULL_AUTO to "🤖 全自动",
-                    HostingMode.SEMI_AUTO to "✍️ 半自动",
-                    HostingMode.MONITOR_ONLY to "📋 仅记录"
-                ).forEach { (mode, label) ->
-                    val sel = hostingMode == mode
-                    Surface(
-                        Modifier.weight(1f).clickable { onHostingModeChange(mode) },
-                        RoundedCornerShape(10.dp),
-                        color = if (sel) GreenLight else White,
-                        border = BorderStroke(1.5.dp, if (sel) Green else Gray)
-                    ) {
-                        Column(Modifier.padding(vertical = 8.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = label, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                color = if (sel) Green else TextSecondary)
-                            Text(text = when (mode) {
-                                HostingMode.FULL_AUTO -> "自动读+回+发"
-                                HostingMode.SEMI_AUTO -> "生成回复填框"
-                                HostingMode.MONITOR_ONLY -> "只读当前聊天 不点不滑"
-                            }, fontSize = 9.sp, color = TextHint)
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Divider(color = Divider, thickness = 1.dp)
-            Spacer(Modifier.height(14.dp))
-
-                        // AI???????????
-            val btnBg = if (isHosting) Green else Color(0xFF555555)
-            val btnText = if (isHosting) "\u2713 \u5df2\u5f00\u542fAI\u6258\u7ba1" else "\u8bf7\u5f00\u542fAI\u6258\u7ba1"
-            val modeText = when(hostingMode) {
-                HostingMode.FULL_AUTO -> "\u5168\u81ea\u52a8\u6a21\u5f0f"
-                HostingMode.SEMI_AUTO -> "\u534a\u81ea\u52a8\u6a21\u5f0f"
-                HostingMode.MONITOR_ONLY -> "\u4ec5\u8bb0\u5f55\u6a21\u5f0f"
-            }
-            val idleHint = if (hostingMode == HostingMode.MONITOR_ONLY) {
-                "\u70b9\u51fb\u5f00\u542f\u540e\u53ea\u8bfb\u540c\u6b65 \u4e0d\u64cd\u4f5c\u5c4f\u5e55"
-            } else {
-                "\u70b9\u51fb\u5f00\u542f\u540e\u81ea\u52a8\u5904\u7406\u6d88\u606f"
-            }
-            val btnSubText = if (isHosting) modeText + " \u00b7 " + engineState else idleHint
+        Row(
+            Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Surface(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-                    .clickable { onToggleHosting(!isHosting) },
-                RoundedCornerShape(12.dp),
-                color = btnBg
+                modifier = Modifier.size(30.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = if (selected) SkyText else SkyBlueSoft
             ) {
-                Column(
-                    Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+                Box(contentAlignment = Alignment.Center) {
                     Text(
-                        btnText,
-                        fontSize = 18.sp, fontWeight = FontWeight.Bold,
-                        color = White
-                    )
-                    Text(
-                        btnSubText,
-                        fontSize = 12.sp,
-                        color = White.copy(alpha = 0.8f),
-                        modifier = Modifier.padding(top = 4.dp)
+                        text = platformDisplayName(platform).take(1),
+                        color = if (selected) Color.White else SkyBlue,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black
                     )
                 }
             }
-
-            Spacer(Modifier.height(14.dp))
-            Divider(color = Divider, thickness = 1.dp)
-            Spacer(Modifier.height(14.dp))
-
-            // 联系人管理
-            Text(text = "联系人管理", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(
-                    Modifier.weight(1f).clickable { newContact = ""; showWhitelist = true },
-                    RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.5.dp, Green)
+            Spacer(Modifier.width(7.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = platformDisplayName(platform),
+                    color = SkyText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (selected) "已选择" else "点击选择",
+                    color = if (selected) SkyGreen else SkyTextMuted,
+                    fontSize = 8.sp
+                )
+            }
+            if (selected) {
+                Box(
+                    Modifier
+                        .size(17.dp)
+                        .clip(CircleShape)
+                        .background(SkyBlue),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "白名单 (${contactWhitelist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Green)
-                }
-                Surface(
-                    Modifier.weight(1f).clickable { newContact = ""; showBlacklist = true },
-                    RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.5.dp, Red)
-                ) {
-                    Text(text = "黑名单 (${contactBlacklist.size})", modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Red)
+                    Text(
+                        text = "✓",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
                 }
             }
         }
     }
+}
 
-    // 白名单弹窗
-    if (showWhitelist) {
-        AlertDialog(
-            onDismissRequest = { showWhitelist = false },
-            title = { Text("白名单管理", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
-                            BasicTextField(
-                                value = newContact,
-                                onValueChange = { newContact = it },
-                                textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp),
-                                singleLine = true,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp).fillMaxWidth(),
-                                decorationBox = { if (newContact.isEmpty()) Text("输入联系人或关键词", color = TextHint, fontSize = 14.sp) }
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = {
-                            if (newContact.isNotBlank()) {
-                                onContactWhitelistChange(contactWhitelist + newContact.trim())
-                                newContact = ""
-                            }
-                        }) { Text("添加", color = Green) }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    if (contactWhitelist.isEmpty()) {
-                        Text("暂无白名单联系人", color = TextHint, fontSize = 13.sp)
-                    } else {
-                        contactWhitelist.forEach { name ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(name, Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
-                                TextButton(onClick = { onContactWhitelistChange(contactWhitelist - name) }) { Text("删除", color = Red, fontSize = 12.sp) }
-                            }
-                        }
+@Composable
+private fun PersonaSelector(
+    personas: List<PersonaItem>,
+    activePersona: PersonaItem?,
+    modifier: Modifier,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val personaName = activePersona?.let(PersonaPresentation::name) ?: "未选择"
+    val avatar = activePersona?.let(PersonaPresentation::avatarLabel) ?: "客"
+    val role = activePersona?.let(PersonaPresentation::roleDetail) ?: "等待同步"
+
+    Box(modifier) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+            shape = RoundedCornerShape(16.dp),
+            color = SkySurface,
+            border = BorderStroke(1.dp, SkyLineStrong)
+        ) {
+            Row(
+                Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .width(4.dp)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(SkyBlue)
+                )
+                Spacer(Modifier.width(9.dp))
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = SkyBlue
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = avatar,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black
+                        )
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { showWhitelist = false }) { Text("完成", color = Green) } }
-        )
-    }
-
-    // 黑名单弹窗
-    if (showBlacklist) {
-        AlertDialog(
-            onDismissRequest = { showBlacklist = false },
-            title = { Text("黑名单管理", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
-                            BasicTextField(
-                                value = newContact,
-                                onValueChange = { newContact = it },
-                                textStyle = TextStyle(color = TextPrimary, fontSize = 14.sp),
-                                singleLine = true,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp).fillMaxWidth(),
-                                decorationBox = { if (newContact.isEmpty()) Text("输入联系人或关键词", color = TextHint, fontSize = 14.sp) }
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = {
-                            if (newContact.isNotBlank()) {
-                                onContactBlacklistChange(contactBlacklist + newContact.trim())
-                                newContact = ""
-                            }
-                        }) { Text("添加", color = Red) }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    if (contactBlacklist.isEmpty()) {
-                        Text("暂无黑名单联系人", color = TextHint, fontSize = 13.sp)
-                    } else {
-                        contactBlacklist.forEach { name ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(name, Modifier.weight(1f), fontSize = 14.sp, color = TextPrimary)
-                                TextButton(onClick = { onContactBlacklistChange(contactBlacklist - name) }) { Text("删除", color = Red, fontSize = 12.sp) }
-                            }
-                        }
-                    }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "当前客服",
+                        color = SkyBlueDeep,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = personaName,
+                        color = SkyText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${activePersona?.let(PersonaPresentation::genderLabel) ?: "客服"} · $role",
+                        color = SkyTextMuted,
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-            },
-            confirmButton = { TextButton(onClick = { showBlacklist = false }) { Text("完成", color = Green) } }
-        )
+                Icon(
+                    Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = SkyBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(min = 44.dp)
+        ) {
+            if (personas.isEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("暂无人设，请检查后端连接", fontSize = 13.sp) },
+                    onClick = { expanded = false }
+                )
+            } else {
+                personas.forEach { persona ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = PersonaPresentation.displayName(persona),
+                                    color = SkyText,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = PersonaPresentation.roleDetail(persona),
+                                    color = SkyTextMuted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        },
+                        onClick = {
+                            onSelect(persona.id)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun ToggleButton(checked: Boolean, onToggle: () -> Unit) {
-    val bg = if (checked) Green else Color(0xFF555555)
-    val txt = if (checked) "已开启" else "已关闭"
+private fun SkySmallAction(
+    label: String,
+    status: String,
+    onClick: () -> Unit
+) {
+    val succeeded = status.startsWith("✓")
+    val failed = status.startsWith("✗")
+    val color = when {
+        succeeded -> SkyGreen
+        failed -> SkyDanger
+        else -> SkyBlue
+    }
     Surface(
-        Modifier.clickable { onToggle() },
-        RoundedCornerShape(10.dp),
-        color = bg
+        modifier = Modifier.clickable(enabled = !succeeded, onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            succeeded -> SkyGreenSoft
+            failed -> SkyDangerSoft
+            else -> SkySurface
+        },
+        border = BorderStroke(1.dp, color.copy(alpha = 0.65f))
     ) {
         Text(
-            txt,
-            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            fontSize = 13.sp, fontWeight = FontWeight.Bold,
-            color = White
+            text = if (succeeded) "已同步" else label,
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
         )
     }
 }
 
-// ══════════════════════ 卡片4: 设置 ══════════════════════
-
 @Composable
-private fun Card4Settings(
-    token: String, onTokenChange: (String) -> Unit,
-    tokenVerifyStatus: String, onVerifyToken: () -> Unit,
-    weatherEnabled: Boolean, onWeatherToggle: (Boolean) -> Unit,
-    timeEnabled: Boolean, onTimeToggle: (Boolean) -> Unit
+private fun LocationCard(
+    location: UserLocationEntity,
+    onLocationSave: (String, String, String, String) -> Unit,
+    locationSaveStatus: String,
+    onSaveLocation: () -> Unit
 ) {
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
     ) {
-        Column(Modifier.padding(18.dp)) {
-            Text(text = "⚙️ 设置", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Spacer(Modifier.height(14.dp))
-
-            // 设备钥匙
-            Text(text = "设备钥匙", fontSize = 13.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(Modifier.weight(1f), RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Divider)) {
-                    Box(Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
-                        if (token.isEmpty()) Text(text = "mykey_2026_...", color = TextHint, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        BasicTextField(value = token, onValueChange = onTokenChange,
-                            textStyle = TextStyle(color = TextPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
-                            singleLine = true, modifier = Modifier.fillMaxWidth())
-                    }
+        Column(Modifier.padding(14.dp)) {
+            AddressField(
+                icon = Icons.Default.Home,
+                label = "家庭地址",
+                value = "${location.homeCity} ${location.homeDistrict}".trim(),
+                placeholder = "例如：重庆 两江新区",
+                onValueChange = { value ->
+                    val parts = value.trim().split(Regex("\\s+"), limit = 2)
+                    onLocationSave(
+                        parts.getOrElse(0) { "" },
+                        parts.getOrElse(1) { "" },
+                        location.workCity,
+                        location.workDistrict
+                    )
                 }
-                Spacer(Modifier.width(8.dp))
-                VerifyButton("验证", tokenVerifyStatus, onVerifyToken)
+            )
+            Spacer(Modifier.height(12.dp))
+            AddressField(
+                icon = Icons.Default.Work,
+                label = "工作地址",
+                value = "${location.workCity} ${location.workDistrict}".trim(),
+                placeholder = "例如：重庆 两江新区",
+                onValueChange = { value ->
+                    val parts = value.trim().split(Regex("\\s+"), limit = 2)
+                    onLocationSave(
+                        location.homeCity,
+                        location.homeDistrict,
+                        parts.getOrElse(0) { "" },
+                        parts.getOrElse(1) { "" }
+                    )
+                }
+            )
+            Spacer(Modifier.height(13.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onSaveLocation),
+                shape = RoundedCornerShape(12.dp),
+                color = SkyBlue
+            ) {
+                Row(
+                    Modifier.padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Layers,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = if (locationSaveStatus.startsWith("✓")) "地址已保存" else "保存地址",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-
-            Spacer(Modifier.height(16.dp))
-
-            // 天气感知
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(text = "天气感知", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                    Text(text = "开启后大模型自动知道今天天气", fontSize = 12.sp, color = TextSecondary)
-                }
-                ToggleButton(checked = weatherEnabled, onToggle = { onWeatherToggle(!weatherEnabled) })
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            // 时间感知
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(text = "时间感知", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
-                    Text(text = "开启后大模型自动知道现在几点", fontSize = 12.sp, color = TextSecondary)
-                }
-                ToggleButton(checked = timeEnabled, onToggle = { onTimeToggle(!timeEnabled) })
+            if (locationSaveStatus.isNotBlank()) {
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    text = locationSaveStatus,
+                    color = if (locationSaveStatus.startsWith("✓")) SkyGreen else SkyDanger,
+                    fontSize = 10.sp
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun AddressField(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit
+) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = SkyBlue,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = label,
+                color = SkyTextSecondary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        StyledTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = placeholder,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun ContactStrategyCard(
+    whitelistCount: Int,
+    blacklistCount: Int,
+    onOpenWhitelist: () -> Unit,
+    onOpenBlacklist: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ContactListButton(
+                title = "白名单",
+                count = whitelistCount,
+                color = SkyGreen,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenWhitelist
+            )
+            ContactListButton(
+                title = "黑名单",
+                count = blacklistCount,
+                color = SkyDanger,
+                modifier = Modifier.weight(1f),
+                onClick = onOpenBlacklist
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContactListButton(
+    title: String,
+    count: Int,
+    color: Color,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        color = color.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.45f))
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = color,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = "$count 位联系人",
+                    color = SkyTextMuted,
+                    fontSize = 9.sp
+                )
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContactManagementDialog(
+    title: String,
+    emptyText: String,
+    contacts: List<String>,
+    accent: Color,
+    onDismiss: () -> Unit,
+    onChange: (List<String>) -> Unit
+) {
+    var newContact by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StyledTextField(
+                        value = newContact,
+                        onValueChange = { newContact = it },
+                        placeholder = "输入联系人或关键词",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            val normalized = newContact.trim()
+                            if (normalized.isNotEmpty() && normalized !in contacts) {
+                                onChange(contacts + normalized)
+                            }
+                            newContact = ""
+                        }
+                    ) {
+                        Text("添加", color = accent, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                if (contacts.isEmpty()) {
+                    Text(emptyText, color = SkyTextMuted, fontSize = 13.sp)
+                } else {
+                    Column(
+                        Modifier
+                            .heightIn(max = 280.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        contacts.forEach { contact ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = contact,
+                                    modifier = Modifier.weight(1f),
+                                    color = SkyText,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                TextButton(onClick = { onChange(contacts - contact) }) {
+                                    Text("删除", color = SkyDanger, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成", color = SkyBlue, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
+private fun DeviceSecurityCard(
+    token: String,
+    onTokenChange: (String) -> Unit,
+    tokenVerifyStatus: String,
+    onVerifyToken: () -> Unit,
+    grantedPermissions: Int
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = SkySurfaceRaised,
+        border = BorderStroke(1.dp, SkyLine)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "$grantedPermissions / 4 权限正常",
+                        color = SkyText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "无障碍、通知、电池和悬浮窗状态",
+                        color = SkyTextMuted,
+                        fontSize = 9.sp
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = if (grantedPermissions == 4) SkyGreenSoft else SkyWarmSoft
+                ) {
+                    Text(
+                        text = if (grantedPermissions == 4) "健康" else "待完善",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = if (grantedPermissions == 4) SkyGreen else SkyWarm,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(13.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Key,
+                    contentDescription = null,
+                    tint = SkyBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "设备钥匙",
+                    modifier = Modifier.weight(1f),
+                    color = SkyTextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = tokenVerifyStatus.ifBlank { "未验证" },
+                    color = if (tokenVerifyStatus.startsWith("✓")) SkyGreen else SkyTextMuted,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.height(7.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StyledTextField(
+                    value = token,
+                    onValueChange = onTokenChange,
+                    placeholder = "输入设备钥匙",
+                    monospace = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier.clickable(onClick = onVerifyToken),
+                    shape = RoundedCornerShape(12.dp),
+                    color = SkyBlue
+                ) {
+                    Text(
+                        text = "验证",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StyledTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier,
+    monospace: Boolean = false
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = SkySurface,
+        border = BorderStroke(1.dp, SkyLineStrong)
+    ) {
+        Box(Modifier.padding(horizontal = 11.dp, vertical = 11.dp)) {
+            if (value.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    color = SkyTextMuted,
+                    fontSize = if (monospace) 11.sp else 12.sp,
+                    fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                textStyle = TextStyle(
+                    color = SkyText,
+                    fontSize = if (monospace) 11.sp else 12.sp,
+                    fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun SkySwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    darkBackground: Boolean = false
+) {
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) {
+            if (darkBackground) Color.White.copy(alpha = 0.28f) else SkyBlue
+        } else {
+            SkyLineStrong
+        },
+        animationSpec = tween(180),
+        label = "track"
+    )
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 20.dp else 2.dp,
+        animationSpec = tween(180),
+        label = "thumb"
+    )
+    val clickableModifier = if (onCheckedChange == null) {
+        Modifier
+    } else {
+        Modifier.clickable { onCheckedChange(!checked) }
+    }
+
+    Box(
+        modifier = Modifier
+            .then(clickableModifier)
+            .width(46.dp)
+            .height(26.dp)
+            .clip(CircleShape)
+            .background(trackColor),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Box(
+            Modifier
+                .offset(x = thumbOffset)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
     }
 }

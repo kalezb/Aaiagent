@@ -5,22 +5,41 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// ── 白底绿主色 ──
-val Green       = Color(0xFF22C55E)
-val GreenLight  = Color(0xFFDCFCE7)
-val Red         = Color(0xFFEF4444)
-val RedLight    = Color(0xFFFEE2E2)
-val White       = Color(0xFFFFFFFF)
-val Bg          = Color(0xFFF5F5F5)
-val CardBg      = Color(0xFFFFFFFF)
-val TextPrimary = Color(0xFF1A1A1A)
-val TextSecondary = Color(0xFF999999)
-val TextHint    = Color(0xFFBBBBBB)
-val Divider     = Color(0xFFEEEEEE)
-val Gray        = Color(0xFFCCCCCC)
-val GrayBg      = Color(0xFFF0F0F0)
+// ── Sky-blue single-page console ──
+val SkyBlue        = Color(0xFF268CFF)
+val SkyBlueDeep    = Color(0xFF126FD7)
+val SkyBlueSoft    = Color(0xFFE1F0FF)
+val SkyCyan        = Color(0xFF29B6B0)
+val SkyGreen       = Color(0xFF16976D)
+val SkyGreenSoft   = Color(0xFFE2F5EE)
+val SkyWarm        = Color(0xFFF39A36)
+val SkyWarmSoft    = Color(0xFFFFF1DF)
+val SkyDanger      = Color(0xFFDC5860)
+val SkyDangerSoft  = Color(0xFFFFE8EA)
+val SkyBg          = Color(0xFFEDF5FC)
+val SkySurface     = Color(0xFFFFFFFF)
+val SkySurfaceRaised = Color(0xFFF7FBFF)
+val SkyText        = Color(0xFF15243A)
+val SkyTextSecondary = Color(0xFF5D7088)
+val SkyTextMuted   = Color(0xFF8EA0B3)
+val SkyLine        = Color(0xFFDCE8F3)
+val SkyLineStrong  = Color(0xFFC9DBEA)
 
-// Legacy aliases
+// Legacy aliases used by the floating window and older code paths.
+val Green        = SkyBlue
+val GreenLight   = SkyBlueSoft
+val Red          = SkyDanger
+val RedLight     = SkyDangerSoft
+val White        = SkySurface
+val Bg           = SkyBg
+val CardBg       = SkySurface
+val TextPrimary  = SkyText
+val TextSecondary = SkyTextSecondary
+val TextHint     = SkyTextMuted
+val Divider      = SkyLine
+val Gray         = SkyLineStrong
+val GrayBg       = SkySurfaceRaised
+
 val SurfaceDark = CardBg
 val SurfaceDarker = Bg
 val Border = Divider
@@ -31,25 +50,26 @@ val TextHigh = TextPrimary
 val TextMid = TextSecondary
 val TextLow = TextHint
 val Danger = Red
-val Warn = Color(0xFFF59E0B)
+val Warn = SkyWarm
 val Amber = Warn
-val TerminalBg = Color(0xFF1A1A1A)
+val TerminalBg = SkyText
 val TerminalText = Green
 val SurfaceBg = White
 val PurpleGlow = Color(0x00000000)
 val GreenGlow = Color(0x00000000)
-val GreenDark = Green
+val GreenDark = SkyBlueDeep
 
 private val Scheme = lightColorScheme(
-    primary = Green,
-    secondary = Green,
-    background = Bg,
-    surface = White,
-    error = Red,
+    primary = SkyBlue,
+    secondary = SkyCyan,
+    background = SkyBg,
+    surface = SkySurface,
+    surfaceVariant = SkySurfaceRaised,
+    error = SkyDanger,
     onPrimary = White,
     onSecondary = White,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
+    onBackground = SkyText,
+    onSurface = SkyText,
     onError = White
 )
 

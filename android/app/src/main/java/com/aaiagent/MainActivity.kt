@@ -38,9 +38,7 @@ class MainActivity : ComponentActivity() {
     // 核心状态
     private var isHosting by mutableStateOf(false)
     private var hostingMode by mutableStateOf(HostingMode.FULL_AUTO)
-    private var sendMode by mutableStateOf("auto")
     private var engineState by mutableStateOf("IDLE")
-    private var lastReply by mutableStateOf<String?>(null)
     private var token by mutableStateOf("")
     private var tokenVerified by mutableStateOf(false)
     private var apiBase by mutableStateOf("https://ai-agent-api.pages.dev")
@@ -53,7 +51,6 @@ class MainActivity : ComponentActivity() {
     private var workDistrict by mutableStateOf("两江新区")
     private var contactWhitelist by mutableStateOf<List<String>>(emptyList())
     private var contactBlacklist by mutableStateOf<List<String>>(emptyList())
-    private val platformsStatus = mutableStateMapOf("soul" to false, "qq" to false, "immomo" to false, "lianxin" to false)
 
     // 验证状态
     private var personaVerifyStatus by mutableStateOf("")
@@ -105,20 +102,18 @@ class MainActivity : ComponentActivity() {
         if (engine != null && engine.hostingEnabled) {
             isHosting = true
             hostingMode = engine.hostingMode
-            platformsStatus[enabledPlatforms.firstOrNull() ?: "soul"] = true
         }
 
         setContent {
             AaiagentTheme {
                 DashboardScreen(
-                    isHosting = isHosting, engineState = engineState, lastReply = lastReply,
-                    platformsStatus = platformsStatus, enabledPlatforms = enabledPlatforms,
+                    isHosting = isHosting, engineState = engineState,
+                    enabledPlatforms = enabledPlatforms,
                     onTogglePlatform = { p, en -> enabledPlatforms = if (en) setOf(p) else enabledPlatforms },
                     personas = personas, activePersonaId = activePersonaId,
                     onPersonaChange = { id -> activatePersona(id) },
-                    token = token, apiBase = apiBase,
+                    token = token,
                     onTokenChange = { token = it.trim(); tokenVerified = false; tokenVerifyStatus = "" },
-                    onApiBaseChange = { apiBase = it },
                     location = UserLocationEntity(homeCity = homeCity, homeDistrict = homeDistrict, workCity = workCity, workDistrict = workDistrict),
                     onLocationSave = { hc, hd, wc, wd -> homeCity = hc; homeDistrict = hd; workCity = wc; workDistrict = wd },
                     hostingMode = hostingMode, onHostingModeChange = { hostingMode = it },
@@ -131,8 +126,7 @@ class MainActivity : ComponentActivity() {
                     timeEnabled = timeEnabled, onTimeToggle = { timeEnabled = it; syncTime() },
                     contactWhitelist = contactWhitelist, contactBlacklist = contactBlacklist,
                     onContactWhitelistChange = { updateContactWhitelist(it) },
-                    onContactBlacklistChange = { updateContactBlacklist(it) },
-                    sendMode = sendMode, onSendModeChange = { sendMode = it }
+                    onContactBlacklistChange = { updateContactBlacklist(it) }
                 )
             }
         }
@@ -340,7 +334,6 @@ class MainActivity : ComponentActivity() {
                 android.util.Log.e("AIA", "toggleHosting: sharedEngine is null! AccessibilityService not running.")
                 isHosting = false
                 floatingWindow?.updateHostingState(false)
-                platformsStatus.keys.forEach { platformsStatus[it] = false }
                 engineState = "无障碍服务未启动"
                 return
             }
@@ -349,7 +342,6 @@ class MainActivity : ComponentActivity() {
             val mode = hostingMode
             isHosting = true
             floatingWindow?.updateHostingState(true)
-            platformsStatus[platform] = true
             engineState = "启动中..."
             HostingSessionPolicy.markStarted(platform, mode)
             startForegroundService()
@@ -376,7 +368,6 @@ class MainActivity : ComponentActivity() {
             floatingWindow?.updateHostingState(false)
             HostingSessionPolicy.markStopped()
             com.aaiagent.service.AssistantAccessibilityService.sharedEngine?.stopHosting()
-            platformsStatus.keys.forEach { platformsStatus[it] = false }
             statePollJob?.cancel()
             engineState = "IDLE"
             lifecycleScope.launch {
@@ -448,7 +439,6 @@ class MainActivity : ComponentActivity() {
             HostingSessionPolicy.markStarted(session.platform, session.mode)
             isHosting = true
             hostingMode = session.mode
-            platformsStatus[session.platform] = true
             startHostingPolling(engine)
         }
     }
@@ -464,9 +454,7 @@ class MainActivity : ComponentActivity() {
         isHosting = engine?.hostingEnabled == true
         if (isHosting) {
             hostingMode = engine?.hostingMode ?: hostingMode
-            platformsStatus[enabledPlatforms.firstOrNull() ?: "soul"] = true
         } else {
-            platformsStatus.keys.forEach { platformsStatus[it] = false }
         }
         resumeRequestedHosting()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return

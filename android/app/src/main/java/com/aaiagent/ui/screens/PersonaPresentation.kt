@@ -10,4 +10,13 @@ object PersonaPresentation {
 
     fun displayName(persona: PersonaItem): String =
         "${genderLabel(persona)} · ${persona.name}"
+
+    fun name(persona: PersonaItem): String = persona.name.trim().ifBlank { "未命名客服" }
+
+    fun avatarLabel(persona: PersonaItem): String = name(persona).take(1)
+
+    fun roleDetail(persona: PersonaItem): String = when (genderLabel(persona)) {
+        "女客服" -> "自然亲切"
+        else -> "直接稳重"
+    }
 }
