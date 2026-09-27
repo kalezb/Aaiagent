@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>星暮托管助手 UI 预览</title>
+  <title>AI 托管助手 UI 预览</title>
   <link rel="stylesheet" href="./preview.css">
 </head>
 <body data-theme="sky">
@@ -11,21 +11,20 @@
     <div class="preview-toolbar">
       <span>单页控制台预览</span>
       <nav class="preview-toolbar__links" aria-label="切换预览配色">
-        <a href="?theme=sky" data-preview-link="sky">天际蓝</a>
-        <a href="?theme=orange" data-preview-link="orange">爱马仕橙</a>
-        <a href="./index.html">双版总览</a>
+        <a href="?theme=sky" data-preview-link="sky">天蓝版</a>
+        <a href="./index.html">返回总览</a>
       </nav>
     </div>
 
-    <section class="app-shell" aria-label="星暮托管助手界面预览">
+    <section class="app-shell" aria-label="AI 托管助手界面预览">
       <header class="app-header">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">
             <i data-lucide="orbit"></i>
           </div>
           <div>
-            <h1>星暮托管助手</h1>
-            <p>单页自动接待控制台</p>
+            <h1>AI 托管助手</h1>
+            <p>控制台</p>
           </div>
         </div>
         <div class="header-status">
@@ -39,8 +38,8 @@
           <div class="hero__label">托管总控</div>
           <div class="hero__row">
             <div>
-              <h2 data-hosting-title>请开启 AI 托管</h2>
-              <p class="hero__sub" data-hosting-subtitle>开启后才会开始扫描消息，关闭时不会操作手机。</p>
+              <h2>托管状态</h2>
+              <p class="hero__sub" data-hosting-subtitle>点击下方整块开关后，才会开始扫描消息。</p>
             </div>
             <div class="hero__signal" aria-hidden="true">
               <i data-lucide="power"></i>
@@ -134,62 +133,10 @@
             </button>
             <button class="control-row" type="button" data-switch-row aria-pressed="true">
               <span class="control-copy">
-                <span class="row-icon"><i data-lucide="refresh-cw"></i></span>
-                <span>
-                  <strong>聊天记录同步</strong>
-                  <span>人工和托管回复都会进入看板</span>
-                </span>
-              </span>
-              <span class="row-action">
-                <span class="row-state">已开启</span>
-                <span class="toggle on" aria-hidden="true"></span>
-              </span>
-            </button>
-            <button class="control-row" type="button" data-switch-row aria-pressed="true">
-              <span class="control-copy">
-                <span class="row-icon warm"><i data-lucide="bell-ring"></i></span>
-                <span>
-                  <strong>新消息提醒</strong>
-                  <span>重要客户和异常会单独提醒</span>
-                </span>
-              </span>
-              <span class="row-action">
-                <span class="row-state">已开启</span>
-                <span class="toggle on" aria-hidden="true"></span>
-              </span>
-            </button>
-            <button class="control-row" type="button" data-switch-row aria-pressed="true">
-              <span class="control-copy">
                 <span class="row-icon secondary"><i data-lucide="battery-charging"></i></span>
                 <span>
                   <strong>后台稳定运行</strong>
                   <span>减少系统中断和重复启动</span>
-                </span>
-              </span>
-              <span class="row-action">
-                <span class="row-state">已开启</span>
-                <span class="toggle on" aria-hidden="true"></span>
-              </span>
-            </button>
-            <button class="control-row" type="button" data-switch-row aria-pressed="true">
-              <span class="control-copy">
-                <span class="row-icon"><i data-lucide="database-zap"></i></span>
-                <span>
-                  <strong>客户资料沉淀</strong>
-                  <span>批量提取长期有效信息</span>
-                </span>
-              </span>
-              <span class="row-action">
-                <span class="row-state">已开启</span>
-                <span class="toggle on" aria-hidden="true"></span>
-              </span>
-            </button>
-            <button class="control-row" type="button" data-switch-row aria-pressed="true">
-              <span class="control-copy">
-                <span class="row-icon warm"><i data-lucide="moon-star"></i></span>
-                <span>
-                  <strong>夜间低打扰</strong>
-                  <span>深夜只记录，不主动回复</span>
                 </span>
               </span>
               <span class="row-action">
@@ -206,35 +153,53 @@
             <span>当前使用配置</span>
           </div>
           <article class="platform-card">
-            <div class="platform-row">
-              <div class="platform-name">
-                <div class="platform-logo">S</div>
-                <div>
-                  <strong>Soul 消息接待</strong>
-                  <span>连接正常 · 消息列表已就绪</span>
-                </div>
-              </div>
-              <button class="mini-status" type="button" data-platform-toggle aria-pressed="true">
-                <span class="mini-status__dot"></span>
-                <span data-platform-state>已连接</span>
+            <div class="control-label">选择平台</div>
+            <div class="platform-selector" role="group" aria-label="选择平台">
+              <button class="platform-option active" type="button" data-platform="soul" aria-pressed="true">
+                <span class="platform-logo">S</span>
+                <span>
+                  <strong>Soul</strong>
+                  <small data-platform-state>已连接</small>
+                </span>
+                <span class="platform-check"><i data-lucide="check"></i></span>
+              </button>
+              <button class="platform-option disabled" type="button" disabled>
+                <span class="platform-logo light">Q</span>
+                <span>
+                  <strong>QQ</strong>
+                  <small>暂未开放</small>
+                </span>
+              </button>
+              <button class="platform-option disabled" type="button" disabled>
+                <span class="platform-logo light">M</span>
+                <span>
+                  <strong>陌陌</strong>
+                  <small>暂未开放</small>
+                </span>
               </button>
             </div>
-            <div class="persona-grid" role="group" aria-label="选择客服人设">
-              <button class="segment active" type="button" data-persona="xingmu" aria-pressed="true">
-                <strong>星暮</strong>
-                <span>女客服</span>
+
+            <div class="control-label control-label--persona">选择客服</div>
+            <div class="persona-list" role="listbox" aria-label="选择客服人设">
+              <button class="persona-option active" type="button" role="option" data-persona="xingmu" aria-selected="true">
+                <span class="persona-avatar">星</span>
+                <span class="persona-copy"><strong>星暮</strong><small>女客服 · 自然亲切</small></span>
+                <span class="persona-check"><i data-lucide="check"></i></span>
               </button>
-              <button class="segment" type="button" data-persona="wanqing" aria-pressed="false">
-                <strong>晚晴</strong>
-                <span>女客服</span>
+              <button class="persona-option" type="button" role="option" data-persona="wanqing" aria-selected="false">
+                <span class="persona-avatar">晚</span>
+                <span class="persona-copy"><strong>晚晴</strong><small>女客服 · 柔和耐心</small></span>
+                <span class="persona-check"><i data-lucide="check"></i></span>
               </button>
-              <button class="segment" type="button" data-persona="ajie" aria-pressed="false">
-                <strong>阿杰</strong>
-                <span>男客服</span>
+              <button class="persona-option" type="button" role="option" data-persona="ajie" aria-selected="false">
+                <span class="persona-avatar">杰</span>
+                <span class="persona-copy"><strong>阿杰</strong><small>男客服 · 爽快直接</small></span>
+                <span class="persona-check"><i data-lucide="check"></i></span>
               </button>
-              <button class="segment" type="button" data-persona="zichuan" aria-pressed="false">
-                <strong>子川</strong>
-                <span>男客服</span>
+              <button class="persona-option" type="button" role="option" data-persona="zichuan" aria-selected="false">
+                <span class="persona-avatar">川</span>
+                <span class="persona-copy"><strong>子川</strong><small>男客服 · 沉稳简洁</small></span>
+                <span class="persona-check"><i data-lucide="check"></i></span>
               </button>
             </div>
           </article>
@@ -246,31 +211,17 @@
             <span>用于自然聊天</span>
           </div>
           <article class="location-card">
-            <button class="location-row" type="button" data-switch-row aria-pressed="true">
-              <span class="location-copy">
-                <span class="row-icon"><i data-lucide="home"></i></span>
-                <span>
-                  <strong>家庭地址</strong>
-                  <span>重庆 · 两江新区</span>
-                </span>
-              </span>
-              <span class="row-action">
-                <span class="row-state">已启用</span>
-                <span class="toggle on" aria-hidden="true"></span>
-              </span>
-            </button>
-            <button class="location-row" type="button" data-switch-row aria-pressed="true">
-              <span class="location-copy">
-                <span class="row-icon warm"><i data-lucide="briefcase-business"></i></span>
-                <span>
-                  <strong>工作地址</strong>
-                  <span>重庆 · 两江新区</span>
-                </span>
-              </span>
-              <span class="row-action">
-                <span class="row-state">已启用</span>
-                <span class="toggle on" aria-hidden="true"></span>
-              </span>
+            <div class="address-field">
+              <label for="home-address">家庭地址</label>
+              <input id="home-address" name="homeAddress" type="text" value="重庆 · 两江新区" autocomplete="street-address">
+            </div>
+            <div class="address-field">
+              <label for="work-address">工作地址</label>
+              <input id="work-address" name="workAddress" type="text" value="重庆 · 两江新区" autocomplete="street-address">
+            </div>
+            <button class="save-address" type="button" data-save-address>
+              <i data-lucide="save"></i>
+              <span>保存地址</span>
             </button>
           </article>
         </section>
@@ -317,16 +268,8 @@
             <div class="activity-row">
               <span class="activity-mark"></span>
               <div>
-                <strong>聊天记录同步完成</strong>
-                <span>人工回复和托管回复均已归档</span>
-              </div>
-              <span class="activity-time">刚刚</span>
-            </div>
-            <div class="activity-row">
-              <span class="activity-mark"></span>
-              <div>
-                <strong>客户资料已更新</strong>
-                <span>新增 2 条长期有效信息</span>
+                <strong>设备权限正常</strong>
+                <span>无障碍与后台服务运行正常</span>
               </div>
               <span class="activity-time">12 分钟前</span>
             </div>

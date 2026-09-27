@@ -12,7 +12,7 @@ body {
   margin: 0;
   background:
     radial-gradient(circle at 12% 0%, rgba(38, 140, 255, 0.12), transparent 30%),
-    radial-gradient(circle at 88% 5%, rgba(242, 103, 34, 0.11), transparent 28%),
+    radial-gradient(circle at 88% 5%, rgba(41, 182, 176, 0.08), transparent 28%),
     #f4f7fa;
   color: #172234;
 }
@@ -84,6 +84,11 @@ body {
   gap: 22px;
 }
 
+.gallery-grid--single {
+  max-width: 920px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .gallery-card {
   min-width: 0;
   padding: 18px;
@@ -97,9 +102,6 @@ body {
   background: linear-gradient(180deg, #f9fcff, #edf5fc);
 }
 
-.gallery-card--orange {
-  background: linear-gradient(180deg, #fffdfb, #fff4ec);
-}
 
 .gallery-card__head {
   min-height: 88px;
@@ -150,10 +152,6 @@ body {
   white-space: nowrap;
 }
 
-.gallery-card--orange a {
-  border-color: #f0d7c8;
-  color: #d94f0d;
-}
 
 .gallery-frame {
   height: 820px;
@@ -163,10 +161,6 @@ body {
   background: #eef5fb;
 }
 
-.gallery-card--orange .gallery-frame {
-  border-color: #eaded7;
-  background: #f6f3f1;
-}
 
 .gallery-frame iframe {
   width: 100%;

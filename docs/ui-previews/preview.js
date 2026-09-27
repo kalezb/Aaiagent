@@ -1,7 +1,7 @@
 (() => {
   const params = new URLSearchParams(window.location.search);
   const requestedTheme = params.get("theme") || "sky";
-  const allowedThemes = new Set(["sky", "orange"]);
+  const allowedThemes = new Set(["sky"]);
   const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "sky";
   document.body.dataset.theme = theme;
 
@@ -12,7 +12,6 @@
   });
 
   const hostingButton = document.querySelector("[data-hosting-toggle]");
-  const hostingTitle = document.querySelector("[data-hosting-title]");
   const hostingSubtitle = document.querySelector("[data-hosting-subtitle]");
   const hostingButtonLabel = document.querySelector("[data-hosting-button-label]");
   const hostingButtonNote = document.querySelector("[data-hosting-button-note]");
@@ -22,9 +21,10 @@
   const modeHint = document.querySelector("[data-mode-hint]");
   const modeNote = document.querySelector("[data-mode-note]");
   const connectionText = document.querySelector("[data-connection-text]");
-  const platformToggle = document.querySelector("[data-platform-toggle]");
+  const platformToggle = document.querySelector('[data-platform="soul"]');
   const platformState = document.querySelector("[data-platform-state]");
   const personaButtons = [...document.querySelectorAll("[data-persona]")];
+  const saveAddressButton = document.querySelector("[data-save-address]");
   const toast = document.querySelector("[data-toast]");
   const clocks = [...document.querySelectorAll("[data-clock]")];
 
@@ -87,9 +87,6 @@
     hostingHero?.classList.toggle("active", hosting && connected);
     hostingHero?.classList.toggle("disconnected", !connected);
 
-    if (hostingTitle) {
-      hostingTitle.textContent = hosting ? copy.title : "请开启 AI 托管";
-    }
     if (hostingSubtitle) {
       hostingSubtitle.textContent = hosting
         ? copy.subtitle
@@ -140,7 +137,7 @@
     personaButtons.forEach((button) => {
       const selected = button.dataset.persona === selectedPersona;
       button.classList.toggle("active", selected);
-      button.setAttribute("aria-pressed", String(selected));
+      button.setAttribute("aria-selected", String(selected));
     });
   }
 
@@ -148,12 +145,7 @@
     button.setAttribute("aria-pressed", String(enabled));
     button.querySelector(".toggle")?.classList.toggle("on", enabled);
     const state = button.querySelector(".row-state");
-    if (state) {
-      const isLocation = button.classList.contains("location-row");
-      state.textContent = enabled
-        ? (isLocation ? "已启用" : "已开启")
-        : (isLocation ? "未启用" : "已关闭");
-    }
+    if (state) state.textContent = enabled ? "已开启" : "已关闭";
   }
 
   hostingButton?.addEventListener("click", () => {
@@ -203,10 +195,20 @@
     platformConnected = !platformConnected;
     platformToggle.setAttribute("aria-pressed", String(platformConnected));
     platformToggle.classList.toggle("off", !platformConnected);
-    if (platformState) platformState.textContent = platformConnected ? "已连接" : "未连接";
+    if (platformState) platformState.textContent = platformConnected ? "已连接" : "点击连接";
     if (!platformConnected) hosting = false;
     renderHosting();
     showToast(platformConnected ? "Soul 已连接" : "Soul 已断开");
+  });
+
+  saveAddressButton?.addEventListener("click", () => {
+    const homeAddress = document.querySelector("#home-address")?.value.trim();
+    const workAddress = document.querySelector("#work-address")?.value.trim();
+    if (!homeAddress || !workAddress) {
+      showToast("家庭地址和工作地址都不能为空");
+      return;
+    }
+    showToast("地址已保存，后续可以随时修改");
   });
 
   function renderClock() {
