@@ -50,10 +50,16 @@ class FloatingWindow(private val context: Context) {
 
         val icon = ImageView(appContext).apply {
             setImageResource(R.drawable.ic_floating_power)
-            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            layoutParams = LinearLayout.LayoutParams(
+                dp(FloatingWindowMetrics.ICON_SIZE_DP),
+                dp(FloatingWindowMetrics.ICON_SIZE_DP)
+            )
         }
         val label = TextView(appContext).apply {
-            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14.5f)
+            setTextSize(
+                android.util.TypedValue.COMPLEX_UNIT_SP,
+                FloatingWindowMetrics.LABEL_TEXT_SIZE_SP
+            )
             setTextColor(android.graphics.Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             isSingleLine = true
@@ -61,13 +67,18 @@ class FloatingWindow(private val context: Context) {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { marginStart = dp(8) }
+            ).apply { marginStart = dp(FloatingWindowMetrics.ICON_MARGIN_DP) }
         }
         val root = LinearLayout(appContext).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            minimumWidth = dp(174)
-            setPadding(dp(14), 0, dp(14), 0)
+            minimumWidth = dp(FloatingWindowMetrics.WIDTH_DP)
+            setPadding(
+                dp(FloatingWindowMetrics.HORIZONTAL_PADDING_DP),
+                0,
+                dp(FloatingWindowMetrics.HORIZONTAL_PADDING_DP),
+                0
+            )
             isClickable = true
             isFocusable = true
             elevation = dp(10).toFloat()
@@ -78,8 +89,8 @@ class FloatingWindow(private val context: Context) {
         }
 
         val windowParams = WindowManager.LayoutParams(
-            dp(174),
-            dp(58),
+            dp(FloatingWindowMetrics.WIDTH_DP),
+            dp(FloatingWindowMetrics.HEIGHT_DP),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -153,7 +164,7 @@ class FloatingWindow(private val context: Context) {
                 intArrayOf(0xFFFFFFFF.toInt(), 0xFFEAF3FF.toInt())
             }
         ).apply {
-            cornerRadius = dp(29).toFloat()
+            cornerRadius = dp(FloatingWindowMetrics.CORNER_RADIUS_DP).toFloat()
             if (!enabled) setStroke(dp(1), 0xFFC9E0F7.toInt())
         }
         root.background = RippleDrawable(
@@ -245,12 +256,12 @@ class FloatingWindow(private val context: Context) {
 
     private fun maxHorizontalOffset(): Int {
         val screenWidth = appContext.resources.displayMetrics.widthPixels
-        return (screenWidth - dp(174) - dp(8)).coerceAtLeast(0)
+        return (screenWidth - dp(FloatingWindowMetrics.WIDTH_DP) - dp(8)).coerceAtLeast(0)
     }
 
     private fun maxVerticalOffset(): Int {
         val screenHeight = appContext.resources.displayMetrics.heightPixels
-        return ((screenHeight - dp(58)) / 2 - dp(8)).coerceAtLeast(0)
+        return ((screenHeight - dp(FloatingWindowMetrics.HEIGHT_DP)) / 2 - dp(8)).coerceAtLeast(0)
     }
 
     private fun clamp(value: Int, min: Int, max: Int): Int = value.coerceIn(min, max)
