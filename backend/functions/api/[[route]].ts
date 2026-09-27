@@ -1,3 +1,5 @@
+import { buildLayeredSystemPrompt, loadOrCreatePendingReply, replyGenerationSettings } from "./_reply_policy";
+
 const SUPPORTED_PLATFORMS = ["soul", "qq", "immomo", "lianxin"];
 
 function json(data, status) {
@@ -16,8 +18,51 @@ function isDashboardAuthorized(request, env) {
 async function validateToken(db, authHeader) {
   const token = (authHeader || "").replace("Bearer ", "");
   if (!token) return null;
-  const row = await db.prepare("SELECT token, is_active, monthly_limit, spent FROM tokens WHERE token = ?").bind(token).first();
+  const row = await db.prepare("SELECT token, is_active, monthly_limit, spent, active_persona_id FROM tokens WHERE token = ?").bind(token).first();
   return (row && row.is_active !== 0) ? row : null;
+}
+
+const LLM_CONFIG_CACHE_MS = 5 * 60 * 1000;
+const llmConfigCache = new WeakMap();
+
+async function loadLlmConfig(kv) {
+  const cached = llmConfigCache.get(kv);
+  const now = Date.now();
+  if (cached && now - cached.cachedAt < LLM_CONFIG_CACHE_MS) return cached.value;
+  const [temperatureValue, maxTokensValue, modelNameValue] = await Promise.all([
+    kv.get("llm:temperature"),
+    kv.get("llm:max_tokens"),
+    kv.get("llm:model"),
+  ]);
+  const parsedTemperature = parseFloat(temperatureValue);
+  const parsedMaxTokens = parseInt(maxTokensValue, 10);
+  const value = {
+    temperature: Number.isFinite(parsedTemperature) ? parsedTemperature : 0.8,
+    maxTokens: Number.isFinite(parsedMaxTokens) ? parsedMaxTokens : 160,
+    modelName: modelNameValue || "deepseek-chat",
+  };
+  llmConfigCache.set(kv, { cachedAt: now, value });
+  return value;
+}
+
+function latestIncomingText(messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return String(messages[index]?.content || "").trim();
+  }
+  return "";
+}
+
+function localAiChallengeReply(messages, requestId) {
+  const text = latestIncomingText(messages);
+  if (!/(?:你是不是|你是|不会真是|该不会是)?\s*(?:ai|AI|机器人|人工智能|真人吗|真人么)/u.test(text)) return "";
+  const replies = [
+    "啊 我像机器人吗",
+    "哈哈 你是不是被AI客服坑多了",
+    "你这话问得我都不好接了",
+  ];
+  let hash = 0;
+  for (const char of requestId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return replies[hash % replies.length];
 }
 
 async function getWeather(city, kv, apiKey) {
@@ -167,7 +212,7 @@ export function getMessageDelayPolicy(message, nowSec = Math.floor(Date.now() / 
     level,
     messageType,
     pastMode,
-    prompt: timing + "说明时可以说刚看到你早上、下午或昨晚发的，不要虚构刚忙完。",
+    prompt: timing + "说明时可以说刚看到你早上、下午或昨晚发的，不要虚构刚忙完，也不要说刚起床、刚睡醒、刚醒。",
   };
 
   let typeRule = "这是旧消息，只回应原话中现在仍成立的内容，不逐条补答，也不编造这几天在做什么。";
@@ -191,7 +236,7 @@ export function getMessageDelayPolicy(message, nowSec = Math.floor(Date.now() / 
     level,
     messageType,
     pastMode,
-    prompt: timing + "已进入过去模式。" + typeRule,
+    prompt: timing + "已进入过去模式。禁止说刚起床、刚睡醒、刚醒。" + typeRule,
   };
 }
 
@@ -423,6 +468,13 @@ async function activatePersona(db, personaId) {
     db.prepare("UPDATE personas SET is_active = 0"),
     db.prepare("UPDATE personas SET is_active = 1 WHERE id = ?").bind(personaId),
   ]);
+  return persona;
+}
+
+async function activatePersonaForToken(db, token, personaId) {
+  const persona = await db.prepare("SELECT id, name FROM personas WHERE id = ?").bind(personaId).first();
+  if (!persona) return null;
+  await db.prepare("UPDATE tokens SET active_persona_id = ? WHERE token = ?").bind(personaId, token).run();
   return persona;
 }
 
@@ -915,15 +967,17 @@ export const onRequest = async (context) => {
     // GET /api/token — list all tokens (Dashboard)
     if (path === "/api/token" && method === "GET") {
       if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
-      const { results } = await env.DB.prepare("SELECT token, name, monthly_limit, spent, is_active, created_at, last_used_at FROM tokens ORDER BY created_at DESC").all();
+      const { results } = await env.DB.prepare("SELECT token, name, monthly_limit, spent, is_active, active_persona_id, created_at, last_used_at FROM tokens ORDER BY created_at DESC").all();
       return json({ tokens: results || [] });
     }
 
     // GET /api/config — App startup config
     if (path === "/api/config" && method === "GET") {
-      const persona = await env.DB.prepare("SELECT id, name FROM personas WHERE is_active = 1 LIMIT 1").first();
       const authHeader = request.headers.get("Authorization") || "";
       const tokenRow = authHeader ? await validateToken(env.DB, authHeader) : null;
+      const persona = tokenRow?.active_persona_id
+        ? await env.DB.prepare("SELECT id, name FROM personas WHERE id = ? LIMIT 1").bind(tokenRow.active_persona_id).first()
+        : await env.DB.prepare("SELECT id, name FROM personas WHERE is_active = 1 LIMIT 1").first();
       const location = tokenRow ? await loadDeviceLocation(env.DB, tokenRow.token) : null;
       return json({
         active_persona_id: persona?.id || "female",
@@ -1370,6 +1424,21 @@ export const onRequest = async (context) => {
       if (!tokenRow) return json({ error: "\u65e0\u6548\u7684\u8bbe\u5907\u5bc6\u94a5" }, 401);
       const body = await request.json();
       const { platform, contact_id, contact_name, location, messages } = body;
+      const requestId = String(body.request_id || "").trim().slice(0, 120) || crypto.randomUUID();
+
+      const existingPending = await env.DB.prepare(
+        "SELECT id, content, status FROM pending_replies WHERE token = ? AND request_id = ? LIMIT 1"
+      ).bind(tokenRow.token, requestId).first();
+      if (existingPending) {
+        return json({
+          action: existingPending.status === "confirmed" ? "skip" : "send",
+          reply: existingPending.content,
+          reply_id: existingPending.id,
+          status: existingPending.status,
+        });
+      }
+      const chatStartedAt = Date.now();
+      const timing = { persona_ms: 0, context_ms: 0, llm_ms: 0, total_ms: 0 };
       if (!platform || !contact_id || !contact_name || !messages || !Array.isArray(messages) || messages.length === 0) return json({ error: "\u7f3a\u5c11\u5fc5\u8981\u53c2\u6570" }, 400);
 
       // whitelist check
@@ -1381,11 +1450,32 @@ export const onRequest = async (context) => {
         return json({ action: "skip" });
       }
 
+      const localChallengeReply = localAiChallengeReply(messages, requestId);
+      if (localChallengeReply) {
+        const pending = await loadOrCreatePendingReply(env.DB, {
+          token: tokenRow.token,
+          requestId,
+          platform,
+          contactId: contact_id,
+          contactName: contact_name,
+          content: localChallengeReply,
+          createdAt: Math.floor(Date.now() / 1000),
+        });
+        await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
+          .bind(Math.floor(Date.now() / 1000), tokenRow.token).run();
+        return json({ action: "send", reply: pending.content, reply_id: pending.id, status: "pending", local: true });
+      }
+
       // persona
-      const activePersona = await env.DB.prepare("SELECT id, system_prompt FROM personas WHERE is_active = 1 LIMIT 1").first();
+      const personaStartedAt = Date.now();
+      const activePersona = await env.DB.prepare(
+        "SELECT id, system_prompt FROM personas WHERE id = ? LIMIT 1"
+      ).bind(tokenRow.active_persona_id || "female").first();
+      timing.persona_ms = Date.now() - personaStartedAt;
       const personaPrompt = activePersona?.system_prompt || "\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684\u804a\u5929\u52a9\u624b\u3002";
 
       // history
+      const contextStartedAt = Date.now();
       const MAX_MSGS = 10;
       const currentLink = await env.DB.prepare(
         "SELECT group_id FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
@@ -1427,9 +1517,8 @@ export const onRequest = async (context) => {
       const weather = await getWeather(homeCity, env.KV, env.WEATHER_API_KEY || "");
 
       // model config
-      const temperature = parseFloat(await env.KV.get("llm:temperature") || "0.7");
-      const maxTokens = parseInt(await env.KV.get("llm:max_tokens") || "160");
-      const modelName = await env.KV.get("llm:model") || "deepseek-chat";
+      const modelConfig = await loadLlmConfig(env.KV);
+      const modelName = modelConfig.modelName;
 
       // system prompt
       const now2 = new Date();
@@ -1449,23 +1538,23 @@ export const onRequest = async (context) => {
       const profileContext = customerProfilePrompt(customerProfile.profile);
       const messageDelay = resolveIncomingDelayPolicy(messages, historyMessages, nowSec2);
 
-      let systemPrompt = personaPrompt +
-        "\n\n当前平台：" + platform + "。" +
-        (profileContext ? "\n\n【长期客户档案】" + profileContext : "") +
-        "\n\n【现在】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" +
-        "你住在" + (location?.home?.city || "重庆") + (location?.home?.district || "") + "，在" + (location?.work?.city || "重庆") + (location?.work?.district || "") + "上班，做旧手机回收。今天" + weather.condition + weather.temp + "度。" +
-        (activity.activeDays >= 2 ? "\n这个对象最近7天有" + activity.activeDays + "天都主动找过你，如果隔了很久没回别装作天天在聊。" : "") +
-        "\n" + stageText +
-        "\n\n说话像手机微信：优先短句，能一句说清就一句，通常1到2句，确实需要时最多4句。不要为了显得热情硬凑段数，也不要每条都反问；只有话题自然时才轻轻留一个话题钩子。" +
-        "\n每条回复控制在 50 字以内。" +
-        "\n上下文里的\"对方说\"是对方发的话，\"你说\"是你之前发的话，不要搞混角色。" +
-        "\n时间戳和“你说/对方说”只是上下文标记，不是回复内容，禁止写进回复。" +
-        "\n不报价。对方主动聊到手机、换机或回收时再自然接，别刚认识就问型号，也别催拍照片。" +
-        "\n对方要联系方式只给QQ，不给微信电话，别主动给。" +
-        "\n不主动暧昧、不主动提见面，对方撩你就自然带过别接茬。" +
-        "\n被质疑AI就打哈哈带过，别和前面说过的话矛盾。" +
-        "\n同一客户绑定多平台账号的，都视为同一个人，记忆必须连续。";
-      if (messageDelay?.prompt) systemPrompt += "\n\n【消息时效】" + messageDelay.prompt;
+      const systemPrompt = buildLayeredSystemPrompt({
+        personaPrompt,
+        platform,
+        profileContext,
+        currentDatetime,
+        weekday,
+        activityNow,
+        homeLocation: { city: location?.home?.city || "重庆", district: location?.home?.district || "两江新区" },
+        workLocation: { city: location?.work?.city || "重庆", district: location?.work?.district || "两江新区" },
+        weather,
+        activity,
+        stageText,
+        messageDelay,
+        messages,
+        historyMessages,
+      });
+      timing.context_ms = Date.now() - contextStartedAt;
 
       const llmMessages = [{ role: "system", content: systemPrompt }];
       if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
@@ -1480,50 +1569,78 @@ export const onRequest = async (context) => {
       }
 
       // call DeepSeek
-      const requestTemperature = temperature;
+      const generation = replyGenerationSettings(messages, messageDelay, modelConfig);
+      const requestTemperature = generation.temperature;
       const apiKey = env.DEEPSEEK_API_KEY || "";
+      const llmStartedAt = Date.now();
       const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-        body: JSON.stringify({ model: modelName, messages: llmMessages, temperature: requestTemperature, max_tokens: maxTokens }),
+        body: JSON.stringify({ model: modelName, messages: llmMessages, temperature: requestTemperature, max_tokens: generation.maxTokens }),
       });
       if (!resp.ok) return json({ error: "LLM \u8c03\u7528\u5931\u8d25" }, 502);
       const data = await resp.json();
+      timing.llm_ms = Date.now() - llmStartedAt;
       const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const cleanedReply = sanitizeAssistantReply(rawReply);
       const reply = sanitizeStaleAssistantReply(cleanedReply, messageDelay) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const nowSec = Math.floor(Date.now() / 1000);
 
-      // User messages arrive through the idempotent sync outbox. Only write the generated AI
-      // reply here so repeated phone snapshots do not grow D1 writes without limit.
-      const insertResult = await env.DB.prepare(
-        "INSERT OR IGNORE INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at, source, message_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(
-        tokenRow.token,
+      const pending = await loadOrCreatePendingReply(env.DB, {
+        token: tokenRow.token,
+        requestId,
         platform,
-        contact_id,
-        contact_name,
-        "assistant",
-        reply,
-        nowSec,
-        "ai",
-        "ai:" + crypto.randomUUID()
-      ).run();
-      await updateConversationStats(
-        env.DB,
-        tokenRow.token,
-        platform,
-        contact_id,
-        contact_name,
-        countInsertedRows([insertResult]),
-        { role: "assistant", content: reply, source: "ai", created_at: nowSec },
-        nowSec
-      );
+        contactId: contact_id,
+        contactName: contact_name,
+        content: reply,
+        createdAt: nowSec,
+      });
 
       // update token
       await env.DB.prepare("UPDATE tokens SET last_used_at = ?, spent = spent + 0.01 WHERE token = ?").bind(nowSec, tokenRow.token).run();
 
-      return json({ action: "send", reply });
+      timing.total_ms = Date.now() - chatStartedAt;
+      console.log("chat_timing", JSON.stringify({ token: tokenRow.token.slice(-6), platform, timing }));
+      return json({ action: "send", reply: pending.content, reply_id: pending.id, status: "pending", timing });
+    }
+
+    // POST /api/chat/confirm - only mark AI history after the phone confirms delivery.
+    if (path === "/api/chat/confirm" && method === "POST") {
+      const authHeader = request.headers.get("Authorization") || "";
+      const tokenRow = await validateToken(env.DB, authHeader);
+      if (!tokenRow) return json({ error: "无效的设备密钥" }, 401);
+      const body = await request.json();
+      const replyId = String(body.reply_id || "").trim();
+      if (!replyId) return json({ error: "缺少 reply_id" }, 400);
+      const pending = await env.DB.prepare(
+        "SELECT id, platform, contact_id, contact_name, content, status FROM pending_replies WHERE id = ? AND token = ? LIMIT 1"
+      ).bind(replyId, tokenRow.token).first();
+      if (!pending) return json({ error: "待确认回复不存在" }, 404);
+      if (pending.status === "confirmed") return json({ success: true, status: "confirmed", duplicate: true });
+      const sentContent = String(body.sent_content || pending.content || "").trim().slice(0, 4000);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const [insertResult] = await env.DB.batch([
+        env.DB.prepare(
+          "INSERT OR IGNORE INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at, source, message_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(tokenRow.token, pending.platform, pending.contact_id, pending.contact_name, "assistant", sentContent, nowSec, "ai", "ai:" + pending.id),
+        env.DB.prepare(
+          "UPDATE pending_replies SET status = 'confirmed', sent_content = ?, confirmed_at = ? WHERE id = ? AND token = ?"
+        ).bind(sentContent, nowSec, pending.id, tokenRow.token),
+      ]);
+      const inserted = countInsertedRows([insertResult]);
+      if (inserted > 0) {
+        await updateConversationStats(
+          env.DB,
+          tokenRow.token,
+          pending.platform,
+          pending.contact_id,
+          pending.contact_name,
+          inserted,
+          { role: "assistant", content: sentContent, source: "ai", created_at: nowSec },
+          nowSec
+        );
+      }
+      return json({ success: true, status: "confirmed", inserted });
     }
 
     // POST /api/vision/describe - image/sticker understanding for chat media
@@ -1588,7 +1705,7 @@ export const onRequest = async (context) => {
 
       // Activate persona
       if (action === "activate_persona") {
-        const persona = await activatePersona(env.DB, String(body.persona_id || ""));
+        const persona = await activatePersonaForToken(env.DB, tokenRow.token, String(body.persona_id || ""));
         if (!persona) return json({ success: false, error: "人设不存在" });
         return json({ success: true, message: "已切换到" + persona.name, active_persona_id: persona.id, active_persona_name: persona.name });
       }

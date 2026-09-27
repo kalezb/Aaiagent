@@ -10,6 +10,7 @@ data class ConversationContext(
     var lastIncomingFingerprint: String = "",
     val aiSentContents: MutableSet<String> = mutableSetOf(),
     val pendingReplyParts: MutableList<String> = mutableListOf(),
+    var pendingReplyId: String = "",
     var pendingReplyIncomingFingerprint: String = "",
     var pendingReplyBatchFingerprint: String = "",
     var lastRepliedIncomingFingerprint: String = ""

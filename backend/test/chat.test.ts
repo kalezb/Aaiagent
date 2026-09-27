@@ -16,6 +16,8 @@ class MockD1 {
     this.conversationStatsRows = [];
     this.profileRows = new Map();
     this.runCalls = [];
+    this.pendingRows = [];
+    this.tokenPersonas = new Map([["test-token", "female"]]);
     this.options = {};
   }
 
@@ -79,6 +81,25 @@ class MockD1 {
       this.applyConversationStats(statement);
       return 1;
     }
+    if (sql.includes("INSERT OR IGNORE INTO pending_replies")) {
+      const p = statement.params || [];
+      const key = `${p[1]}\u0000${p[2]}`;
+      if (this.pendingRows.some((row) => `${row.token}\u0000${row.request_id}` === key)) return 0;
+      this.pendingRows.push({
+        id: p[0], token: p[1], request_id: p[2], platform: p[3], contact_id: p[4],
+        contact_name: p[5], content: p[6], status: "pending", sent_content: "", created_at: p[7],
+      });
+      return 1;
+    }
+    if (sql.includes("UPDATE pending_replies SET status = 'confirmed'")) {
+      const p = statement.params || [];
+      const row = this.pendingRows.find((item) => item.id === p[2] && item.token === p[3]);
+      if (!row) return 0;
+      row.status = "confirmed";
+      row.sent_content = p[0];
+      row.confirmed_at = p[1];
+      return 1;
+    }
     if (sql.includes("INSERT INTO customer_profiles")) {
       const p = statement.params || [];
       this.profileRows.set(`${p[0]}\u0000${p[1]}`, {
@@ -104,7 +125,17 @@ class MockD1 {
               is_active: 1,
               monthly_limit: 100,
               spent: 0,
+              active_persona_id: this.tokenPersonas.get(String(params[0])) || "female",
             };
+          }
+          if (sql.includes("FROM pending_replies")) {
+            if (sql.includes("WHERE token = ? AND request_id = ?")) {
+              return this.pendingRows.find((row) => row.token === params[0] && row.request_id === params[1]) ?? null;
+            }
+            if (sql.includes("WHERE id = ? AND token = ?")) {
+              return this.pendingRows.find((row) => row.id === params[0] && row.token === params[1]) ?? null;
+            }
+            return null;
           }
           if (sql.includes("FROM personas")) {
             return this.personas.find((persona) => persona.id === params[0]) ?? null;
@@ -198,6 +229,9 @@ class MockD1 {
         },
         run: async () => {
           this.runCalls.push({ sql, params });
+          if (sql.includes("UPDATE tokens SET active_persona_id")) {
+            this.tokenPersonas.set(String(params[1]), String(params[0]));
+          }
           if (sql.includes("INSERT INTO user_locations")) {
             const [token, homeCity, homeDistrict, workCity, workDistrict, updatedAt] = params;
             this.locationRows.set(token, {
@@ -281,6 +315,7 @@ describe("chat logic", () => {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
       body: JSON.stringify({
+        request_id: "reply-request-1",
         platform: "soul",
         contact_id: "期待下一步的我们",
         contact_name: "期待下一步的我们",
@@ -300,22 +335,18 @@ describe("chat logic", () => {
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
-    expect(payload.max_tokens).toBe(160);
-    expect(payload.messages[0].content).toContain("当前平台：soul");
+    expect(payload.max_tokens).toBe(88);
+    expect(payload.messages[0].content).toContain("【当前平台】soul。");
     expect(payload.messages[0].content).not.toContain("语气：");
     expect(payload.messages[0].content).not.toContain("偏文艺");
-    expect(payload.messages[0].content).toContain("你住在重庆两江新区");
-    expect(payload.messages[0].content).toContain("在重庆两江新区上班");
-    expect(payload.messages[0].content).toContain("你说\"是你之前发的话");
+    expect(payload.messages[0].content).toContain("你住在重庆两江新区，工作地在重庆两江新区");
+    expect(payload.messages[0].content).toContain("“对方说”是客户说的，“你说”是你之前说的");
     expect(payload.messages[0].content).not.toContain("短句聊天风格");
     expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
     expect(payload.messages[0].content).toContain("你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。");
-    expect(payload.messages[0].content).toContain("每条回复控制在 50 字以内。");
-    expect(payload.messages[0].content).toContain("优先短句，能一句说清就一句，通常1到2句，确实需要时最多4句。");
-    expect(payload.messages[0].content).toContain("不报价。对方主动聊到手机、换机或回收时再自然接，别刚认识就问型号，也别催拍照片。");
-    expect(payload.messages[0].content).toContain("对方要联系方式只给QQ，不给微信电话，别主动给。");
-    expect(payload.messages[0].content).toContain("不主动暧昧、不主动提见面，对方撩你就自然带过别接茬。");
-    expect(payload.messages[0].content).toContain("被质疑AI就打哈哈带过，别和前面说过的话矛盾。");
+    expect(payload.messages[0].content).toContain("像熟人微信聊天，优先短句，1到3句");
+    expect(payload.messages[0].content).toContain("不报价，不催单，不主动暧昧，不主动提见面");
+    expect(payload.messages[0].content).toContain("对方要联系方式只给QQ");
     expect(payload.messages[0].content).not.toContain("别刚加好友就推销回收，别主动提见面");
   });
 
@@ -589,6 +620,7 @@ describe("chat logic", () => {
         contact_id: "contact-1",
         contact_name: "测试联系人",
         messages: [{ role: "user", content: "在吗" }],
+        request_id: "confirm-only-reply",
       }),
     });
     await onRequest({
@@ -797,6 +829,7 @@ describe("chat logic", () => {
         contact_id: "期待下一步的我们",
         contact_name: "期待下一步的我们",
         messages: [{ role: "user", content: "在吗" }],
+        request_id: "confirm-only-reply",
       }),
     });
     await onRequest({
@@ -837,8 +870,16 @@ describe("chat logic", () => {
       active_persona_id: "male_chenyu",
       active_persona_name: "陈屿",
     });
-    expect(db.batchCalls).toHaveLength(1);
-    expect(db.batchCalls[0]).toHaveLength(2);
+    expect(db.tokenPersonas.get("test-token")).toBe("male_chenyu");
+    db.tokenPersonas.set("other-token", "female");
+    const otherConfig = await onRequest({
+      request: new Request("https://example.com/api/config", {
+        headers: { Authorization: "Bearer other-token" },
+      }),
+      env: { DB: db, KV: new MockKV() },
+    } as never);
+    await expect(otherConfig.json()).resolves.toMatchObject({ active_persona_id: "female" });
+    expect(db.tokenPersonas.get("test-token")).toBe("male_chenyu");
   });
 
   it("persists multiple device locations and returns the latest one from config", async () => {
@@ -920,14 +961,17 @@ describe("chat logic", () => {
     expect(builtFunctions).not.toContain("platform_style_hints");
   });
 
-  it("stores the updated Xingmu persona in the seed and migration", () => {
+  it("stores four aligned personas in the seed and production migration", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
-    const migration = readFileSync(new URL("../db/migrations/20260927_update_xingmu_persona.sql", import.meta.url), "utf8");
+    const migration = readFileSync(new URL("../db/migrations/20260928_device_persona_and_pending_replies.sql", import.meta.url), "utf8");
     const persona = "你是星暮，29岁女，重庆，已婚没孩子。做全国旧手机数码回收，白天公司上班安排快递，晚上在家休息，深夜偶尔回下业务消息安排明天上门。和公婆住，老公出差半年没回来，夫妻感情一般，但你不跟陌生人抱怨婚姻、不搞暧昧。有辆宝马X3，房子家里买的。说话接地气像朋友微信聊天，短句子，每条回复50字以内。目的是拉近关系发展客户，但不报价、不主动暧昧、不主动提见面。对方要联系方式时不给微信电话，坚持要就给一个QQ号，别主动给。";
 
-    expect(schema).toContain(persona);
-    expect(migration).toContain(persona);
-    expect(migration).toContain("ON CONFLICT(id) DO UPDATE");
+    expect(schema).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
+    expect(migration).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
+    expect(schema).toContain("新旧手机、能开机或不能开机的");
+    expect(migration).toContain("UPDATE personas");
+    expect(migration).toContain("active_persona_id");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS pending_replies");
   });
 
   it("rejects incomplete location updates", async () => {
@@ -1376,7 +1420,7 @@ describe("monitoring sync and customer profile batching", () => {
     expect(source).toContain("window.setInterval(refreshVisibleData, 10000)");
   });
 
-  it("does not rewrite the visible user transcript on every AI reply", async () => {
+  it("writes AI history only after the phone confirms a successful send", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
       choices: [{ message: { content: "在的 刚忙完" } }],
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -1386,6 +1430,7 @@ describe("monitoring sync and customer profile batching", () => {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
       body: JSON.stringify({
+        request_id: "confirm-only-reply",
         platform: "soul",
         contact_id: "contact-1",
         contact_name: "期待下一步的我们",
@@ -1398,9 +1443,60 @@ describe("monitoring sync and customer profile batching", () => {
       env: { DB: db, KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
     } as never);
 
+    const generated = await response.json();
     expect(response.status).toBe(200);
+    expect(generated.reply_id).toBeTruthy();
+    expect(db.historyRows).toHaveLength(0);
+    expect(db.pendingRows).toHaveLength(1);
+
+    const confirmResponse = await onRequest({
+      request: new Request("https://example.com/api/chat/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({ reply_id: generated.reply_id, sent_content: generated.reply }),
+      }),
+      env: { DB: db, KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+    expect(confirmResponse.status).toBe(200);
     expect(db.historyRows).toHaveLength(1);
     expect(db.historyRows[0]).toMatchObject({ role: "assistant", source: "ai", content: "在的 刚忙完" });
+  });
+
+  it("returns the same pending reply for a repeated request id without another model call", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "在的" } }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const db = new MockD1();
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const makeRequest = () => new Request("https://example.com/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+      body: JSON.stringify({
+        request_id: "stable-request-id",
+        platform: "soul",
+        contact_id: "contact-1",
+        contact_name: "期待下一步的我们",
+        messages: [{ role: "user", content: "在吗" }],
+      }),
+    });
+
+    const first = await onRequest({
+      request: makeRequest(),
+      env: { DB: db, KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+    const second = await onRequest({
+      request: makeRequest(),
+      env: { DB: db, KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+    expect(secondBody.reply_id).toBe(firstBody.reply_id);
+    expect(secondBody.reply).toBe("在的");
+    expect(db.historyRows).toHaveLength(0);
   });
 
   it("uses deepseek-flash JSON output once the 40-message profile batch is ready", async () => {

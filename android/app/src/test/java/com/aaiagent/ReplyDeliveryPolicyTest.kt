@@ -36,9 +36,9 @@ class ReplyDeliveryPolicyTest {
     }
 
     @Test
-    fun `more than four parts are compacted instead of sent as a long burst`() {
+    fun `more than three parts are compacted instead of sent as a long burst`() {
         assertEquals(
-            listOf("一", "二", "三", "四 五"),
+            listOf("一", "二", "三 四 五"),
             ReplyDeliveryPolicy.prepareParts(listOf("一", "二", "三", "四", "五"))
         )
     }
@@ -48,5 +48,13 @@ class ReplyDeliveryPolicyTest {
         assertTrue(ReplyDeliveryPolicy.incomingChanged("old", "new"))
         assertTrue(ReplyDeliveryPolicy.incomingChanged("old", ""))
         assertFalse(ReplyDeliveryPolicy.incomingChanged("same", "same"))
+    }
+
+    @Test
+    fun `follow-up bubbles use short fast typing delays`() {
+        assertEquals(200L, ReplyDeliveryPolicy.delayAfterPart("短句", 0.0))
+        assertEquals(500L, ReplyDeliveryPolicy.delayAfterPart("短句", 1.0))
+        assertEquals(600L, ReplyDeliveryPolicy.delayAfterPart("这是一条超过十六个字的较长回复内容", 0.0))
+        assertEquals(1000L, ReplyDeliveryPolicy.delayAfterPart("这是一条超过十六个字的较长回复内容", 1.0))
     }
 }

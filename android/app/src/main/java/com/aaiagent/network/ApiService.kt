@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 data class ChatRequest(
     val token: String,
     val platform: String,
+    @SerializedName("request_id") val requestId: String,
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
     val messages: List<Map<String, Any>>,
@@ -22,6 +23,7 @@ data class ChatRequest(
 data class ChatResponse(
     val action: String?,
     val reply: String?,
+    @SerializedName("reply_id") val replyId: String?,
     val error: String?
 )
 
@@ -49,6 +51,17 @@ data class SyncMessagesRequest(
 )
 
 data class ConfigSaveResult(val success: Boolean, val message: String, val error: String?)
+
+data class ConfirmChatRequest(
+    @SerializedName("reply_id") val replyId: String,
+    @SerializedName("sent_content") val sentContent: String
+)
+
+data class ConfirmChatResponse(
+    val success: Boolean?,
+    val status: String?,
+    val error: String?
+)
 
 data class VisionResponse(
     val success: Boolean,
@@ -98,6 +111,26 @@ class ApiService(private val baseUrl: String) {
             }
             gson.fromJson(responseBody, ChatResponse::class.java)
                 ?: throw IllegalStateException("deepseek_empty_response")
+        }
+    }
+
+    suspend fun confirmChatReply(token: String, replyId: String, sentContent: String): Boolean = withContext(Dispatchers.IO) {
+        if (replyId.isBlank()) return@withContext false
+        try {
+            val payload = ConfirmChatRequest(replyId = replyId, sentContent = sentContent)
+            val body = gson.toJson(payload).toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url(baseUrl.trimEnd('/') + "/api/chat/confirm")
+                .header("Authorization", "Bearer " + token)
+                .post(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) return@withContext false
+                gson.fromJson(responseBody, ConfirmChatResponse::class.java)?.success == true
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 
