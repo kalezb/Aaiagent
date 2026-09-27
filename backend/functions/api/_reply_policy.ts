@@ -16,6 +16,133 @@ export function localVoiceRequestReply(messages) {
   return isVoiceCallRequest(latestIncomingText(messages)) ? "不语音哈 打字可以" : "";
 }
 
+const CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以).{0,8}(?:qq|q号|扣扣|企鹅号|联系方式|好友|微信|vx|v信|电话|手机号)|(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号).{0,8}(?:多少|几号|发我|给我|留|加|互换|交换)|(?:加|发|给|留).{0,3}(?:个)?q(?:号)?(?:给|我)?|(?:你|你的).{0,4}(?:qq|q号|联系方式|微信|电话|手机号).{0,6}(?:是|多少|发|给|留|加)|(?:联系方式|微信|电话|手机号).{0,6}(?:给我|发我|留一个|加一下)/iu;
+
+const CONTACT_NEGATION_PATTERN = /(?:不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号)/iu;
+
+export function isContactRequest(value) {
+  const text = String(value || "").replace(/\s+/gu, "");
+  if (!text || CONTACT_NEGATION_PATTERN.test(text)) return false;
+  return CONTACT_REQUEST_PATTERN.test(text);
+}
+
+export function countContactRequests(...messageGroups) {
+  const seen = new Set();
+  let count = 0;
+  for (const group of messageGroups) {
+    for (const message of Array.isArray(group) ? group : []) {
+      if (message?.role !== "user" || !isContactRequest(message?.content)) continue;
+      const key = [message.id, message.platform, message.contact_id, message.created_at, message.content].join("\u0000");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function normalizeContactQq(value) {
+  const text = String(value || "").trim().replace(/[^0-9]/gu, "");
+  return /^\d{5,12}$/u.test(text) ? text : "";
+}
+
+function contactRefusalReply(requestCount, businessIntent) {
+  if (requestCount <= 1) {
+    return businessIntent
+      ? "有手机的事在这儿说就行 要加Q以后再说"
+      : "先不加哈 在这儿聊挺好的";
+  }
+  if (requestCount === 2) return "你这追得有点急 先聊熟点再说";
+  return "加Q这事再缓缓 先说你找我想聊啥";
+}
+
+export function resolveContactRequestPolicy({
+  requestCount,
+  stage,
+  activity,
+  incomingText,
+  historyMessages = [],
+  messages = [],
+  contactQq = "",
+}) {
+  const count = Math.max(0, Number(requestCount || 0));
+  if (count <= 0) return { isRequest: false, allowed: false, reply: "", requestCount: 0, contactQq: "" };
+
+  const combinedMessages = [...historyMessages, ...messages].filter((message) => message?.role === "user");
+  const businessIntent = isExplicitBusinessIntent(incomingText) || combinedMessages.some((message) => isExplicitBusinessIntent(message.content));
+  const normalizedQq = normalizeContactQq(contactQq);
+  const totalExchanges = Number(activity?.totalExchanges || 0);
+  const activeDays = Number(activity?.activeDays || 0);
+  const requiredMessages = businessIntent ? 10 : 30;
+  const allowed = Boolean(
+    normalizedQq &&
+    Number(stage || 0) >= 2 &&
+    count >= 3 &&
+    totalExchanges >= requiredMessages &&
+    activeDays >= 2
+  );
+  const reply = allowed
+    ? "可以 我QQ是" + normalizedQq + " 加的时候说下你是谁"
+    : contactRefusalReply(count, businessIntent);
+
+  return {
+    isRequest: true,
+    allowed,
+    reply,
+    requestCount: count,
+    businessIntent,
+    contactQq: normalizedQq,
+  };
+}
+
+const CONTACT_DISCLOSURE_PATTERN = /(?:qq|q号|扣扣|企鹅号|微信号?|vx|v信|手机号|电话|联系方式).{0,24}\d{5,12}|\d{5,12}.{0,24}(?:qq|q号|扣扣|企鹅号|微信号?|vx|v信|手机号|电话|联系方式)|(?:加|联系).{0,12}\d{5,12}/iu;
+const CONTACT_CHANNEL_PATTERN = /(?:qq|q号|扣扣|企鹅号|微信号?|vx|v信|手机号|电话)/iu;
+
+export function sanitizeContactDisclosure(value, { allowed = false, contactQq = "" } = {}) {
+  const normalizedQq = normalizeContactQq(contactQq);
+  const fallback = "联系方式先不发了 在这儿聊就行";
+  const segments = String(value || "")
+    .split(/(\|\|\||\r?\n)/u)
+    .map((segment) => {
+      if (segment === "|||" || segment === "\n" || segment === "\r\n" || !segment.trim()) return segment;
+      if (!CONTACT_DISCLOSURE_PATTERN.test(segment)) return segment;
+      const hasNonQqChannel = /(?:微信号?|vx|v信|手机号|电话)/iu.test(segment);
+      if (allowed && normalizedQq && segment.includes(normalizedQq) && !hasNonQqChannel) return segment;
+      return fallback;
+    })
+    .filter((segment) => segment.length > 0);
+
+  const cleaned = segments.join("").trim();
+  if (!cleaned) return fallback;
+  if (!CONTACT_DISCLOSURE_PATTERN.test(cleaned) && CONTACT_CHANNEL_PATTERN.test(cleaned) && /(?:加|给|发|留|联系).{0,8}(?:我|你)/iu.test(cleaned)) {
+    return fallback;
+  }
+  return cleaned;
+}
+
+export function buildRelationshipBoundaryPrompt(stage, incomingText, historyMessages = []) {
+  const recentIncoming = [...historyMessages, { role: "user", content: incomingText }]
+    .filter((message) => message?.role === "user")
+    .slice(-6)
+    .map((message) => String(message.content || ""))
+    .join(" ");
+  const relationshipTopic = /(?:老公|老婆|婚姻|夫妻|感情|异地|分居|离婚|公婆|婆婆|家庭)/u.test(recentIncoming);
+  const intimateTopic = /(?:两性|性生活|夫妻生活|做爱|上床|开房|床事|裸|身体|黄腔|胸|腿|下面)/u.test(recentIncoming);
+  if (!relationshipTopic && !intimateTopic) return "";
+
+  const level = Number(stage || 0);
+  if (level <= 1) {
+    if (intimateTopic) return "【两性边界】你们还不熟。不要接两性细节或黄腔，用一句自然收线，例如“这个不聊这么细”或“成年人话点到为止”，不要突然说教。";
+    return "【家庭边界】你们还不熟。只可简短确认已婚等基本事实，不展开老公、公婆或夫妻矛盾，不装熟、不抱怨婚姻。";
+  }
+  if (level === 2) {
+    if (intimateTopic) return "【两性边界】可以接一句成年人观点或玩笑，不主动升级，不讲露骨细节；越界时自然收线，例如“成年人话点到为止”，不突然说教。";
+    return "【家庭边界】可以自然聊聚少离多、关系一般等感受，但不把家庭矛盾当主要话题，不连续倾诉。";
+  }
+  if (intimateTopic) return "【两性边界】比较熟可以接成年人观点和分寸内的玩笑，但不主动升级、不讲露骨细节，也不承诺见面、照片、语音或视频。";
+  return "【家庭边界】比较熟可以聊一般家庭感受，但仍不主动倒苦水，不用家庭矛盾换取亲近。";
+}
+
 export function isExplicitBusinessIntent(value) {
   const text = String(value || "").replace(/\s+/gu, "");
   return /(?:还|现在).{0,8}收(?:手机|旧手机)?|收手机|收旧手机|回收|上门.{0,6}(?:收|取)|换机|旧手机|闲置设备|手机.{0,6}(?:卖|出|处理)|(?:咨询|问问).{0,8}(?:回收|收手机)/u.test(text);
@@ -101,13 +228,14 @@ export function buildLayeredSystemPrompt({
   stageText,
   relationStageLevel,
   messageDelay,
+  contactPolicy,
   messages,
   historyMessages,
 }) {
   const newContact = Number(relationStageLevel || 0) === 1;
   const fixed = [
     personaPrompt,
-    "【底线】不报价，不催单，不主动暧昧，不主动提见面；对方要联系方式只给QQ；被质疑AI自然带过；用户没提供过的信息不编造。",
+    "【底线】不报价，不催单，不主动暧昧，不主动提见面；不主动给联系方式，对方索要QQ、微信或电话时先自然拒绝，只有系统明确给出可发送的QQ时才能回复，绝不能自己编号码；被质疑AI自然带过；用户没提供过的信息不编造。",
     "【说话方式】像熟人微信聊天，优先短句，1到3句，能一句说清就一句。不要客服腔、AI腔、总结或说教，不要每条都反问。",
     "【角色】聊天记录里的“对方说”是客户说的，“你说”是你之前说的，不能弄混。时间戳只是上下文，不要写进回复。",
     "同一客户绑定多个平台账号时按同一个人连续记忆，记忆必须连续，不要说忘记别的平台聊过什么。",
@@ -139,8 +267,15 @@ export function buildLayeredSystemPrompt({
   } else if (messageDelay?.messageType === "business") {
     scenarios.push("【主动聊到回收】先回答对方问的事。可以自然说新旧手机、坏手机、老年机都能收，但不要报价，不要催拍照片，不要马上索取型号。");
   }
-  if (/(?:\d{11}|微信号|加个微信|手机号|电话)/u.test(incoming)) {
-    scenarios.push("【联系方式】只给QQ，不给微信或电话；不要主动给联系方式。");
+
+  const relationshipPrompt = buildRelationshipBoundaryPrompt(relationStageLevel, incoming, historyMessages);
+  if (relationshipPrompt) scenarios.push(relationshipPrompt);
+  if (contactPolicy?.isRequest) {
+    if (contactPolicy.allowed && contactPolicy.contactQq) {
+      scenarios.push("【联系方式】系统已允许回复QQ，只能原样回复" + contactPolicy.contactQq + "，不要附加其他号码，也不要自行修改。");
+    } else {
+      scenarios.push("【联系方式】对方在索要QQ或联系方式，但现在不能给，也不能编造号码；自然拒绝，停住话题。");
+    }
   }
 
   return [

@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getMessageDelayPolicy, onRequest, sanitizeStaleAssistantReply } from "../functions/api/[[route]]";
-import { isVoiceCallRequest, sanitizeNewContactBusinessReply } from "../functions/api/_reply_policy";
+import {
+  buildRelationshipBoundaryPrompt,
+  countContactRequests,
+  isContactRequest,
+  isVoiceCallRequest,
+  resolveContactRequestPolicy,
+  sanitizeContactDisclosure,
+  sanitizeNewContactBusinessReply,
+} from "../functions/api/_reply_policy";
 
 class MockD1 {
   constructor(
@@ -350,7 +358,8 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。");
     expect(payload.messages[0].content).toContain("像熟人微信聊天，优先短句，1到3句");
     expect(payload.messages[0].content).toContain("不报价，不催单，不主动暧昧，不主动提见面");
-    expect(payload.messages[0].content).toContain("对方要联系方式只给QQ");
+    expect(payload.messages[0].content).toContain("不主动给联系方式");
+    expect(payload.messages[0].content).toContain("绝不能自己编号码");
     expect(payload.messages[0].content).not.toContain("别刚加好友就推销回收，别主动提见面");
   });
 
@@ -385,6 +394,92 @@ describe("chat logic", () => {
     expect(isVoiceCallRequest("可以和你语音聊天吗")).toBe(true);
     expect(isVoiceCallRequest("晚点打个电话吧")).toBe(true);
     expect(isVoiceCallRequest("我不方便语音")).toBe(false);
+  });
+
+  it("gates QQ requests and blocks accidental contact disclosure", () => {
+    expect(isContactRequest("给我发个Q")).toBe(true);
+    expect(isContactRequest("你QQ多少")).toBe(true);
+    expect(isContactRequest("加个微信吧")).toBe(true);
+    expect(isContactRequest("我不怎么用QQ")).toBe(false);
+
+    const requestHistory = [
+      { id: 1, role: "user", content: "给我发个Q", created_at: 1 },
+      { id: 2, role: "user", content: "加个Q吧", created_at: 2 },
+    ];
+    expect(countContactRequests(requestHistory, [{ role: "user", content: "QQ多少" }])).toBe(3);
+
+    const blocked = resolveContactRequestPolicy({
+      requestCount: 1,
+      stage: 2,
+      activity: { totalExchanges: 40, activeDays: 3 },
+      incomingText: "给我发个Q",
+      messages: [{ role: "user", content: "给我发个Q" }],
+      contactQq: "12345678",
+    });
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.reply).toBe("先不加哈 在这儿聊挺好的");
+
+    const allowed = resolveContactRequestPolicy({
+      requestCount: 3,
+      stage: 2,
+      activity: { totalExchanges: 30, activeDays: 2 },
+      incomingText: "给我发个Q",
+      messages: [{ role: "user", content: "给我发个Q" }],
+      contactQq: "12345678",
+    });
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.reply).toContain("12345678");
+
+    const business = resolveContactRequestPolicy({
+      requestCount: 3,
+      stage: 2,
+      activity: { totalExchanges: 10, activeDays: 2 },
+      incomingText: "我想问旧手机回收，给我个Q",
+      messages: [{ role: "user", content: "我想问旧手机回收，给我个Q" }],
+      contactQq: "12345678",
+    });
+    expect(business.allowed).toBe(true);
+
+    expect(sanitizeContactDisclosure("加我QQ12345678", { allowed: false, contactQq: "12345678" })).toBe("联系方式先不发了 在这儿聊就行");
+    expect(sanitizeContactDisclosure("微信abc12345678", { allowed: true, contactQq: "12345678" })).toBe("联系方式先不发了 在这儿聊就行");
+    expect(sanitizeContactDisclosure("可以 我QQ是12345678", { allowed: true, contactQq: "12345678" })).toBe("可以 我QQ是12345678");
+  });
+
+  it("builds relationship and intimate-topic boundaries by stage", () => {
+    expect(buildRelationshipBoundaryPrompt(1, "你老公经常不在家吗", [])).toContain("只可简短确认已婚等基本事实");
+    expect(buildRelationshipBoundaryPrompt(2, "你老公经常不在家吗", [])).toContain("可以自然聊聚少离多");
+    expect(buildRelationshipBoundaryPrompt(3, "想聊聊两性话题", [])).toContain("不主动升级、不讲露骨细节");
+    expect(buildRelationshipBoundaryPrompt(2, "今天天气不错", [])).toBe("");
+  });
+
+  it("refuses the first QQ request locally without calling the chat model", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          request_id: "qq-gate-1",
+          platform: "soul",
+          contact_id: "qq-new",
+          contact_name: "QQ测试",
+          messages: [{ role: "user", content: "给我发个Q" }],
+        }),
+      }),
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key", CONTACT_QQ: "12345678" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "先不加哈 在这儿聊挺好的",
+      local: true,
+      contact_gate: "blocked",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("removes accidental business talk for a new contact but keeps explicit business answers", () => {
@@ -1016,7 +1111,7 @@ describe("chat logic", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = readFileSync(new URL("../db/migrations/20260928_device_persona_and_pending_replies.sql", import.meta.url), "utf8");
     const newContactMigration = readFileSync(new URL("../db/migrations/20260928_new_contact_natural_reply.sql", import.meta.url), "utf8");
-    const persona = "你是星暮，29岁女，重庆，已婚没孩子。做全国旧手机数码回收，白天公司上班安排快递，晚上在家休息，深夜偶尔回下业务消息安排明天上门。和公婆住，老公出差半年没回来，夫妻感情一般，但你不跟陌生人抱怨婚姻、不搞暧昧。有辆宝马X3，房子家里买的。说话接地气像朋友微信聊天，短句子，每条回复50字以内。目的是拉近关系发展客户，但不报价、不主动暧昧、不主动提见面。对方要联系方式时不给微信电话，坚持要就给一个QQ号，别主动给。";
+    const contactMigration = readFileSync(new URL("../db/migrations/20260928_contact_gate_relationship_layers.sql", import.meta.url), "utf8");
 
     expect(schema).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
     expect(migration).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
@@ -1024,6 +1119,11 @@ describe("chat logic", () => {
     expect(schema).not.toContain("你负责全国二手手机和数码设备回收");
     expect(newContactMigration).toContain("不靠陌生人推销");
     expect(newContactMigration).toContain("只有对方明确问工作")
+    expect(schema).not.toContain("对方要联系方式只给QQ");
+    expect(schema).not.toContain("对方索要联系方式只给QQ号");
+    expect(contactMigration).toContain("对方索要联系方式不能马上给");
+    expect(contactMigration).toContain("不能自行编号码");
+    expect(contactMigration).toContain("聊天有边界");
     expect(migration).toContain("UPDATE personas");
     expect(migration).toContain("active_persona_id");
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS pending_replies");

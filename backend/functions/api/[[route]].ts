@@ -1,4 +1,14 @@
-import { buildLayeredSystemPrompt, loadOrCreatePendingReply, localVoiceRequestReply, replyGenerationSettings, sanitizeNewContactBusinessReply } from "./_reply_policy";
+import {
+  buildLayeredSystemPrompt,
+  countContactRequests,
+  latestIncomingText,
+  loadOrCreatePendingReply,
+  localVoiceRequestReply,
+  replyGenerationSettings,
+  resolveContactRequestPolicy,
+  sanitizeContactDisclosure,
+  sanitizeNewContactBusinessReply,
+} from "./_reply_policy";
 
 const SUPPORTED_PLATFORMS = ["soul", "qq", "immomo", "lianxin"];
 
@@ -1538,6 +1548,29 @@ export const onRequest = async (context) => {
       const activityNow = currentActivityByHour(currentHour);
       const profileContext = customerProfilePrompt(customerProfile.profile);
       const messageDelay = resolveIncomingDelayPolicy(messages, historyMessages, nowSec2);
+      const contactPolicy = resolveContactRequestPolicy({
+        requestCount: countContactRequests(historyMessages, messages),
+        stage,
+        activity,
+        incomingText: latestIncomingText(messages),
+        historyMessages,
+        messages,
+        contactQq: env.CONTACT_QQ || "",
+      });
+      if (contactPolicy.reply) {
+        const pending = await loadOrCreatePendingReply(env.DB, {
+          token: tokenRow.token,
+          requestId,
+          platform,
+          contactId: contact_id,
+          contactName: contact_name,
+          content: contactPolicy.reply,
+          createdAt: nowSec2,
+        });
+        await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
+          .bind(nowSec2, tokenRow.token).run();
+        return json({ action: "send", reply: pending.content, reply_id: pending.id, status: "pending", local: true, contact_gate: contactPolicy.allowed ? "allowed" : "blocked" });
+      }
 
       const systemPrompt = buildLayeredSystemPrompt({
         personaPrompt,
@@ -1553,6 +1586,7 @@ export const onRequest = async (context) => {
         stageText,
         relationStageLevel: stage,
         messageDelay,
+        contactPolicy,
         messages,
         historyMessages,
       });
@@ -1587,6 +1621,7 @@ export const onRequest = async (context) => {
       const cleanedReply = sanitizeAssistantReply(rawReply);
       const staleSafeReply = sanitizeStaleAssistantReply(cleanedReply, messageDelay) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const reply = sanitizeNewContactBusinessReply(staleSafeReply, stage, latestIncomingText(messages));
+      const safeReply = sanitizeContactDisclosure(reply, { allowed: contactPolicy.allowed, contactQq: contactPolicy.contactQq });
       const nowSec = Math.floor(Date.now() / 1000);
 
       const pending = await loadOrCreatePendingReply(env.DB, {
@@ -1595,7 +1630,7 @@ export const onRequest = async (context) => {
         platform,
         contactId: contact_id,
         contactName: contact_name,
-        content: reply,
+        content: safeReply,
         createdAt: nowSec,
       });
 
