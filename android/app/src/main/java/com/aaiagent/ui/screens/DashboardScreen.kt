@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.Image
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -37,7 +38,6 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
@@ -47,9 +47,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.AlertDialog
@@ -71,16 +68,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.aaiagent.R
 import com.aaiagent.data.db.entity.UserLocationEntity
 import com.aaiagent.engine.HostingMode
 import com.aaiagent.ui.theme.SkyBg
@@ -100,7 +98,6 @@ import com.aaiagent.ui.theme.SkyText
 import com.aaiagent.ui.theme.SkyTextMuted
 import com.aaiagent.ui.theme.SkyTextSecondary
 import com.aaiagent.ui.theme.SkyWarm
-import com.aaiagent.ui.theme.SkyWarmSoft
 
 data class PermissionStatus(
     val accessibility: Boolean = false,
@@ -248,13 +245,12 @@ fun DashboardScreen(
         HostingHero(
             isHosting = isHosting,
             engineState = engineState,
-            hostingMode = hostingMode,
             platform = activePlatform,
             onToggleHosting = onToggleHosting
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "今日状态", trailing = "实时更新")
+        SectionHeader(title = "今日状态")
         OverviewStats(
             isHosting = isHosting,
             platform = activePlatform,
@@ -263,11 +259,11 @@ fun DashboardScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "托管方式", trailing = "先选模式，再开托管")
+        SectionHeader(title = "托管方式")
         HostingModeSelector(hostingMode, onHostingModeChange)
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "快捷管理", trailing = "点按整行切换")
+        SectionHeader(title = "快捷管理")
         QuickManagement(
             permissions = permissions,
             context = context,
@@ -278,7 +274,7 @@ fun DashboardScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "平台与人设", trailing = "当前使用配置")
+        SectionHeader(title = "平台与人设")
         PlatformPersonaCard(
             enabledPlatforms = enabledPlatforms,
             onTogglePlatform = onTogglePlatform,
@@ -292,7 +288,7 @@ fun DashboardScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "位置上下文", trailing = "用于自然聊天")
+        SectionHeader(title = "位置上下文")
         LocationCard(
             location = location,
             onLocationSave = onLocationSave,
@@ -301,7 +297,7 @@ fun DashboardScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "客户策略", trailing = "白名单优先，黑名单拦截")
+        SectionHeader(title = "客户策略")
         ContactStrategyCard(
             whitelistCount = contactWhitelist.size,
             blacklistCount = contactBlacklist.size,
@@ -310,7 +306,7 @@ fun DashboardScreen(
         )
 
         Spacer(Modifier.height(18.dp))
-        SectionHeader(title = "设备与安全", trailing = "运行健康")
+        SectionHeader(title = "设备与安全")
         DeviceSecurityCard(
             token = token,
             onTokenChange = onTokenChange,
@@ -355,20 +351,11 @@ private fun DashboardHeader(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = RoundedCornerShape(15.dp),
-            color = SkyText
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Default.SmartToy,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(23.dp)
-                )
-            }
-        }
+        Image(
+            painter = painterResource(R.drawable.ic_brand_mark),
+            contentDescription = "AI 托管助手",
+            modifier = Modifier.size(50.dp)
+        )
 
         Spacer(Modifier.width(12.dp))
 
@@ -376,13 +363,13 @@ private fun DashboardHeader(
             Text(
                 text = "AI 托管助手",
                 color = SkyText,
-                fontSize = 19.sp,
+                fontSize = 23.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 text = "v$versionName · 控制台",
                 color = SkyTextMuted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -407,7 +394,7 @@ private fun DashboardHeader(
                 Text(
                     text = connectionText,
                     color = if (connected) SkyTextSecondary else SkyWarm,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -421,20 +408,13 @@ private fun DashboardHeader(
 private fun HostingHero(
     isHosting: Boolean,
     engineState: String,
-    hostingMode: HostingMode,
     platform: String,
     onToggleHosting: (Boolean) -> Unit
 ) {
     val subtitle = if (isHosting) {
-        DashboardUiPolicy.modeActionText(hostingMode)
+        "${platformDisplayName(platform)} · ${engineState.takeIf { it.isNotBlank() && it != "IDLE" } ?: "正在运行"}"
     } else {
-        "先选择下方托管方式，再开启 AI 托管。"
-    }
-    val liveState = engineState.takeIf { it.isNotBlank() && it != "IDLE" }
-    val buttonNote = when {
-        isHosting && liveState != null -> "${platformDisplayName(platform)} · $liveState"
-        isHosting -> "${platformDisplayName(platform)} · 正在运行"
-        else -> DashboardUiPolicy.modeActionText(hostingMode)
+        "选择托管方式后开启"
     }
 
     Surface(
@@ -450,9 +430,9 @@ private fun HostingHero(
     ) {
         Column(Modifier.padding(18.dp)) {
             Text(
-                text = "托管总控",
+                text = "AI 托管",
                 color = SkyBlueDeep,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Black
             )
             Spacer(Modifier.height(7.dp))
@@ -464,15 +444,15 @@ private fun HostingHero(
                     Text(
                         text = "托管状态",
                         color = SkyText,
-                        fontSize = 25.sp,
+                        fontSize = 28.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(7.dp))
                     Text(
                         text = subtitle,
                         color = SkyTextSecondary,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        fontSize = 15.sp,
+                        lineHeight = 21.sp
                     )
                 }
                 Surface(
@@ -513,16 +493,8 @@ private fun HostingHero(
                         Text(
                             text = if (isHosting) "已开启 AI 托管" else "请开启 AI 托管",
                             color = if (isHosting) Color.White else SkyText,
-                            fontSize = 15.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = buttonNote,
-                            color = if (isHosting) Color.White.copy(alpha = 0.78f) else SkyTextMuted,
-                            fontSize = 10.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     SkySwitch(
@@ -537,7 +509,7 @@ private fun HostingHero(
 }
 
 @Composable
-private fun SectionHeader(title: String, trailing: String? = null) {
+private fun SectionHeader(title: String) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -548,18 +520,11 @@ private fun SectionHeader(title: String, trailing: String? = null) {
             text = title,
             modifier = Modifier.weight(1f),
             color = SkyText,
-            fontSize = 14.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold
         )
-        if (!trailing.isNullOrBlank()) {
-            Text(
-                text = trailing,
-                color = SkyTextMuted,
-                fontSize = 10.sp
-            )
-        }
     }
-    Spacer(Modifier.height(9.dp))
+    Spacer(Modifier.height(10.dp))
 }
 
 @Composable
@@ -622,7 +587,7 @@ private fun StatCard(
             Text(
                 text = value,
                 color = valueColor,
-                fontSize = 18.sp,
+                fontSize = 21.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -631,7 +596,7 @@ private fun StatCard(
             Text(
                 text = label,
                 color = SkyTextMuted,
-                fontSize = 9.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -645,9 +610,9 @@ private fun HostingModeSelector(
     onHostingModeChange: (HostingMode) -> Unit
 ) {
     val modes = listOf(
-        Triple(HostingMode.FULL_AUTO, "全自动", Icons.Default.Bolt),
-        Triple(HostingMode.SEMI_AUTO, "半自动", Icons.Default.EditNote),
-        Triple(HostingMode.MONITOR_ONLY, "仅记录", Icons.Default.Visibility)
+        Triple(HostingMode.FULL_AUTO, DashboardUiPolicy.hostingModeLabel(HostingMode.FULL_AUTO), Icons.Default.Bolt),
+        Triple(HostingMode.SEMI_AUTO, DashboardUiPolicy.hostingModeLabel(HostingMode.SEMI_AUTO), Icons.Default.EditNote),
+        Triple(HostingMode.MONITOR_ONLY, DashboardUiPolicy.hostingModeLabel(HostingMode.MONITOR_ONLY), Icons.Default.Visibility)
     )
 
     Surface(
@@ -673,32 +638,21 @@ private fun HostingModeSelector(
                     border = if (selected) BorderStroke(1.dp, SkyBlue.copy(alpha = 0.28f)) else null
                 ) {
                     Column(
-                        Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                        Modifier.padding(vertical = 13.dp, horizontal = 4.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
                             icon,
                             contentDescription = null,
                             tint = if (selected) SkyBlue else SkyTextMuted,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(21.dp)
                         )
                         Spacer(Modifier.height(5.dp))
                         Text(
                             text = label,
                             color = if (selected) SkyBlue else SkyTextSecondary,
-                            fontSize = 11.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            text = when (mode) {
-                                HostingMode.FULL_AUTO -> "读、回、发"
-                                HostingMode.SEMI_AUTO -> "生成后确认"
-                                HostingMode.MONITOR_ONLY -> "只读不操作"
-                            },
-                            color = SkyTextMuted,
-                            fontSize = 9.sp,
-                            textAlign = TextAlign.Center
                         )
                     }
                 }
@@ -726,25 +680,8 @@ private fun QuickManagement(
     ) {
         Column {
             PermissionRow(
-                icon = Icons.Default.Smartphone,
-                title = "手机设备权限",
-                subtitle = "查看应用权限和运行状态",
-                granted = permissions.overlay,
-                accent = SkyBlue,
-                onClick = {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                    )
-                }
-            )
-            RowDivider()
-            PermissionRow(
                 icon = Icons.Default.AccessibilityNew,
                 title = "无障碍服务",
-                subtitle = "读取聊天页并执行自动操作",
                 granted = permissions.accessibility,
                 accent = SkyCyan,
                 onClick = {
@@ -755,7 +692,6 @@ private fun QuickManagement(
             PermissionRow(
                 icon = Icons.Default.Notifications,
                 title = "通知监听",
-                subtitle = "作为消息触发的备用来源",
                 granted = permissions.notification,
                 accent = SkyBlue,
                 onClick = {
@@ -766,7 +702,6 @@ private fun QuickManagement(
             PermissionRow(
                 icon = Icons.Default.BatteryChargingFull,
                 title = "电池优化",
-                subtitle = "避免后台运行被系统中断",
                 granted = permissions.batteryOptimization,
                 accent = SkyWarm,
                 onClick = {
@@ -784,7 +719,6 @@ private fun QuickManagement(
             PermissionRow(
                 icon = Icons.Default.PictureInPictureAlt,
                 title = "悬浮窗权限",
-                subtitle = "用于显示托管状态悬浮按钮",
                 granted = permissions.overlay,
                 accent = SkyGreen,
                 onClick = {
@@ -802,7 +736,6 @@ private fun QuickManagement(
             ToggleRow(
                 icon = Icons.Default.Cloud,
                 title = "天气感知",
-                subtitle = "让回复符合当前天气",
                 checked = weatherEnabled,
                 accent = SkyBlue,
                 onCheckedChange = onWeatherToggle
@@ -811,7 +744,6 @@ private fun QuickManagement(
             ToggleRow(
                 icon = Icons.Default.Schedule,
                 title = "时间感知",
-                subtitle = "让回复符合当前作息和时间",
                 checked = timeEnabled,
                 accent = SkyCyan,
                 onCheckedChange = onTimeToggle
@@ -824,7 +756,6 @@ private fun QuickManagement(
 private fun PermissionRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     granted: Boolean,
     accent: Color,
     onClick: () -> Unit
@@ -833,7 +764,7 @@ private fun PermissionRow(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         QuickIcon(icon, accent)
@@ -842,22 +773,14 @@ private fun PermissionRow(
             Text(
                 text = title,
                 color = SkyText,
-                fontSize = 12.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = subtitle,
-                color = SkyTextMuted,
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
         }
         Text(
             text = if (granted) "已开启" else "去设置",
             color = if (granted) SkyBlue else SkyWarm,
-            fontSize = 10.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
         Spacer(Modifier.width(4.dp))
@@ -874,7 +797,6 @@ private fun PermissionRow(
 private fun ToggleRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     checked: Boolean,
     accent: Color,
     onCheckedChange: (Boolean) -> Unit
@@ -883,7 +805,7 @@ private fun ToggleRow(
         Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 13.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         QuickIcon(icon, accent)
@@ -892,16 +814,8 @@ private fun ToggleRow(
             Text(
                 text = title,
                 color = SkyText,
-                fontSize = 12.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = subtitle,
-                color = SkyTextMuted,
-                fontSize = 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
         }
         SkySwitch(checked = checked, onCheckedChange = null)
@@ -911,7 +825,7 @@ private fun ToggleRow(
 @Composable
 private fun QuickIcon(icon: ImageVector, accent: Color) {
     Surface(
-        modifier = Modifier.size(36.dp),
+        modifier = Modifier.size(40.dp),
         shape = RoundedCornerShape(12.dp),
         color = accent.copy(alpha = 0.10f)
     ) {
@@ -920,7 +834,7 @@ private fun QuickIcon(icon: ImageVector, accent: Color) {
                 icon,
                 contentDescription = null,
                 tint = accent,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -931,7 +845,7 @@ private fun RowDivider() {
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(start = 59.dp)
+            .padding(start = 64.dp)
             .height(1.dp)
             .background(SkyLine)
     )
@@ -963,7 +877,7 @@ private fun PlatformPersonaCard(
             Text(
                 text = "选择平台",
                 color = SkyTextMuted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(8.dp))
@@ -993,7 +907,7 @@ private fun PlatformPersonaCard(
                 Text(
                     text = platformSyncStatus,
                     color = if (platformSyncStatus.startsWith("✓")) SkyGreen else SkyDanger,
-                    fontSize = 10.sp
+                    fontSize = 12.sp
                 )
                 Spacer(Modifier.height(10.dp))
             }
@@ -1001,7 +915,7 @@ private fun PlatformPersonaCard(
             Text(
                 text = "选择客服",
                 color = SkyTextMuted,
-                fontSize = 10.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(8.dp))
@@ -1024,7 +938,7 @@ private fun PlatformPersonaCard(
                 Text(
                     text = personaVerifyStatus,
                     color = if (personaVerifyStatus.startsWith("✓")) SkyGreen else SkyDanger,
-                    fontSize = 10.sp
+                    fontSize = 12.sp
                 )
             }
         }
@@ -1045,11 +959,11 @@ private fun PlatformOption(
         border = BorderStroke(1.dp, if (selected) SkyBlue else SkyLine)
     ) {
         Row(
-            Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+            Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                modifier = Modifier.size(30.dp),
+                modifier = Modifier.size(36.dp),
                 shape = RoundedCornerShape(10.dp),
                 color = if (selected) SkyText else SkyBlueSoft
             ) {
@@ -1057,7 +971,7 @@ private fun PlatformOption(
                     Text(
                         text = platformDisplayName(platform).take(1),
                         color = if (selected) Color.White else SkyBlue,
-                        fontSize = 11.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Black
                     )
                 }
@@ -1067,19 +981,14 @@ private fun PlatformOption(
                 Text(
                     text = platformDisplayName(platform),
                     color = SkyText,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = if (selected) "已选择" else "点击选择",
-                    color = if (selected) SkyGreen else SkyTextMuted,
-                    fontSize = 8.sp
                 )
             }
             if (selected) {
                 Box(
                     Modifier
-                        .size(17.dp)
+                        .size(20.dp)
                         .clip(CircleShape)
                         .background(SkyBlue),
                     contentAlignment = Alignment.Center
@@ -1087,7 +996,7 @@ private fun PlatformOption(
                     Text(
                         text = "✓",
                         color = Color.White,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Black
                     )
                 }
@@ -1118,19 +1027,19 @@ private fun PersonaSelector(
             border = BorderStroke(1.dp, SkyLineStrong)
         ) {
             Row(
-                Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     Modifier
                         .width(4.dp)
-                        .height(48.dp)
+                        .height(54.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(SkyBlue)
                 )
                 Spacer(Modifier.width(9.dp))
                 Surface(
-                    modifier = Modifier.size(42.dp),
+                    modifier = Modifier.size(46.dp),
                     shape = RoundedCornerShape(14.dp),
                     color = SkyBlue
                 ) {
@@ -1138,7 +1047,7 @@ private fun PersonaSelector(
                         Text(
                             text = avatar,
                             color = Color.White,
-                            fontSize = 15.sp,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Black
                         )
                     }
@@ -1148,13 +1057,13 @@ private fun PersonaSelector(
                     Text(
                         text = "当前客服",
                         color = SkyBlueDeep,
-                        fontSize = 8.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Black
                     )
                     Text(
                         text = personaName,
                         color = SkyText,
-                        fontSize = 13.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -1162,7 +1071,7 @@ private fun PersonaSelector(
                     Text(
                         text = "${activePersona?.let(PersonaPresentation::genderLabel) ?: "客服"} · $role",
                         color = SkyTextMuted,
-                        fontSize = 9.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1194,13 +1103,13 @@ private fun PersonaSelector(
                                 Text(
                                     text = PersonaPresentation.displayName(persona),
                                     color = SkyText,
-                                    fontSize = 13.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = PersonaPresentation.roleDetail(persona),
                                     color = SkyTextMuted,
-                                    fontSize = 10.sp
+                                    fontSize = 12.sp
                                 )
                             }
                         },
@@ -1240,9 +1149,9 @@ private fun SkySmallAction(
     ) {
         Text(
             text = if (succeeded) "已同步" else label,
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
             color = color,
-            fontSize = 11.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
     }
@@ -1318,7 +1227,7 @@ private fun LocationCard(
                     Text(
                         text = if (locationSaveStatus.startsWith("✓")) "地址已保存" else "保存地址",
                         color = Color.White,
-                        fontSize = 12.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1328,7 +1237,7 @@ private fun LocationCard(
                 Text(
                     text = locationSaveStatus,
                     color = if (locationSaveStatus.startsWith("✓")) SkyGreen else SkyDanger,
-                    fontSize = 10.sp
+                    fontSize = 12.sp
                 )
             }
         }
@@ -1355,7 +1264,7 @@ private fun AddressField(
             Text(
                 text = label,
                 color = SkyTextSecondary,
-                fontSize = 10.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -1428,14 +1337,14 @@ private fun ContactListButton(
                 Text(
                     text = title,
                     color = color,
-                    fontSize = 12.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
                     text = "$count 位联系人",
                     color = SkyTextMuted,
-                    fontSize = 9.sp
+                    fontSize = 12.sp
                 )
             }
             Icon(
@@ -1543,32 +1452,19 @@ private fun DeviceSecurityCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = "$grantedPermissions / 4 权限正常",
-                        color = SkyText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = "无障碍、通知、电池和悬浮窗状态",
-                        color = SkyTextMuted,
-                        fontSize = 9.sp
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = if (grantedPermissions == 4) SkyGreenSoft else SkyWarmSoft
-                ) {
-                    Text(
-                        text = if (grantedPermissions == 4) "健康" else "待完善",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = if (grantedPermissions == 4) SkyGreen else SkyWarm,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = "$grantedPermissions / 4 权限正常",
+                    modifier = Modifier.weight(1f),
+                    color = if (grantedPermissions == 4) SkyGreen else SkyWarm,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = if (grantedPermissions == 4) "已就绪" else "待完善",
+                    color = if (grantedPermissions == 4) SkyGreen else SkyWarm,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             Spacer(Modifier.height(13.dp))
@@ -1584,13 +1480,13 @@ private fun DeviceSecurityCard(
                     text = "设备钥匙",
                     modifier = Modifier.weight(1f),
                     color = SkyTextSecondary,
-                    fontSize = 10.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = tokenVerifyStatus.ifBlank { "未验证" },
                     color = if (tokenVerifyStatus.startsWith("✓")) SkyGreen else SkyTextMuted,
-                    fontSize = 9.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1612,9 +1508,9 @@ private fun DeviceSecurityCard(
                 ) {
                     Text(
                         text = "验证",
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
                         color = Color.White,
-                        fontSize = 11.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1642,7 +1538,7 @@ private fun StyledTextField(
                 Text(
                     text = placeholder,
                     color = SkyTextMuted,
-                    fontSize = if (monospace) 11.sp else 12.sp,
+                    fontSize = if (monospace) 13.sp else 14.sp,
                     fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif
                 )
             }
@@ -1651,7 +1547,7 @@ private fun StyledTextField(
                 onValueChange = onValueChange,
                 textStyle = TextStyle(
                     color = SkyText,
-                    fontSize = if (monospace) 11.sp else 12.sp,
+                    fontSize = if (monospace) 13.sp else 14.sp,
                     fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif
                 ),
                 singleLine = true,

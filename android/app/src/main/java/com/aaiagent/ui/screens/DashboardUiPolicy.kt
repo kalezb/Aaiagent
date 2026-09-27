@@ -21,10 +21,10 @@ object DashboardUiPolicy {
         }
     }
 
-    fun modeActionText(mode: HostingMode): String = when (mode) {
-        HostingMode.FULL_AUTO -> "自动读取并回复消息"
-        HostingMode.SEMI_AUTO -> "生成回复后由你确认"
-        HostingMode.MONITOR_ONLY -> "只同步记录，不操作屏幕"
+    fun hostingModeLabel(mode: HostingMode): String = when (mode) {
+        HostingMode.FULL_AUTO -> "全自动"
+        HostingMode.SEMI_AUTO -> "半自动"
+        HostingMode.MONITOR_ONLY -> "仅记录"
     }
 
     fun healthyPermissionCount(

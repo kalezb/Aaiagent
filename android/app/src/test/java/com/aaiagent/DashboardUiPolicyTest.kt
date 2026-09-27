@@ -35,10 +35,10 @@ class DashboardUiPolicyTest {
     }
 
     @Test
-    fun `each hosting mode has distinct action copy`() {
-        assertEquals("自动读取并回复消息", DashboardUiPolicy.modeActionText(HostingMode.FULL_AUTO))
-        assertEquals("生成回复后由你确认", DashboardUiPolicy.modeActionText(HostingMode.SEMI_AUTO))
-        assertEquals("只同步记录，不操作屏幕", DashboardUiPolicy.modeActionText(HostingMode.MONITOR_ONLY))
+    fun `hosting modes use concise labels without secondary copy`() {
+        assertEquals("全自动", DashboardUiPolicy.hostingModeLabel(HostingMode.FULL_AUTO))
+        assertEquals("半自动", DashboardUiPolicy.hostingModeLabel(HostingMode.SEMI_AUTO))
+        assertEquals("仅记录", DashboardUiPolicy.hostingModeLabel(HostingMode.MONITOR_ONLY))
     }
 
     @Test

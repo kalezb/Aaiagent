@@ -1,11 +1,13 @@
 package com.aaiagent.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 
-// ── Sky-blue single-page console ──
+// Sky-blue single-page console
 val SkyBlue        = Color(0xFF268CFF)
 val SkyBlueDeep    = Color(0xFF126FD7)
 val SkyBlueSoft    = Color(0xFFE1F0FF)
@@ -73,7 +75,17 @@ private val Scheme = lightColorScheme(
     onError = White
 )
 
+private val AppTypography = Typography(
+    bodyLarge = Typography().bodyLarge.copy(fontSize = 16.sp, lineHeight = 23.sp),
+    bodyMedium = Typography().bodyMedium.copy(fontSize = 15.sp, lineHeight = 22.sp),
+    bodySmall = Typography().bodySmall.copy(fontSize = 13.sp, lineHeight = 19.sp),
+    labelLarge = Typography().labelLarge.copy(fontSize = 14.sp),
+    titleLarge = Typography().titleLarge.copy(fontSize = 22.sp),
+    titleMedium = Typography().titleMedium.copy(fontSize = 18.sp),
+    titleSmall = Typography().titleSmall.copy(fontSize = 15.sp)
+)
+
 @Composable
 fun AaiagentTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Scheme, content = content)
+    MaterialTheme(colorScheme = Scheme, typography = AppTypography, content = content)
 }
