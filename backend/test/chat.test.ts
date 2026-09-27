@@ -428,7 +428,8 @@ describe("chat logic", () => {
       contactQq: "12345678",
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toContain("12345678");
+    expect(allowed.reply).toContain("123 × 100000 + 45678");
+    expect(allowed.reply).not.toContain("12345678");
 
     const business = resolveContactRequestPolicy({
       requestCount: 3,
@@ -439,6 +440,7 @@ describe("chat logic", () => {
       contactQq: "12345678",
     });
     expect(business.allowed).toBe(true);
+    expect(business.reply).toContain("123 × 100000 + 45678");
 
     expect(sanitizeContactDisclosure("加我QQ12345678", { allowed: false, contactQq: "12345678" })).toBe("联系方式先不发了 在这儿聊就行");
     expect(sanitizeContactDisclosure("微信abc12345678", { allowed: true, contactQq: "12345678" })).toBe("联系方式先不发了 在这儿聊就行");

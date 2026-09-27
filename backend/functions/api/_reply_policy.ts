@@ -46,6 +46,16 @@ function normalizeContactQq(value) {
   return /^\d{5,12}$/u.test(text) ? text : "";
 }
 
+function contactQqExpression(value) {
+  const normalized = normalizeContactQq(value);
+  if (!normalized) return "";
+  const headLength = Math.min(3, Math.max(1, normalized.length - 1));
+  const head = normalized.slice(0, headLength);
+  const tail = normalized.slice(headLength).replace(/^0+(?=\d)/u, "") || "0";
+  const factor = 10 ** (normalized.length - headLength);
+  return head + " × " + factor + " + " + tail;
+}
+
 function contactRefusalReply(requestCount, businessIntent) {
   if (requestCount <= 1) {
     return businessIntent
@@ -82,7 +92,7 @@ export function resolveContactRequestPolicy({
     activeDays >= 2
   );
   const reply = allowed
-    ? "可以 我QQ是" + normalizedQq + " 加的时候说下你是谁"
+    ? "可以 我QQ是" + contactQqExpression(normalizedQq) + " 加的时候说下你是谁"
     : contactRefusalReply(count, businessIntent);
 
   return {
@@ -92,6 +102,7 @@ export function resolveContactRequestPolicy({
     requestCount: count,
     businessIntent,
     contactQq: normalizedQq,
+    contactQqDisplay: contactQqExpression(normalizedQq),
   };
 }
 
@@ -272,7 +283,7 @@ export function buildLayeredSystemPrompt({
   if (relationshipPrompt) scenarios.push(relationshipPrompt);
   if (contactPolicy?.isRequest) {
     if (contactPolicy.allowed && contactPolicy.contactQq) {
-      scenarios.push("【联系方式】系统已允许回复QQ，只能原样回复" + contactPolicy.contactQq + "，不要附加其他号码，也不要自行修改。");
+      scenarios.push("【联系方式】系统已允许回复QQ，只能原样回复" + contactPolicy.contactQqDisplay + "，不要附加其他号码、真实QQ数字或自行修改。");
     } else {
       scenarios.push("【联系方式】对方在索要QQ或联系方式，但现在不能给，也不能编造号码；自然拒绝，停住话题。");
     }
