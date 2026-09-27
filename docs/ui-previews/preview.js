@@ -1,41 +1,74 @@
 (() => {
   const params = new URLSearchParams(window.location.search);
-  const theme = params.get("theme") || "obsidian";
-  const allowedThemes = new Set(["obsidian", "mist", "jade"]);
-  document.body.dataset.theme = allowedThemes.has(theme) ? theme : "obsidian";
+  const requestedTheme = params.get("theme") || "sky";
+  const allowedThemes = new Set(["sky", "orange"]);
+  const theme = allowedThemes.has(requestedTheme) ? requestedTheme : "sky";
+  document.body.dataset.theme = theme;
+
+  document.querySelectorAll("[data-preview-link]").forEach((link) => {
+    const active = link.dataset.previewLink === theme;
+    link.classList.toggle("active", active);
+    if (active) link.setAttribute("aria-current", "page");
+  });
 
   const hostingButton = document.querySelector("[data-hosting-toggle]");
   const hostingTitle = document.querySelector("[data-hosting-title]");
   const hostingSubtitle = document.querySelector("[data-hosting-subtitle]");
+  const hostingButtonLabel = document.querySelector("[data-hosting-button-label]");
+  const hostingButtonNote = document.querySelector("[data-hosting-button-note]");
   const hostingHero = document.querySelector("[data-hosting-hero]");
+  const modeGroup = document.querySelector("[data-mode-group]");
   const modeButtons = [...document.querySelectorAll("[data-mode]")];
+  const modeHint = document.querySelector("[data-mode-hint]");
   const modeNote = document.querySelector("[data-mode-note]");
   const connectionText = document.querySelector("[data-connection-text]");
+  const platformToggle = document.querySelector("[data-platform-toggle]");
+  const platformState = document.querySelector("[data-platform-state]");
+  const personaButtons = [...document.querySelectorAll("[data-persona]")];
   const toast = document.querySelector("[data-toast]");
-  const clock = document.querySelector("[data-clock]");
+  const clocks = [...document.querySelectorAll("[data-clock]")];
 
   const modeCopy = {
     full: {
-      title: "全自动托管",
-      subtitle: "自动读取并回复，处理完继续下一位",
-      note: "自动读消息、生成回复、发送并返回列表。"
+      title: "全自动托管已开启",
+      subtitle: "自动扫描未读消息、生成回复、发送后继续下一位。",
+      buttonNote: "再次点击可关闭托管",
+      note: "全自动：读取未读消息，发送回复，然后返回消息列表继续扫描。"
     },
     semi: {
-      title: "半自动托管",
-      subtitle: "自动生成内容，由你确认后发送",
-      note: "只把建议内容填入聊天框，不会自动发送。"
+      title: "半自动托管已开启",
+      subtitle: "自动生成内容并填入聊天框，由你确认后发送。",
+      buttonNote: "再次点击可关闭托管",
+      note: "半自动：只生成回复并填入聊天框，不会自动发送。"
     },
     monitor: {
-      title: "仅记录",
-      subtitle: "只读当前聊天，不点、不滑、不发送",
-      note: "仅同步你当前打开的聊天记录，不操作任何界面。"
+      title: "仅记录模式已开启",
+      subtitle: "只同步当前聊天内容，不点击、不滑动、不发送。",
+      buttonNote: "再次点击可关闭托管",
+      note: "仅记录：只同步你当前打开的聊天记录，不执行任何界面操作。"
     }
+  };
+
+  const personaNames = {
+    xingmu: "星暮",
+    wanqing: "晚晴",
+    ajie: "阿杰",
+    zichuan: "子川"
   };
 
   let hosting = false;
   let mode = "full";
-  const preferredMode = params.get("mode");
-  if (preferredMode && modeCopy[preferredMode]) mode = preferredMode;
+  let platformConnected = true;
+  let selectedPersona = "xingmu";
+
+  const requestedHosting = params.get("hosting") === "on";
+  hosting = requestedHosting;
+
+  const requestedMode = params.get("mode");
+  if (requestedMode && modeCopy[requestedMode]) mode = requestedMode;
+
+  const requestedPersona = params.get("persona");
+  if (requestedPersona && personaNames[requestedPersona]) selectedPersona = requestedPersona;
 
   function showToast(message) {
     if (!toast) return;
@@ -46,17 +79,51 @@
   }
 
   function renderHosting() {
-    if (!hostingButton || !hostingTitle || !hostingSubtitle || !hostingHero) return;
-    hostingButton.classList.toggle("active", hosting);
-    hostingButton.setAttribute("aria-pressed", String(hosting));
-    hostingHero.classList.toggle("active", hosting);
-    hostingTitle.textContent = hosting ? "已开启 AI 托管" : "开启 AI 托管";
-    hostingSubtitle.textContent = hosting
-      ? modeCopy[mode].subtitle
-      : "开启后将按所选模式运行";
-    if (connectionText) {
-      connectionText.textContent = hosting ? "正在运行" : "平台已连接";
+    const copy = modeCopy[mode];
+    const connected = platformConnected;
+
+    hostingButton?.classList.toggle("active", hosting);
+    hostingButton?.setAttribute("aria-pressed", String(hosting));
+    hostingHero?.classList.toggle("active", hosting && connected);
+    hostingHero?.classList.toggle("disconnected", !connected);
+
+    if (hostingTitle) {
+      hostingTitle.textContent = hosting ? copy.title : "请开启 AI 托管";
     }
+    if (hostingSubtitle) {
+      hostingSubtitle.textContent = hosting
+        ? copy.subtitle
+        : "开启后才会开始扫描消息，关闭时不会操作手机。";
+    }
+    if (hostingButtonLabel) {
+      hostingButtonLabel.textContent = hosting ? "已开启 AI 托管" : "请开启 AI 托管";
+    }
+    if (hostingButtonNote) {
+      hostingButtonNote.textContent = hosting
+        ? copy.buttonNote
+        : "点击这一整块即可开启";
+    }
+    if (connectionText) {
+      connectionText.textContent = !connected
+        ? "平台未连接"
+        : hosting
+          ? "托管运行中"
+          : "平台已连接";
+    }
+
+    const locked = !hosting || !connected;
+    modeGroup?.classList.toggle("mode-grid--locked", locked);
+    if (modeHint) {
+      modeHint.textContent = !connected
+        ? "连接平台后可选择"
+        : hosting
+          ? "点击切换"
+          : "开启后可选择";
+    }
+
+    modeButtons.forEach((button) => {
+      button.setAttribute("aria-disabled", String(locked));
+    });
   }
 
   function renderMode() {
@@ -69,52 +136,92 @@
     renderHosting();
   }
 
+  function renderPersona() {
+    personaButtons.forEach((button) => {
+      const selected = button.dataset.persona === selectedPersona;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+  }
+
+  function setSwitchState(button, enabled) {
+    button.setAttribute("aria-pressed", String(enabled));
+    button.querySelector(".toggle")?.classList.toggle("on", enabled);
+    const state = button.querySelector(".row-state");
+    if (state) {
+      const isLocation = button.classList.contains("location-row");
+      state.textContent = enabled
+        ? (isLocation ? "已启用" : "已开启")
+        : (isLocation ? "未启用" : "已关闭");
+    }
+  }
+
   hostingButton?.addEventListener("click", () => {
+    if (!platformConnected) {
+      showToast("请先连接 Soul 后再开启托管");
+      return;
+    }
     hosting = !hosting;
     renderHosting();
-    showToast(hosting ? "AI 托管已开启" : "AI 托管已关闭");
+    showToast(hosting ? "AI 托管已开启" : "AI 托管已关闭，当前不会操作手机");
   });
 
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      if (!hosting || !platformConnected) {
+        showToast("请先开启 AI 托管再选择处理方式");
+        return;
+      }
       mode = button.dataset.mode;
       renderMode();
-      showToast(`已切换到${button.querySelector("strong")?.textContent || "托管模式"}`);
+      showToast(`已切换到${button.querySelector("strong")?.textContent || "托管方式"}`);
     });
   });
 
-  document.querySelectorAll("[data-switch]").forEach((button) => {
+  document.querySelectorAll("[data-switch-row]").forEach((button) => {
     button.addEventListener("click", () => {
-      const enabled = !button.classList.contains("on");
-      button.classList.toggle("on", enabled);
-      button.setAttribute("aria-pressed", String(enabled));
-      const label = button.closest(".permission-row")?.querySelector("strong")?.textContent;
-      showToast(`${label || "权限"}已${enabled ? "开启" : "关闭"}`);
+      const enabled = button.getAttribute("aria-pressed") !== "true";
+      setSwitchState(button, enabled);
+      const label = button.querySelector("strong")?.textContent || "设置";
+      showToast(`${label}${enabled ? "已开启" : "已关闭"}`);
     });
   });
 
-  document.querySelectorAll("[data-nav]").forEach((button) => {
+  personaButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll("[data-nav]").forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
+      if (!platformConnected) {
+        showToast("平台未连接，暂时不能切换人设");
+        return;
+      }
+      selectedPersona = button.dataset.persona;
+      renderPersona();
+      showToast(`当前客服已切换为${personaNames[selectedPersona]}`);
     });
   });
 
-  document.querySelectorAll("[data-action]").forEach((button) => {
-    button.addEventListener("click", () => showToast(button.dataset.action));
+  platformToggle?.addEventListener("click", () => {
+    platformConnected = !platformConnected;
+    platformToggle.setAttribute("aria-pressed", String(platformConnected));
+    platformToggle.classList.toggle("off", !platformConnected);
+    if (platformState) platformState.textContent = platformConnected ? "已连接" : "未连接";
+    if (!platformConnected) hosting = false;
+    renderHosting();
+    showToast(platformConnected ? "Soul 已连接" : "Soul 已断开");
   });
 
   function renderClock() {
-    if (!clock) return;
-    const now = new Date();
-    clock.textContent = now.toLocaleTimeString("zh-CN", {
+    const time = new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false
     });
+    clocks.forEach((clock) => {
+      clock.textContent = time;
+    });
   }
 
   renderMode();
+  renderPersona();
   renderClock();
   window.setInterval(renderClock, 30_000);
 
