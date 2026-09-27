@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 托管助手预览回归测试</title>
+  <style>
+    body {
+      margin: 0;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+      background: #edf5fc;
+      color: #15243a;
+    }
+
+    iframe {
+      width: 390px;
+      height: 1000px;
+      border: 0;
+      display: block;
+      margin: 16px auto;
+      background: #fff;
+    }
+
+    output {
+      display: block;
+      margin: 16px auto;
+      padding: 12px 16px;
+      width: min(760px, calc(100% - 32px));
+      border: 1px solid #c9dbea;
+      border-radius: 12px;
+      background: #fff;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="preview" src="./preview.html?theme=sky" title="待测试的界面"></iframe>
+  <output id="browser-test-result" data-status="pending">pending</output>
+
+  <script>
+    (() => {
+      const iframe = document.querySelector("#preview");
+      const output = document.querySelector("#browser-test-result");
+      const results = [];
+      let started = false;
+
+      function assert(condition, message) {
+        if (!condition) throw new Error(message);
+        results.push(`PASS ${message}`);
+      }
+
+      function run() {
+        if (started) return;
+        started = true;
+
+        try {
+          const doc = iframe.contentDocument;
+          if (doc?.documentElement.dataset.previewReady !== "true") {
+            started = false;
+            if (results.length === 0 && (run.attempts = (run.attempts || 0) + 1) < 20) {
+              window.setTimeout(run, 250);
+              return;
+            }
+            throw new Error("preview frame did not become testable");
+          }
+          run.attempts = 0;
+          const hosting = doc.querySelector("[data-hosting-toggle]");
+          const hostingLabel = doc.querySelector("[data-hosting-button-label]");
+          const modeHint = doc.querySelector("[data-mode-hint]");
+          const semi = doc.querySelector('[data-mode="semi"]');
+          const personaSelect = doc.querySelector("[data-persona-select]");
+          const personaAvatar = doc.querySelector("[data-persona-avatar]");
+          const personaName = doc.querySelector("[data-persona-name]");
+          const personaTag = doc.querySelector("[data-persona-tag]");
+          const toast = doc.querySelector("[data-toast]");
+
+          assert(hosting.getAttribute("aria-pressed") === "false", "hosting starts disabled");
+          assert(modeHint.textContent.includes("\u5148\u9009\u6a21\u5f0f"), "mode can be selected first");
+
+          semi.click();
+          assert(semi.getAttribute("aria-pressed") === "true", "semi-auto can be selected before hosting");
+          assert(hosting.getAttribute("aria-pressed") === "false", "mode selection does not enable hosting");
+          assert(hostingLabel.textContent === "\u8bf7\u5f00\u542f AI \u6258\u7ba1", "hosting copy stays disabled");
+          assert(toast.textContent.includes("\u5f00\u542f\u6258\u7ba1\u540e\u751f\u6548"), "selection explains when mode takes effect");
+
+          hosting.click();
+          assert(hosting.getAttribute("aria-pressed") === "true", "hosting enables after mode selection");
+          assert(semi.getAttribute("aria-pressed") === "true", "selected mode remains active after hosting starts");
+          assert(hostingLabel.textContent === "\u5df2\u5f00\u542f AI \u6258\u7ba1", "hosting copy changes after enable");
+
+          personaSelect.value = "ajie";
+          personaSelect.dispatchEvent(new Event("change", { bubbles: true }));
+          assert(personaAvatar.textContent === "\u6770", "persona avatar updates with dropdown");
+          assert(personaName.textContent === "\u963f\u6770", "persona name updates with dropdown");
+          assert(personaTag.textContent.includes("\u7537\u5ba2\u670d"), "persona description updates with dropdown");
+
+          const rootStyle = doc.defaultView.getComputedStyle(doc.documentElement);
+          assert(rootStyle.fontFamily.includes("SF Pro") || rootStyle.fontFamily.includes("-apple-system"), "Apple font stack is applied");
+
+          const root = doc.documentElement;
+          assert(root.scrollWidth <= root.clientWidth + 1, "narrow preview has no horizontal overflow");
+
+          output.dataset.status = "passed";
+          output.textContent = results.join("\n");
+        } catch (error) {
+          output.dataset.status = "failed";
+          output.textContent = [...results, `FAIL ${error.message}`].join("\n");
+        }
+      }
+
+      if (iframe.contentDocument?.readyState === "complete") {
+        setTimeout(run, 0);
+      } else {
+        iframe.addEventListener("load", run, { once: true });
+      }
+    })();
+  </script>
+</body>
+</html>

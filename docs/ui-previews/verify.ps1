@@ -5,6 +5,7 @@ $previewHtml = Get-Content -Raw -Encoding UTF8 (Join-Path $root "preview.html")
 $previewCss = Get-Content -Raw -Encoding UTF8 (Join-Path $root "preview.css")
 $previewJs = Get-Content -Raw -Encoding UTF8 (Join-Path $root "preview.js")
 $indexHtml = Get-Content -Raw -Encoding UTF8 (Join-Path $root "index.html")
+$galleryCss = Get-Content -Raw -Encoding UTF8 (Join-Path $root "gallery.css")
 
 function Assert-PreviewCondition {
   param(
@@ -32,9 +33,11 @@ $devicePermission = ConvertFrom-CodePoints @(0x624B, 0x673A, 0x8BBE, 0x5907, 0x6
 $accessibilityNotice = ConvertFrom-CodePoints @(0x65E0, 0x969C, 0x788D, 0x901A, 0x77E5)
 $batteryOptimization = ConvertFrom-CodePoints @(0x7535, 0x6C60, 0x4F18, 0x5316)
 $recentActivity = ConvertFrom-CodePoints @(0x6700, 0x8FD1, 0x8FD0, 0x884C, 0x8BB0, 0x5F55)
+$modeSelectedNotice = ConvertFrom-CodePoints @(0x5F00, 0x542F, 0x6258, 0x7BA1, 0x540E, 0x751F, 0x6548)
 
 Assert-PreviewCondition (Test-Path (Join-Path $root "preview.html")) "preview.html is missing"
 Assert-PreviewCondition (Test-Path (Join-Path $root "preview.js")) "preview.js is missing"
+Assert-PreviewCondition (Test-Path (Join-Path $root "browser-test.html")) "browser regression test is missing"
 Assert-PreviewCondition ($previewHtml -match '<h1>AI ') "the product title was not renamed"
 Assert-PreviewCondition ($previewHtml -match "<p>$consoleSubtitle</p>") "the subtitle was not simplified"
 Assert-PreviewCondition (($previewHtml | Select-String -Pattern 'data-hosting-button-label' -AllMatches).Matches.Count -eq 1) "hosting label must appear once"
@@ -47,6 +50,10 @@ Assert-PreviewCondition ($previewHtml -match 'data-platform="momo"') "Momo platf
 Assert-PreviewCondition ($previewHtml -match 'data-platform="lianxin"') "Lianxin platform button is missing"
 Assert-PreviewCondition ($previewHtml -match 'data-persona-select') "persona dropdown is missing"
 Assert-PreviewCondition ($previewHtml -notmatch 'persona-list') "expanded persona list must not remain"
+Assert-PreviewCondition ($previewHtml -match 'persona-select-wrap--rich') "rich persona selector card is missing"
+Assert-PreviewCondition ($previewHtml -match 'data-persona-avatar') "persona avatar is missing"
+Assert-PreviewCondition ($previewHtml -match 'data-persona-name') "persona name is missing"
+Assert-PreviewCondition ($previewHtml -match 'data-persona-tag') "persona tag is missing"
 Assert-PreviewCondition ($previewHtml -match [regex]::Escape($devicePermission)) "device permission toggle is missing"
 Assert-PreviewCondition ($previewHtml -match [regex]::Escape($accessibilityNotice)) "accessibility notification toggle is missing"
 Assert-PreviewCondition ($previewHtml -match [regex]::Escape($batteryOptimization)) "battery optimization toggle is missing"
@@ -63,8 +70,15 @@ Assert-PreviewCondition ($previewHtml -notmatch [regex]::Escape($nightQuiet)) "q
 Assert-PreviewCondition ($previewHtml -notmatch [regex]::Escape($chatSyncDone)) "chat sync activity must not be displayed"
 Assert-PreviewCondition ($previewCss -match 'body\[data-theme="sky"\]') "sky theme is missing"
 Assert-PreviewCondition ($previewCss -notmatch 'data-theme="orange"') "orange theme must not remain in the preview"
+Assert-PreviewCondition ($previewCss -match '-apple-system') "preview must use the Apple system font stack"
+Assert-PreviewCondition ($galleryCss -match '-apple-system') "gallery must use the Apple system font stack"
+Assert-PreviewCondition ($previewCss -notmatch 'mode-grid--locked') "mode selection must not remain locked"
+Assert-PreviewCondition ($previewCss -notmatch 'aria-disabled') "mode buttons must not be disabled"
 Assert-PreviewCondition ($previewJs -match 'new Set\(\["sky"\]\)') "only the sky theme should be supported"
 Assert-PreviewCondition ($previewJs -notmatch 'orange') "orange theme logic must not remain"
+Assert-PreviewCondition ($previewJs -notmatch 'modeGroup|mode-grid--locked|aria-disabled') "obsolete mode lock logic must not remain"
+Assert-PreviewCondition ($previewJs -match 'personaProfiles') "persona profile rendering is missing"
+Assert-PreviewCondition ($previewJs -match [regex]::Escape($modeSelectedNotice)) "pre-selecting a mode before hosting must be supported"
 Assert-PreviewCondition (($indexHtml | Select-String -Pattern '<section class="gallery-card' -AllMatches).Matches.Count -eq 1) "gallery must show only the sky preview"
 Assert-PreviewCondition ($indexHtml -notmatch 'orange') "gallery must not contain an orange preview"
 

@@ -90,9 +90,9 @@
         <section class="section">
           <div class="section-head">
             <h3>托管方式</h3>
-            <span data-mode-hint>开启后可选择</span>
+            <span data-mode-hint>先选模式，再开托管</span>
           </div>
-          <div class="mode-grid mode-grid--locked" role="group" aria-label="托管方式" data-mode-group>
+          <div class="mode-grid" role="group" aria-label="托管方式" data-mode-group>
             <button class="segment active" type="button" data-mode="full" aria-pressed="true">
               <i data-lucide="zap"></i>
               <strong>全自动</strong>
@@ -109,7 +109,7 @@
               <span>只读不操作</span>
             </button>
           </div>
-          <p class="mode-note" data-mode-note>开启 AI 托管后，可选择全自动、半自动或仅记录。</p>
+          <p class="mode-note" data-mode-note>先选择处理方式，再开启 AI 托管。</p>
         </section>
 
         <section class="section">
@@ -217,7 +217,13 @@
             </div>
 
             <div class="control-label control-label--persona">选择客服</div>
-            <div class="persona-select-wrap">
+            <div class="persona-select-wrap persona-select-wrap--rich">
+              <span class="persona-select-avatar" data-persona-avatar aria-hidden="true">星</span>
+              <span class="persona-select-copy">
+                <small>当前客服</small>
+                <strong data-persona-name>星暮</strong>
+                <span data-persona-tag>女客服 · 自然亲切</span>
+              </span>
               <select id="persona-select" data-persona-select aria-label="选择客服人设">
                 <option value="xingmu" selected>星暮 · 女客服 · 自然亲切</option>
                 <option value="wanqing">晚晴 · 女客服 · 柔和耐心</option>

@@ -16,7 +16,6 @@
   const hostingButtonLabel = document.querySelector("[data-hosting-button-label]");
   const hostingButtonNote = document.querySelector("[data-hosting-button-note]");
   const hostingHero = document.querySelector("[data-hosting-hero]");
-  const modeGroup = document.querySelector("[data-mode-group]");
   const modeButtons = [...document.querySelectorAll("[data-mode]")];
   const modeHint = document.querySelector("[data-mode-hint]");
   const modeNote = document.querySelector("[data-mode-note]");
@@ -24,6 +23,9 @@
   const platformButtons = [...document.querySelectorAll("[data-platform]")];
   const hostingPlatform = document.querySelector("[data-hosting-platform]");
   const personaSelect = document.querySelector("[data-persona-select]");
+  const personaAvatar = document.querySelector("[data-persona-avatar]");
+  const personaName = document.querySelector("[data-persona-name]");
+  const personaTag = document.querySelector("[data-persona-tag]");
   const saveAddressButton = document.querySelector("[data-save-address]");
   const toast = document.querySelector("[data-toast]");
   const platformNames = {
@@ -54,17 +56,17 @@
     }
   };
 
-  const personaNames = {
-    xingmu: "星暮",
-    wanqing: "晚晴",
-    ajie: "阿杰",
-    zichuan: "子川"
+  const personaProfiles = {
+    xingmu: { name: "星暮", avatar: "星", tag: "女客服 · 自然亲切" },
+    wanqing: { name: "晚晴", avatar: "晚", tag: "女客服 · 柔和耐心" },
+    ajie: { name: "阿杰", avatar: "杰", tag: "男客服 · 爽快直接" },
+    zichuan: { name: "子川", avatar: "川", tag: "男客服 · 沉稳简洁" }
   };
 
   let hosting = false;
   let mode = "full";
   let selectedPlatform = platformNames[params.get("platform")] ? params.get("platform") : "soul";
-  let selectedPersona = personaNames[params.get("persona")] ? params.get("persona") : "xingmu";
+  let selectedPersona = personaProfiles[params.get("persona")] ? params.get("persona") : "xingmu";
 
   const requestedHosting = params.get("hosting") === "on";
   hosting = requestedHosting;
@@ -93,7 +95,7 @@
     if (hostingSubtitle) {
       hostingSubtitle.textContent = hosting
         ? copy.subtitle
-        : "开启后才会开始扫描消息，关闭时不会操作手机。";
+        : "先选择下方托管方式，再开启 AI 托管。";
     }
     if (hostingButtonLabel) {
       hostingButtonLabel.textContent = hosting ? "已开启 AI 托管" : "请开启 AI 托管";
@@ -109,15 +111,9 @@
         : `${platformNames[selectedPlatform]} 已选择`;
     }
 
-    const locked = !hosting;
-    modeGroup?.classList.toggle("mode-grid--locked", locked);
     if (modeHint) {
-      modeHint.textContent = hosting ? "点击切换" : "开启后可选择";
+      modeHint.textContent = hosting ? "可随时切换" : "先选模式，再开托管";
     }
-
-    modeButtons.forEach((button) => {
-      button.setAttribute("aria-disabled", String(locked));
-    });
   }
 
   function renderMode() {
@@ -131,7 +127,11 @@
   }
 
   function renderPersona() {
+    const profile = personaProfiles[selectedPersona];
     if (personaSelect) personaSelect.value = selectedPersona;
+    if (personaAvatar) personaAvatar.textContent = profile.avatar;
+    if (personaName) personaName.textContent = profile.name;
+    if (personaTag) personaTag.textContent = profile.tag;
   }
 
   function renderPlatform() {
@@ -161,13 +161,10 @@
 
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      if (!hosting) {
-        showToast("请先开启 AI 托管再选择处理方式");
-        return;
-      }
       mode = button.dataset.mode;
       renderMode();
-      showToast(`已切换到${button.querySelector("strong")?.textContent || "托管方式"}`);
+      const modeName = button.querySelector("strong")?.textContent || "托管方式";
+      showToast(hosting ? `已切换到${modeName}` : `已选择${modeName}，开启托管后生效`);
     });
   });
 
@@ -183,7 +180,7 @@
   personaSelect?.addEventListener("change", () => {
     selectedPersona = personaSelect.value;
     renderPersona();
-    showToast(`当前客服已切换为${personaNames[selectedPersona]}`);
+    showToast(`当前客服已切换为${personaProfiles[selectedPersona].name}`);
   });
 
   platformButtons.forEach((button) => {
@@ -207,6 +204,7 @@
   renderMode();
   renderPersona();
   renderPlatform();
+  document.documentElement.dataset.previewReady = "true";
 
   if (window.lucide) {
     window.lucide.createIcons({
