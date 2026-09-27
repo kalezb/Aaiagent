@@ -21,12 +21,17 @@
   const modeHint = document.querySelector("[data-mode-hint]");
   const modeNote = document.querySelector("[data-mode-note]");
   const connectionText = document.querySelector("[data-connection-text]");
-  const platformToggle = document.querySelector('[data-platform="soul"]');
-  const platformState = document.querySelector("[data-platform-state]");
-  const personaButtons = [...document.querySelectorAll("[data-persona]")];
+  const platformButtons = [...document.querySelectorAll("[data-platform]")];
+  const hostingPlatform = document.querySelector("[data-hosting-platform]");
+  const personaSelect = document.querySelector("[data-persona-select]");
   const saveAddressButton = document.querySelector("[data-save-address]");
   const toast = document.querySelector("[data-toast]");
-  const clocks = [...document.querySelectorAll("[data-clock]")];
+  const platformNames = {
+    soul: "Soul",
+    qq: "QQ",
+    momo: "陌陌",
+    lianxin: "连信"
+  };
 
   const modeCopy = {
     full: {
@@ -58,8 +63,8 @@
 
   let hosting = false;
   let mode = "full";
-  let platformConnected = true;
-  let selectedPersona = "xingmu";
+  let selectedPlatform = platformNames[params.get("platform")] ? params.get("platform") : "soul";
+  let selectedPersona = personaNames[params.get("persona")] ? params.get("persona") : "xingmu";
 
   const requestedHosting = params.get("hosting") === "on";
   hosting = requestedHosting;
@@ -67,8 +72,6 @@
   const requestedMode = params.get("mode");
   if (requestedMode && modeCopy[requestedMode]) mode = requestedMode;
 
-  const requestedPersona = params.get("persona");
-  if (requestedPersona && personaNames[requestedPersona]) selectedPersona = requestedPersona;
 
   function showToast(message) {
     if (!toast) return;
@@ -80,12 +83,12 @@
 
   function renderHosting() {
     const copy = modeCopy[mode];
-    const connected = platformConnected;
+    const connected = true;
 
     hostingButton?.classList.toggle("active", hosting);
     hostingButton?.setAttribute("aria-pressed", String(hosting));
     hostingHero?.classList.toggle("active", hosting && connected);
-    hostingHero?.classList.toggle("disconnected", !connected);
+    hostingHero?.classList.toggle("disconnected", false);
 
     if (hostingSubtitle) {
       hostingSubtitle.textContent = hosting
@@ -101,21 +104,15 @@
         : "点击这一整块即可开启";
     }
     if (connectionText) {
-      connectionText.textContent = !connected
-        ? "平台未连接"
-        : hosting
-          ? "托管运行中"
-          : "平台已连接";
+      connectionText.textContent = hosting
+        ? `${platformNames[selectedPlatform]} 托管运行中`
+        : `${platformNames[selectedPlatform]} 已选择`;
     }
 
-    const locked = !hosting || !connected;
+    const locked = !hosting;
     modeGroup?.classList.toggle("mode-grid--locked", locked);
     if (modeHint) {
-      modeHint.textContent = !connected
-        ? "连接平台后可选择"
-        : hosting
-          ? "点击切换"
-          : "开启后可选择";
+      modeHint.textContent = hosting ? "点击切换" : "开启后可选择";
     }
 
     modeButtons.forEach((button) => {
@@ -134,11 +131,19 @@
   }
 
   function renderPersona() {
-    personaButtons.forEach((button) => {
-      const selected = button.dataset.persona === selectedPersona;
+    if (personaSelect) personaSelect.value = selectedPersona;
+  }
+
+  function renderPlatform() {
+    platformButtons.forEach((button) => {
+      const selected = button.dataset.platform === selectedPlatform;
       button.classList.toggle("active", selected);
-      button.setAttribute("aria-selected", String(selected));
+      button.setAttribute("aria-pressed", String(selected));
+      const state = button.querySelector("small");
+      if (state) state.textContent = selected ? "已选择" : "点击选择";
     });
+    if (hostingPlatform) hostingPlatform.textContent = `${platformNames[selectedPlatform]} · 消息自动接待`;
+    renderHosting();
   }
 
   function setSwitchState(button, enabled) {
@@ -149,10 +154,6 @@
   }
 
   hostingButton?.addEventListener("click", () => {
-    if (!platformConnected) {
-      showToast("请先连接 Soul 后再开启托管");
-      return;
-    }
     hosting = !hosting;
     renderHosting();
     showToast(hosting ? "AI 托管已开启" : "AI 托管已关闭，当前不会操作手机");
@@ -160,7 +161,7 @@
 
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      if (!hosting || !platformConnected) {
+      if (!hosting) {
         showToast("请先开启 AI 托管再选择处理方式");
         return;
       }
@@ -179,26 +180,18 @@
     });
   });
 
-  personaButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!platformConnected) {
-        showToast("平台未连接，暂时不能切换人设");
-        return;
-      }
-      selectedPersona = button.dataset.persona;
-      renderPersona();
-      showToast(`当前客服已切换为${personaNames[selectedPersona]}`);
-    });
+  personaSelect?.addEventListener("change", () => {
+    selectedPersona = personaSelect.value;
+    renderPersona();
+    showToast(`当前客服已切换为${personaNames[selectedPersona]}`);
   });
 
-  platformToggle?.addEventListener("click", () => {
-    platformConnected = !platformConnected;
-    platformToggle.setAttribute("aria-pressed", String(platformConnected));
-    platformToggle.classList.toggle("off", !platformConnected);
-    if (platformState) platformState.textContent = platformConnected ? "已连接" : "点击连接";
-    if (!platformConnected) hosting = false;
-    renderHosting();
-    showToast(platformConnected ? "Soul 已连接" : "Soul 已断开");
+  platformButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedPlatform = button.dataset.platform;
+      renderPlatform();
+      showToast(`已选择${platformNames[selectedPlatform]}`);
+    });
   });
 
   saveAddressButton?.addEventListener("click", () => {
@@ -211,21 +204,9 @@
     showToast("地址已保存，后续可以随时修改");
   });
 
-  function renderClock() {
-    const time = new Date().toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    });
-    clocks.forEach((clock) => {
-      clock.textContent = time;
-    });
-  }
-
   renderMode();
   renderPersona();
-  renderClock();
-  window.setInterval(renderClock, 30_000);
+  renderPlatform();
 
   if (window.lucide) {
     window.lucide.createIcons({

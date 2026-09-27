@@ -120,6 +120,45 @@
           <div class="control-list">
             <button class="control-row" type="button" data-switch-row aria-pressed="true">
               <span class="control-copy">
+                <span class="row-icon"><i data-lucide="smartphone"></i></span>
+                <span>
+                  <strong>手机设备权限</strong>
+                  <span>查看设备连接和运行权限状态</span>
+                </span>
+              </span>
+              <span class="row-action">
+                <span class="row-state">已开启</span>
+                <span class="toggle on" aria-hidden="true"></span>
+              </span>
+            </button>
+            <button class="control-row" type="button" data-switch-row aria-pressed="true">
+              <span class="control-copy">
+                <span class="row-icon secondary"><i data-lucide="accessibility"></i></span>
+                <span>
+                  <strong>无障碍通知</strong>
+                  <span>保持无障碍服务和消息监听正常</span>
+                </span>
+              </span>
+              <span class="row-action">
+                <span class="row-state">已开启</span>
+                <span class="toggle on" aria-hidden="true"></span>
+              </span>
+            </button>
+            <button class="control-row" type="button" data-switch-row aria-pressed="true">
+              <span class="control-copy">
+                <span class="row-icon warm"><i data-lucide="battery-charging"></i></span>
+                <span>
+                  <strong>电池优化</strong>
+                  <span>避免后台被系统限制和中断</span>
+                </span>
+              </span>
+              <span class="row-action">
+                <span class="row-state">已开启</span>
+                <span class="toggle on" aria-hidden="true"></span>
+              </span>
+            </button>
+            <button class="control-row" type="button" data-switch-row aria-pressed="true">
+              <span class="control-copy">
                 <span class="row-icon success"><i data-lucide="shield-check"></i></span>
                 <span>
                   <strong>异常自动恢复</strong>
@@ -157,50 +196,35 @@
             <div class="platform-selector" role="group" aria-label="选择平台">
               <button class="platform-option active" type="button" data-platform="soul" aria-pressed="true">
                 <span class="platform-logo">S</span>
-                <span>
-                  <strong>Soul</strong>
-                  <small data-platform-state>已连接</small>
-                </span>
+                <span><strong>Soul</strong><small>已选择</small></span>
                 <span class="platform-check"><i data-lucide="check"></i></span>
               </button>
-              <button class="platform-option disabled" type="button" disabled>
+              <button class="platform-option" type="button" data-platform="qq" aria-pressed="false">
                 <span class="platform-logo light">Q</span>
-                <span>
-                  <strong>QQ</strong>
-                  <small>暂未开放</small>
-                </span>
+                <span><strong>QQ</strong><small>点击选择</small></span>
+                <span class="platform-check"><i data-lucide="check"></i></span>
               </button>
-              <button class="platform-option disabled" type="button" disabled>
+              <button class="platform-option" type="button" data-platform="momo" aria-pressed="false">
                 <span class="platform-logo light">M</span>
-                <span>
-                  <strong>陌陌</strong>
-                  <small>暂未开放</small>
-                </span>
+                <span><strong>陌陌</strong><small>点击选择</small></span>
+                <span class="platform-check"><i data-lucide="check"></i></span>
+              </button>
+              <button class="platform-option" type="button" data-platform="lianxin" aria-pressed="false">
+                <span class="platform-logo light">L</span>
+                <span><strong>连信</strong><small>点击选择</small></span>
+                <span class="platform-check"><i data-lucide="check"></i></span>
               </button>
             </div>
 
             <div class="control-label control-label--persona">选择客服</div>
-            <div class="persona-list" role="listbox" aria-label="选择客服人设">
-              <button class="persona-option active" type="button" role="option" data-persona="xingmu" aria-selected="true">
-                <span class="persona-avatar">星</span>
-                <span class="persona-copy"><strong>星暮</strong><small>女客服 · 自然亲切</small></span>
-                <span class="persona-check"><i data-lucide="check"></i></span>
-              </button>
-              <button class="persona-option" type="button" role="option" data-persona="wanqing" aria-selected="false">
-                <span class="persona-avatar">晚</span>
-                <span class="persona-copy"><strong>晚晴</strong><small>女客服 · 柔和耐心</small></span>
-                <span class="persona-check"><i data-lucide="check"></i></span>
-              </button>
-              <button class="persona-option" type="button" role="option" data-persona="ajie" aria-selected="false">
-                <span class="persona-avatar">杰</span>
-                <span class="persona-copy"><strong>阿杰</strong><small>男客服 · 爽快直接</small></span>
-                <span class="persona-check"><i data-lucide="check"></i></span>
-              </button>
-              <button class="persona-option" type="button" role="option" data-persona="zichuan" aria-selected="false">
-                <span class="persona-avatar">川</span>
-                <span class="persona-copy"><strong>子川</strong><small>男客服 · 沉稳简洁</small></span>
-                <span class="persona-check"><i data-lucide="check"></i></span>
-              </button>
+            <div class="persona-select-wrap">
+              <select id="persona-select" data-persona-select aria-label="选择客服人设">
+                <option value="xingmu" selected>星暮 · 女客服 · 自然亲切</option>
+                <option value="wanqing">晚晴 · 女客服 · 柔和耐心</option>
+                <option value="ajie">阿杰 · 男客服 · 爽快直接</option>
+                <option value="zichuan">子川 · 男客服 · 沉稳简洁</option>
+              </select>
+              <i data-lucide="chevron-down" aria-hidden="true"></i>
             </div>
           </article>
         </section>
@@ -226,7 +250,7 @@
           </article>
         </section>
 
-        <section class="section">
+        <section class="section section--last">
           <div class="section-head">
             <h3>设备与额度</h3>
             <span>运行健康</span>
@@ -251,30 +275,6 @@
           </article>
         </section>
 
-        <section class="section section--last">
-          <div class="section-head">
-            <h3>最近运行记录</h3>
-            <span>简版日志</span>
-          </div>
-          <article class="activity-list">
-            <div class="activity-row">
-              <span class="activity-mark"></span>
-              <div>
-                <strong>消息扫描完成</strong>
-                <span>已处理 3 位未读客户，没有异常</span>
-              </div>
-              <span class="activity-time" data-clock>--:--</span>
-            </div>
-            <div class="activity-row">
-              <span class="activity-mark"></span>
-              <div>
-                <strong>设备权限正常</strong>
-                <span>无障碍与后台服务运行正常</span>
-              </div>
-              <span class="activity-time">12 分钟前</span>
-            </div>
-          </article>
-        </section>
       </div>
     </section>
   </main>

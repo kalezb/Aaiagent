@@ -1001,7 +1001,7 @@ button.location-row + button.location-row {
 
 .platform-selector {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
 
@@ -1070,9 +1070,16 @@ button.location-row + button.location-row {
   height: 17px;
   margin-left: auto;
   flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   display: grid;
   place-items: center;
+  background: var(--surface);
+  color: transparent;
+}
+
+.platform-option.active .platform-check {
+  border-color: var(--accent);
   background: var(--accent);
   color: #fff;
 }
@@ -1087,6 +1094,41 @@ button.location-row + button.location-row {
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--surface);
+}
+
+.persona-select-wrap {
+  position: relative;
+}
+
+.persona-select-wrap select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 40px 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  appearance: none;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.persona-select-wrap select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+.persona-select-wrap > svg {
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .persona-option {
