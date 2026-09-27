@@ -41,7 +41,7 @@ class MessageEngineTest {
     }
 
     @Test
-    fun `semi auto stays in chat while full auto and monitor only leave after a read`() {
+    fun `only full auto leaves after read and monitor only never performs screen actions`() {
         assertFalse(
             HostingCompletionPolicy.shouldReturnToMessageList(
                 mode = HostingMode.SEMI_AUTO,
@@ -57,8 +57,11 @@ class MessageEngineTest {
             )
         )
         assertTrue(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.FULL_AUTO))
-        assertTrue(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.MONITOR_ONLY))
+        assertFalse(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.MONITOR_ONLY))
         assertFalse(HostingCompletionPolicy.shouldLeaveAfterRead(HostingMode.SEMI_AUTO))
+        assertTrue(HostingCompletionPolicy.canPerformScreenActions(HostingMode.FULL_AUTO))
+        assertTrue(HostingCompletionPolicy.canPerformScreenActions(HostingMode.SEMI_AUTO))
+        assertFalse(HostingCompletionPolicy.canPerformScreenActions(HostingMode.MONITOR_ONLY))
     }
 
     @Test

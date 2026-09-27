@@ -431,7 +431,7 @@ private fun Card3HostingControl(
                             Text(text = when (mode) {
                                 HostingMode.FULL_AUTO -> "自动读+回+发"
                                 HostingMode.SEMI_AUTO -> "生成回复填框"
-                                HostingMode.MONITOR_ONLY -> "仅同步聊天记录"
+                                HostingMode.MONITOR_ONLY -> "只读当前聊天 不点不滑"
                             }, fontSize = 9.sp, color = TextHint)
                         }
                     }
@@ -450,7 +450,12 @@ private fun Card3HostingControl(
                 HostingMode.SEMI_AUTO -> "\u534a\u81ea\u52a8\u6a21\u5f0f"
                 HostingMode.MONITOR_ONLY -> "\u4ec5\u8bb0\u5f55\u6a21\u5f0f"
             }
-            val btnSubText = if (isHosting) modeText + " \u00b7 " + engineState else "\u70b9\u51fb\u5f00\u542f\u540e\u81ea\u52a8\u5904\u7406\u6d88\u606f"
+            val idleHint = if (hostingMode == HostingMode.MONITOR_ONLY) {
+                "\u70b9\u51fb\u5f00\u542f\u540e\u53ea\u8bfb\u540c\u6b65 \u4e0d\u64cd\u4f5c\u5c4f\u5e55"
+            } else {
+                "\u70b9\u51fb\u5f00\u542f\u540e\u81ea\u52a8\u5904\u7406\u6d88\u606f"
+            }
+            val btnSubText = if (isHosting) modeText + " \u00b7 " + engineState else idleHint
             Surface(
                 Modifier
                     .fillMaxWidth()

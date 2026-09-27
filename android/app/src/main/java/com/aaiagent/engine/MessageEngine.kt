@@ -170,6 +170,15 @@ class MessageEngine(
         }
         val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return false
 
+        if (!HostingCompletionPolicy.canPerformScreenActions(hostingMode)) {
+            val root = svc.rootInActiveWindow
+            if (root?.packageName?.toString() == adapter.packageName && adapter.isInChat(root)) {
+                recordCurrentChatOnly(adapter, root, leaseToken)
+            }
+            state = EngineState.Idle
+            return false
+        }
+
         val now = System.currentTimeMillis()
         if (hostingMode != HostingMode.MONITOR_ONLY &&
             BackendTaskPollPolicy.isDue(lastBackendTaskPollAt, now, BACKEND_TASK_POLL_INTERVAL_MS)
@@ -223,6 +232,47 @@ class MessageEngine(
         processVerifiedChat(adapter, verifiedChat, info.contactId, info.contactName, leaseToken)
         markHandled(info.contactId)
         return true
+    }
+
+    /**
+     * Monitor-only mode is strictly read-only. It never opens, clicks, scrolls,
+     * fills, clears, sends, or navigates away from the page the user is viewing.
+     */
+    private suspend fun recordCurrentChatOnly(
+        adapter: PlatformAdapter,
+        chatRoot: AccessibilityNodeInfo,
+        leaseToken: String
+    ) {
+        if (hostingMode != HostingMode.MONITOR_ONLY || !canContinue(leaseToken, null)) return
+        val contactName = adapter.readChatTitle(chatRoot)?.trim().orEmpty()
+        if (contactName.isBlank() || !isContactAllowed(contactName, contactName)) return
+
+        val context = getOrCreateContext(currentPlatform, contactName).also {
+            it.contactName = contactName
+            activeContext = it
+        }
+        state = EngineState.ReadingMessages
+        try {
+            var messages = readMessagesWithRetry(adapter, chatRoot, contactName, leaseToken)
+            if (adapter is SoulAdapter) {
+                messages = adapter.recognizePendingStickers(messages).messages
+            }
+            if (messages.isEmpty()) return
+
+            enqueueSnapshot(context, messages)
+            synchronized(context) {
+                context.lastIncomingFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
+            }
+            RuntimeJournal.readMessages(messages.size, messages.lastOrNull()?.content.orEmpty())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            RuntimeJournal.recovery("仅记录读取当前聊天异常: ${error.message}")
+            android.util.Log.e("AIA", "monitor-only read failed", error)
+        } finally {
+            activeContext = null
+            state = EngineState.Idle
+        }
     }
 
     private suspend fun processBackendReplyTask(
@@ -1347,6 +1397,7 @@ class MessageEngine(
     }
 
     private fun clearInputField() {
+        if (!HostingCompletionPolicy.canPerformScreenActions(hostingMode)) return
         val adapter = adapterRegistry?.getByPlatform(currentPlatform) ?: return
         if (adapter !is SoulAdapter) return
         scope.launch {
