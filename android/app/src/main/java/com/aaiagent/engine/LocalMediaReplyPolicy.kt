@@ -8,6 +8,7 @@ object LocalMediaReplyPolicy {
     const val STICKER_REPLY = "别发表情图，我反感，谢谢"
 
     fun replyFor(batch: IncomingMessageBatch.Selection): String? {
+        if (batch.preferTextOnly) return null
         val latest = batch.latestIncoming
         if (latest.type == SoulMediaType.STICKER) {
             return STICKER_REPLY

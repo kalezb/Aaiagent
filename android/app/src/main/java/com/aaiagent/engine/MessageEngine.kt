@@ -624,7 +624,7 @@ class MessageEngine(
             val latestIncoming = incomingBatch.latestIncoming
             android.util.Log.d(
                 "AIA",
-                "incoming batch size=${incomingBatch.incoming.size} media=${incomingBatch.mediaTarget?.type ?: "text"} latest=${latestIncoming.content}"
+                "incoming batch size=${incomingBatch.incoming.size} focus=${if (incomingBatch.preferTextOnly) "text" else incomingBatch.mediaTarget?.type ?: "text"} media=${incomingBatch.mediaTarget?.type ?: "none"} latest=${latestIncoming.content}"
             )
             RuntimeJournal.readMessages(messages.size, latestIncoming.content)
             val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
@@ -651,7 +651,7 @@ class MessageEngine(
             if (localMediaReply != null) {
                 android.util.Log.d(
                     "AIA",
-                    "local media reply type=${incomingBatch.mediaTarget?.type ?: "voice"}"
+                    "local media reply type=${incomingBatch.mediaTarget?.type ?: latestIncoming.type}"
                 )
             }
             val reply = if (localMediaReply != null) {
@@ -670,7 +670,7 @@ class MessageEngine(
                 val understanding = understandIncomingBatch(
                     adapter = adapter,
                     root = root,
-                    messages = incomingBatch.incoming,
+                    messages = IncomingMessageBatch.replyMessages(incomingBatch),
                     incomingBatch = incomingBatch,
                     api = api,
                     token = token,

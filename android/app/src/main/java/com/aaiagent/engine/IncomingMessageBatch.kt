@@ -36,35 +36,57 @@ object IncomingMessageBatch {
             .filter { it.sender != "self" }
         if (incoming.isEmpty()) return null
 
-        var mediaTarget: ChatMessage? = null
-        var bestPriority = 0
-        for (message in incoming) {
-            val priority = MEDIA_PRIORITY[message.type] ?: 0
-            if (priority > 0 && priority >= bestPriority) {
-                mediaTarget = message
-                bestPriority = priority
-            }
-        }
+        // Standalone text outranks media so older images or voice do not add model cost.
+        val textTarget = incoming.lastOrNull(::isTextualReplyMessage)
+        val preferTextOnly = textTarget != null &&
+            !requiresMediaContext(textTarget.content)
+        val latestMedia = incoming.lastOrNull { it.type in MEDIA_TYPES }
+        val mediaTarget = latestMedia.takeUnless { preferTextOnly }
 
         return Selection(
             incoming = incoming,
             latestIncoming = incoming.last(),
-            mediaTarget = mediaTarget
+            mediaTarget = mediaTarget,
+            textTarget = textTarget,
+            preferTextOnly = preferTextOnly
         )
+    }
+
+    fun replyMessages(selection: Selection): List<ChatMessage> {
+        if (!selection.preferTextOnly) return selection.incoming
+        return selection.incoming
+            .filter(::isTextualReplyMessage)
+            .ifEmpty { selection.incoming }
     }
 
     data class Selection(
         val incoming: List<ChatMessage>,
         val latestIncoming: ChatMessage,
-        val mediaTarget: ChatMessage?
+        val mediaTarget: ChatMessage?,
+        val textTarget: ChatMessage? = null,
+        val preferTextOnly: Boolean = false
     )
 
-    private val MEDIA_PRIORITY = mapOf(
-        "voice_emoji" to 6,
-        "exchange" to 5,
-        "image" to 4,
-        "voice" to 3,
-        "sticker" to 2,
-        "interaction" to 1
+    private fun isTextualReplyMessage(message: ChatMessage): Boolean {
+        if (message.type != "text" && message.type != "moment_card") return false
+        return message.content.trim().isNotEmpty()
+    }
+
+    private fun requiresMediaContext(text: String): Boolean {
+        val compact = text.trim().replace(Regex("\\s+"), "")
+        return compact.length <= 32 && MEDIA_REFERENCE.containsMatchIn(compact)
+    }
+
+    private val MEDIA_TYPES = setOf(
+        "voice_emoji",
+        "exchange",
+        "image",
+        "voice",
+        "sticker",
+        "interaction"
+    )
+
+    private val MEDIA_REFERENCE = Regex(
+        "(?:看看|看一下|看下|这张|那张|这个图|那个图|照片|图片|截图|听一下|听下|这条语音|这个语音|视频)"
     )
 }

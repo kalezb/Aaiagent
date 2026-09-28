@@ -14,35 +14,68 @@ import org.junit.Test
 
 class IncomingMessageBatchTest {
     @Test
-    fun `image followed by caption keeps the image as the media target`() {
+    fun `text after an image ignores the older image`() {
         val image = ChatMessage("other", "[image]", "image")
         val caption = ChatMessage("other", "today outfit", "text")
 
         val batch = IncomingMessageBatch.select(listOf(image, caption))
 
         assertEquals(caption, batch?.latestIncoming)
-        assertSame(image, batch?.mediaTarget)
+        assertEquals(caption, batch?.textTarget)
+        assertTrue(batch?.preferTextOnly == true)
+        assertNull(batch?.mediaTarget)
+        assertEquals(listOf(caption), batch?.let(IncomingMessageBatch::replyMessages))
     }
 
     @Test
-    fun `exchange stays ahead of captions and stickers`() {
+    fun `text stays ahead of exchange and later stickers`() {
         val exchange = ChatMessage("other", "[exchange]", "exchange")
         val caption = ChatMessage("other", "send one back", "text")
         val sticker = ChatMessage("other", "[sticker]", "sticker")
 
         val batch = IncomingMessageBatch.select(listOf(exchange, caption, sticker))
 
-        assertSame(exchange, batch?.mediaTarget)
+        assertEquals(caption, batch?.textTarget)
+        assertTrue(batch?.preferTextOnly == true)
+        assertNull(batch?.mediaTarget)
+        assertEquals(listOf(caption), batch?.let(IncomingMessageBatch::replyMessages))
     }
 
     @Test
-    fun `image is preferred over a later sticker`() {
+    fun `without text only the latest media is selected`() {
         val image = ChatMessage("other", "[image]", "image")
         val sticker = ChatMessage("other", "[sticker]", "sticker")
 
         val batch = IncomingMessageBatch.select(listOf(image, sticker))
 
+        assertSame(sticker, batch?.mediaTarget)
+        assertFalse(batch?.preferTextOnly == true)
+    }
+
+    @Test
+    fun `media reference text keeps only the latest related media`() {
+        val image = ChatMessage("other", "[image]", "image")
+        val reference = ChatMessage("other", "你看看这张", "text")
+
+        val batch = IncomingMessageBatch.select(listOf(image, reference))
+
         assertSame(image, batch?.mediaTarget)
+        assertSame(reference, batch?.textTarget)
+        assertFalse(batch?.preferTextOnly == true)
+        assertEquals(listOf(image, reference), batch?.let(IncomingMessageBatch::replyMessages))
+    }
+
+    @Test
+    fun `ordinary text followed by voice still replies to text only`() {
+        val text = ChatMessage("other", "今天好累", "text")
+        val voice = ChatMessage("other", "[语音]", "voice")
+
+        val batch = IncomingMessageBatch.select(listOf(text, voice))
+
+        assertEquals(text, batch?.textTarget)
+        assertTrue(batch?.preferTextOnly == true)
+        assertNull(batch?.mediaTarget)
+        assertEquals(listOf(text), batch?.let(IncomingMessageBatch::replyMessages))
     }
 
     @Test

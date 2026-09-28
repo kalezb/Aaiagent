@@ -57,6 +57,21 @@ class LocalMediaReplyPolicyTest {
     }
 
     @Test
+    fun `text followed by a sticker still stays on the text model path`() {
+        val batch = requireNotNull(
+            IncomingMessageBatch.select(
+                listOf(
+                    ChatMessage("other", "今天好累", "text"),
+                    ChatMessage("other", "[表情]", SoulMediaType.STICKER)
+                )
+            )
+        )
+
+        assertNull(LocalMediaReplyPolicy.replyFor(batch))
+        assertEquals(listOf("今天好累"), batch.let(IncomingMessageBatch::replyMessages).map { it.content })
+    }
+
+    @Test
     fun `text only does not use a local media reply`() {
         val batch = requireNotNull(
             IncomingMessageBatch.select(
