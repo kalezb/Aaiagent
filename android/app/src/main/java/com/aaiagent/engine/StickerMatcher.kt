@@ -20,8 +20,14 @@ import kotlin.math.roundToInt
  * 14 种互动表情。
  */
 object StickerMatcher {
+    data class QuickMenuItem(
+        val label: String,
+        val iconBounds: Rect
+    )
+
     data class MatchResult(
         val names: List<String?>,
+        val quickMenuLabels: List<String?> = List(names.size) { null },
         val captureSucceeded: Boolean
     )
 
@@ -101,19 +107,38 @@ object StickerMatcher {
 
     suspend fun matchAllDetailed(
         service: AccessibilityService,
-        boundsList: List<Rect>
+        boundsList: List<Rect>,
+        quickMenuItems: List<QuickMenuItem> = emptyList()
     ): MatchResult {
         if (boundsList.isEmpty()) return MatchResult(emptyList(), captureSucceeded = true)
         warmup(service)
-        val refs = referenceTemplates
-            ?: return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
-        if (refs.isEmpty()) return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
+        val refs = referenceTemplates.orEmpty()
+        if (refs.isEmpty() && quickMenuItems.isEmpty()) {
+            return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
+        }
 
         val screen = takeFullScreenshotBitmap(service)
             ?: return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
         return try {
+            val quickRefs = quickMenuItems.mapNotNull { item ->
+                quickFeature(screen, item.iconBounds)?.let { feature ->
+                    QuickReference(item.label, feature)
+                }
+            }
+            val names = ArrayList<String?>(boundsList.size)
+            val labels = ArrayList<String?>(boundsList.size)
+            for (bounds in boundsList) {
+                val staticName = matchCropped(screen, bounds, refs)
+                names += staticName
+                labels += if (staticName == null) {
+                    matchQuickMenu(screen, bounds, quickRefs)
+                } else {
+                    null
+                }
+            }
             MatchResult(
-                names = boundsList.map { bounds -> matchCropped(screen, bounds, refs) },
+                names = names,
+                quickMenuLabels = labels,
                 captureSucceeded = true
             )
         } finally {
@@ -132,6 +157,111 @@ object StickerMatcher {
         } finally {
             cropped.recycle()
         }
+    }
+
+    private data class QuickFeature(val hash: Long, val average: IntArray)
+
+    private data class QuickReference(val label: String, val feature: QuickFeature)
+
+    private data class QuickScore(val hashDistance: Int, val colorDistance: Double)
+
+    private fun matchQuickMenu(
+        source: Bitmap,
+        bounds: Rect,
+        refs: List<QuickReference>
+    ): String? {
+        if (refs.isEmpty()) return null
+        val target = quickFeature(source, bounds) ?: return null
+        var best: QuickReference? = null
+        var second: QuickScore? = null
+        var bestScore: QuickScore? = null
+        for (ref in refs) {
+            val score = quickScore(target, ref.feature)
+            if (bestScore == null || score.hashDistance < bestScore.hashDistance) {
+                second = bestScore
+                bestScore = score
+                best = ref
+            } else if (second == null || score.hashDistance < second.hashDistance) {
+                second = score
+            }
+        }
+        val winner = best ?: return null
+        val winnerScore = bestScore ?: return null
+        if (!isConfidentQuickMatch(
+                bestHash = winnerScore.hashDistance,
+                bestColor = winnerScore.colorDistance,
+                secondHash = second?.hashDistance,
+                secondColor = second?.colorDistance
+            )
+        ) {
+            Log.d(
+                "AIA",
+                "Quick game icon no match, best=${winner.label} hash=${winnerScore.hashDistance} color=%.2f".format(winnerScore.colorDistance)
+            )
+            return null
+        }
+        Log.d(
+            "AIA",
+            "Quick game icon match: ${winner.label} hash=${winnerScore.hashDistance} color=%.2f".format(winnerScore.colorDistance)
+        )
+        return winner.label
+    }
+
+    internal fun isConfidentQuickMatch(
+        bestHash: Int,
+        bestColor: Double,
+        secondHash: Int?,
+        secondColor: Double?
+    ): Boolean {
+        if (bestHash > MAX_QUICK_HASH_DISTANCE || bestColor > MAX_QUICK_COLOR_DISTANCE) return false
+        if (secondHash == null || secondColor == null) return true
+        return secondHash - bestHash >= MIN_QUICK_HASH_GAP ||
+            secondColor - bestColor >= MIN_QUICK_COLOR_GAP
+    }
+
+    private fun quickFeature(source: Bitmap, bounds: Rect): QuickFeature? {
+        val cropped = cropBitmap(source, bounds) ?: return null
+        val normalized = normalizeForTemplate(cropped)
+        val scaled = Bitmap.createScaledBitmap(normalized, QUICK_FEATURE_SIZE, QUICK_FEATURE_SIZE, true)
+        return try {
+            val pixels = IntArray(QUICK_FEATURE_SIZE * QUICK_FEATURE_SIZE)
+            scaled.getPixels(pixels, 0, QUICK_FEATURE_SIZE, 0, 0, QUICK_FEATURE_SIZE, QUICK_FEATURE_SIZE)
+            var hash = 0L
+            var bit = 0
+            for (y in 0 until QUICK_HASH_SIZE) {
+                for (x in 0 until QUICK_HASH_SIZE) {
+                    val left = luminance(pixels[y * QUICK_FEATURE_SIZE + x])
+                    val right = luminance(pixels[y * QUICK_FEATURE_SIZE + x + 1])
+                    if (left > right) hash = hash or (1L shl bit)
+                    bit++
+                }
+            }
+            val average = IntArray(3)
+            for (pixel in pixels) {
+                average[0] += Color.red(pixel)
+                average[1] += Color.green(pixel)
+                average[2] += Color.blue(pixel)
+            }
+            for (index in average.indices) average[index] /= pixels.size
+            QuickFeature(hash, average)
+        } finally {
+            if (scaled !== normalized) scaled.recycle()
+            normalized.recycle()
+            cropped.recycle()
+        }
+    }
+
+    private fun quickScore(first: QuickFeature, second: QuickFeature): QuickScore {
+        val hashDistance = java.lang.Long.bitCount(first.hash xor second.hash)
+        var colorDistance = 0
+        for (index in 0 until 3) {
+            colorDistance += kotlin.math.abs(first.average[index] - second.average[index])
+        }
+        return QuickScore(hashDistance, colorDistance.toDouble())
+    }
+
+    private fun luminance(color: Int): Int {
+        return (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000
     }
 
     private fun recognize(
@@ -348,6 +478,13 @@ object StickerMatcher {
     private const val MIN_BEST_GAP = 1.0
 
     private const val SCREENSHOT_ATTEMPTS = 3
+
+    private const val QUICK_FEATURE_SIZE = 16
+    private const val QUICK_HASH_SIZE = 8
+    private const val MAX_QUICK_HASH_DISTANCE = 18
+    private const val MAX_QUICK_COLOR_DISTANCE = 70.0
+    private const val MIN_QUICK_HASH_GAP = 8
+    private const val MIN_QUICK_COLOR_GAP = 25.0
 
     private val SCREENSHOT_RETRY_DELAYS_MS = longArrayOf(1_100L, 1_500L)
 }

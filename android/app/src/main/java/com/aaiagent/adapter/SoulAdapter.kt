@@ -48,6 +48,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     /** readMessages 把待识别表情和消息索引绑定，避免混入其他消息后错位。 */
     private val pendingStickers = mutableListOf<PendingSticker>()
+    private var pendingQuickMenuItems = emptyList<StickerMatcher.QuickMenuItem>()
 
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
         return root.packageName?.toString() == packageName &&
@@ -116,6 +117,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val timestampTracker = SoulMessageTime.ContextTracker()
         val locatedMessages = mutableListOf<LocatedMessage>()
         pendingStickers.clear()
+        pendingQuickMenuItems = readQuickMenuItems(root)
 
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
@@ -297,8 +299,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val isLatestIncoming = pending.messageIndex == messages.lastIndex &&
                 messages[pending.messageIndex].sender == "other"
             if (isLatestIncoming && !previewLabel.isNullOrBlank()) {
+                val modelText = if (SoulGameInteraction.isGameLabel(previewLabel)) {
+                    SoulGameInteraction.modelTextFor(previewLabel)
+                } else {
+                    SoulInteractionPreview.modelTextFor(previewLabel)
+                }
                 result[pending.messageIndex] = result[pending.messageIndex].copy(
-                    content = SoulInteractionPreview.modelTextFor(previewLabel),
+                    content = modelText,
                     type = "text"
                 )
             } else {
@@ -309,11 +316,18 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         if (remainingPending.isNotEmpty()) {
             val match = StickerMatcher.matchAllDetailed(
                 service = service,
-                boundsList = remainingPending.map { it.rect }
+                boundsList = remainingPending.map { it.rect },
+                quickMenuItems = pendingQuickMenuItems
             )
             remainingPending.forEachIndexed { index, pending ->
                 val name = match.names.getOrNull(index)
-                val modelText = StickerMatcher.modelTextFor(name.orEmpty())
+                val quickMenuLabel = match.quickMenuLabels.getOrNull(index)
+                val modelText = when {
+                    !quickMenuLabel.isNullOrBlank() && SoulGameInteraction.isGameLabel(quickMenuLabel) ->
+                        SoulGameInteraction.modelTextFor(quickMenuLabel)
+                    !name.isNullOrBlank() -> StickerMatcher.modelTextFor(name)
+                    else -> null
+                }
                 if (modelText.isNullOrBlank()) {
                     unresolved.add(pending.messageIndex)
                 } else {
@@ -1501,6 +1515,27 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             content = readChildText(cardRoot, "content"),
             forwardedByOther = forwardedByOther
         )
+    }
+
+    private fun readQuickMenuItems(root: AccessibilityNodeInfo): List<StickerMatcher.QuickMenuItem> {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "cl_menu_item")
+            .asSequence()
+            .filter(::isVisibleOnScreen)
+            .mapNotNull { item ->
+                val label = item.findAccessibilityNodeInfosByViewId(prefix + "tv_menu_text")
+                    .mapNotNull { it.text?.toString()?.trim() }
+                    .firstOrNull { it.isNotEmpty() && it.length <= 16 }
+                    ?: return@mapNotNull null
+                if (!SoulGameInteraction.isGameLabel(label)) return@mapNotNull null
+                val icon = item.findAccessibilityNodeInfosByViewId(prefix + "iv_menu_icon")
+                    .firstOrNull(::isVisibleOnScreen)
+                    ?: return@mapNotNull null
+                val bounds = Rect()
+                icon.getBoundsInScreen(bounds)
+                if (bounds.width() <= 0 || bounds.height() <= 0) null
+                else StickerMatcher.QuickMenuItem(label = label, iconBounds = bounds)
+            }
+            .toList()
     }
 
     private fun readChildText(parent: AccessibilityNodeInfo, viewId: String): String? {

@@ -2,6 +2,7 @@ package com.aaiagent
 
 import com.aaiagent.engine.StickerMatcher
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -40,5 +41,12 @@ class StickerMatcherTest {
     @Test
     fun `unknown interaction sticker has no invented meaning`() {
         assertNull(StickerMatcher.modelTextFor("未知表情"))
+    }
+
+    @Test
+    fun `quick game icon match requires a strong and unambiguous image match`() {
+        assertTrue(StickerMatcher.isConfidentQuickMatch(14, 42.6, 27, 90.4))
+        assertFalse(StickerMatcher.isConfidentQuickMatch(14, 42.6, 16, 45.0))
+        assertFalse(StickerMatcher.isConfidentQuickMatch(30, 42.6, 44, 90.4))
     }
 }
