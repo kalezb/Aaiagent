@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
 import android.util.Base64
+import androidx.annotation.RequiresApi
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
@@ -34,6 +35,7 @@ object ScreenCapture {
         return null
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private suspend fun captureOnce(
         service: AccessibilityService,
         targetBounds: Rect?,

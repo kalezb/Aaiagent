@@ -1,1 +1,1 @@
-export const chatRouter = { post: () => {} };
+export { onRequest } from "./route";

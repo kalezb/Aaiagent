@@ -4,6 +4,8 @@ object HostingSessionPolicy {
     const val ENABLED_KEY = "hosting_enabled"
     const val PLATFORM_KEY = "hosting_platform"
     const val MODE_KEY = "hosting_mode"
+    const val WEATHER_KEY = "weather_enabled"
+    const val TIME_KEY = "time_enabled"
 
     data class Session(
         val platform: String,

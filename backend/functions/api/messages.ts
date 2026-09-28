@@ -1,1 +1,1 @@
-export const messagesRouter = { post: () => {} };
+export { onRequest } from "./route";

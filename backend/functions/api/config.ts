@@ -1,1 +1,1 @@
-export const configRouter = { get: () => {}, put: () => {} };
+export { onRequest } from "./route";

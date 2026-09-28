@@ -193,10 +193,14 @@ export function replyGenerationSettings(messages, messageDelay, config) {
   const complex = messageType === "business" || messageDelay?.pastMode || text.length > 40 ||
     /(?:图片|语音|截图|型号|多少钱|价格|地址|工作)/u.test(text);
   const requestedMax = simpleGreeting ? 64 : complex ? 120 : 88;
+  const configuredTemperature = Number(config?.temperature);
+  const baseTemperature = Number.isFinite(configuredTemperature)
+    ? Math.max(0, Math.min(2, configuredTemperature))
+    : 0.8;
   const requestedTemperature = messageDelay?.pastMode ? 0.4 : complex ? 0.55 : simpleGreeting ? 0.82 : 0.8;
   return {
     maxTokens: Math.max(48, Math.min(Number(config.maxTokens || 160), requestedMax)),
-    temperature: requestedTemperature,
+    temperature: Math.min(baseTemperature, requestedTemperature),
   };
 }
 
@@ -235,6 +239,8 @@ export function buildLayeredSystemPrompt({
   homeLocation,
   workLocation,
   weather,
+  weatherEnabled = true,
+  timeEnabled = true,
   activity,
   stageText,
   relationStageLevel,
@@ -260,8 +266,12 @@ export function buildLayeredSystemPrompt({
   const dynamic = [
     "【当前平台】" + platform + "。",
     profileContext ? "【长期客户档案】" + profileContext : "",
-    "【当前时间和地点】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" + locationContext +
-      "今天" + weather.condition + weather.temp + "度。",
+    timeEnabled
+      ? "【当前时间和地点】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" + locationContext
+      : "【当前地点】" + locationContext,
+    weatherEnabled && weather
+      ? "今天" + weather.condition + weather.temp + "度。"
+      : "",
     "【关系阶段】" + stageText,
     activity.activeDays >= 2
       ? "这个客户最近7天有" + activity.activeDays + "天主动找过你，别假装你们天天都在聊。"

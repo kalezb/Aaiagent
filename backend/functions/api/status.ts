@@ -1,1 +1,1 @@
-export const statusRouter = { get: () => {} };
+export { onRequest } from "./route";

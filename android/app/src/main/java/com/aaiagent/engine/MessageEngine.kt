@@ -85,6 +85,9 @@ class MessageEngine(
     @Volatile
     private var activeContext: ConversationContext? = null
 
+    @Volatile
+    private var automationOwnedChatKey: String? = null
+
     init {
         service?.let {
             RuntimeJournal.init(java.io.File(it.filesDir, "journal"))
@@ -93,6 +96,7 @@ class MessageEngine(
 
     fun startHosting(platform: String) {
         currentPlatform = platform
+        automationOwnedChatKey = null
         hostingEnabled = true
         GestureMonitor.onAutomationActionStarted(protectionMs = 1_500L)
         android.util.Log.d("AIA", "HostingStarted platform=$platform mode=$hostingMode")
@@ -118,6 +122,7 @@ class MessageEngine(
         hostingJob?.cancel()
         hostingJob = null
         activeContext = null
+        automationOwnedChatKey = null
         handledConversationIds.clear()
         contexts.values.forEach(::clearPendingReply)
         clearInputField()
@@ -192,6 +197,11 @@ class MessageEngine(
         if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
             val title = adapter.readChatTitle(activeRoot)
             if (!title.isNullOrBlank()) {
+                val ownedKey = automationOwnedChatKey
+                if (!HostingCompletionPolicy.ownsAutomatedChat(ownedKey, conversationKey(title))) {
+                    state = EngineState.UserInChatRoom
+                    return false
+                }
                 if (isContactAllowed(title, title)) {
                     markHandled(title)
                     processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
@@ -340,7 +350,13 @@ class MessageEngine(
         if (!canContinue(leaseToken, null)) return true
 
         state = EngineState.Sending
-        val result = adapter.fillAndSend(svc, chatRoot, content, conversation.contactName)
+        val result = adapter.fillAndSend(
+            service = svc,
+            root = chatRoot,
+            text = content,
+            expectedContactName = conversation.contactName,
+            canProceed = { canContinue(leaseToken, null) }
+        )
         val status = if (result == PlatformAdapter.SendResult.SUCCESS) "sent" else "failed"
         val error = if (status == "sent") "" else "send_result_$result"
         reportReplyTask(apiBaseUrl, deviceToken, task.taskId, status, error)
@@ -389,6 +405,7 @@ class MessageEngine(
         contactName: String,
         leaseToken: String
     ) {
+        automationOwnedChatKey = conversationKey(contactId)
         if (!isContactAllowed(contactName, contactId)) {
             RuntimeJournal.recovery("联系人策略跳过 contact=$contactName")
             returnToMessageList(adapter, leaseToken, "contact filtered")
@@ -416,6 +433,7 @@ class MessageEngine(
         adapter: PlatformAdapter,
         leaseToken: String
     ): AccessibilityNodeInfo? {
+        automationOwnedChatKey = null
         repeat(5) { attempt ->
             if (!canContinue(leaseToken, null)) return null
             var root = svc.rootInActiveWindow
@@ -656,8 +674,8 @@ class MessageEngine(
             }
 
             if (!canContinue(leaseToken, interactionEpoch)) return
-            when (hostingMode) {
-                HostingMode.FULL_AUTO -> {
+            when (HostingCompletionPolicy.replyAction(hostingMode)) {
+                HostingReplyAction.SEND -> {
                     state = EngineState.AboutToSend
                     val delivery = sendReply(
                         adapter = adapter,
@@ -690,7 +708,7 @@ class MessageEngine(
                         android.util.Log.d("AIA", "reply delivery stopped because newer messages arrived")
                     }
                 }
-                HostingMode.SEMI_AUTO -> {
+                HostingReplyAction.FILL_INPUT_ONLY -> {
                     if (adapter is SoulAdapter) {
                         if (adapter.fillInputOnly(reply.content, context.contactName)) {
                             synchronized(context) {
@@ -699,7 +717,7 @@ class MessageEngine(
                         }
                     }
                 }
-                HostingMode.MONITOR_ONLY -> Unit
+                HostingReplyAction.OBSERVE_ONLY -> Unit
             }
         } catch (error: CancellationException) {
             throw error
@@ -1036,6 +1054,7 @@ class MessageEngine(
 
         var sentCount = 0
         var replyConfirmed = true
+        var stoppedByUser = false
         val deliveryStartedAt = System.currentTimeMillis()
         for ((index, part) in parts.withIndex()) {
             if (!canContinue(leaseToken, interactionEpoch)) {
@@ -1044,6 +1063,11 @@ class MessageEngine(
                 return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, parts.size)
             }
             if (index > 0) delay(ReplyDeliveryPolicy.delayAfterPart(part))
+            if (!canContinue(leaseToken, interactionEpoch)) {
+                clearInputField()
+                clearPendingReply(context)
+                return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, parts.size)
+            }
             if (!incomingStillCurrent(adapter, context, expectedIncomingFingerprint)) {
                 android.util.Log.d("AIA", "reply delivery invalidated before part=${index + 1}")
                 clearInputField()
@@ -1060,8 +1084,15 @@ class MessageEngine(
             state = EngineState.Sending
             val svc = service ?: break
             val root = svc.rootInActiveWindow ?: break
-            val result = adapter.fillAndSend(svc, root, part, context.contactName)
+            val result = adapter.fillAndSend(
+                service = svc,
+                root = root,
+                text = part,
+                expectedContactName = context.contactName,
+                canProceed = { canContinue(leaseToken, interactionEpoch) }
+            )
             if (result != PlatformAdapter.SendResult.SUCCESS) {
+                if (result == PlatformAdapter.SendResult.STOPPED) stoppedByUser = true
                 RuntimeJournal.messageSent(false, "发送未完成: $result")
                 if (result == PlatformAdapter.SendResult.BANNED) {
                     state = EngineState.Error
@@ -1097,7 +1128,11 @@ class MessageEngine(
             "chat_timing stage=send elapsed=${System.currentTimeMillis() - deliveryStartedAt} sent=${progress.sentParts}/${progress.totalParts}"
         )
         return ReplyDeliveryResult(
-            status = if (progress.isComplete) ReplyDeliveryStatus.COMPLETE else ReplyDeliveryStatus.FAILED,
+            status = when {
+                progress.isComplete -> ReplyDeliveryStatus.COMPLETE
+                stoppedByUser -> ReplyDeliveryStatus.STOPPED
+                else -> ReplyDeliveryStatus.FAILED
+            },
             sentParts = progress.sentParts,
             totalParts = progress.totalParts,
             confirmed = replyConfirmed
@@ -1296,6 +1331,7 @@ class MessageEngine(
     }
 
     fun onPageChanged(isInChatRoom: Boolean) {
+        if (!isInChatRoom) automationOwnedChatKey = null
         android.util.Log.d("AIA", "page changed isInChat=$isInChatRoom state=$state")
     }
 
@@ -1353,6 +1389,7 @@ class MessageEngine(
 
     fun onUserInteraction() {
         if (!GestureMonitor.onTouchDetected()) return
+        automationOwnedChatKey = null
         android.util.Log.d("AIA", "manual takeover detected, state=$state")
         if (state == EngineState.AboutToSend || state == EngineState.Sending || state == EngineState.WaitingLLM) {
             activeContext?.let(::clearPendingReply)
@@ -1386,6 +1423,7 @@ class MessageEngine(
         if (!HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode) || !canContinue(leaseToken, null)) return
         val svc = service ?: return
         val currentRoot = svc.rootInActiveWindow ?: return
+        automationOwnedChatKey = null
         state = EngineState.ScanningConversations
         adapter.navigateToMessageList(svc, currentRoot)
         android.util.Log.d("AIA", "returned to message list reason=$reason")

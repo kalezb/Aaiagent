@@ -6,7 +6,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.math.roundToInt
@@ -173,6 +175,7 @@ object StickerMatcher {
     }
 
     private suspend fun takeFullScreenshotBitmap(service: AccessibilityService): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         repeat(SCREENSHOT_ATTEMPTS) { attempt ->
             val bitmap = takeFullScreenshotBitmapOnce(service)
             if (bitmap != null) return bitmap
@@ -181,6 +184,7 @@ object StickerMatcher {
         return null
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private suspend fun takeFullScreenshotBitmapOnce(service: AccessibilityService): Bitmap? {
         val result = suspendCancellableCoroutine<AccessibilityService.ScreenshotResult?> { continuation ->
             try {

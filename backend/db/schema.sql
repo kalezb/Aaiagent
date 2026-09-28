@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS tokens (
     name        TEXT NOT NULL DEFAULT '',
     monthly_limit INTEGER NOT NULL DEFAULT 30,
     spent       REAL NOT NULL DEFAULT 0,
+    spent_month TEXT NOT NULL DEFAULT '',
     is_active   INTEGER NOT NULL DEFAULT 1,
     active_persona_id TEXT NOT NULL DEFAULT 'female',
     created_at  INTEGER NOT NULL,
@@ -206,3 +207,21 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_customer_profiles_updated ON customer_profiles(token, updated_at);
+
+CREATE TABLE IF NOT EXISTS device_settings (
+    token             TEXT PRIMARY KEY,
+    platform          TEXT NOT NULL DEFAULT 'soul',
+    hosting_enabled   INTEGER NOT NULL DEFAULT 0,
+    monitor_enabled   INTEGER NOT NULL DEFAULT 1,
+    weather_enabled   INTEGER NOT NULL DEFAULT 1,
+    time_enabled      INTEGER NOT NULL DEFAULT 1,
+    updated_at        INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS request_limits (
+    token          TEXT NOT NULL,
+    scope          TEXT NOT NULL,
+    window_start   INTEGER NOT NULL,
+    request_count  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (token, scope)
+);

@@ -61,6 +61,14 @@ interface PlatformAdapter {
         expectedContactName: String? = null
     ): SendResult
 
+    suspend fun fillAndSend(
+        service: AccessibilityService,
+        root: AccessibilityNodeInfo,
+        text: String,
+        expectedContactName: String? = null,
+        canProceed: () -> Boolean
+    ): SendResult = fillAndSend(service, root, text, expectedContactName)
+
     suspend fun clickFirstUnreadConversation(
         root: AccessibilityNodeInfo,
         shouldClick: Boolean = true,
@@ -126,6 +134,7 @@ interface PlatformAdapter {
         SUCCESS,
         BANNED,
         TIMEOUT,
-        NOT_VERIFIED
+        NOT_VERIFIED,
+        STOPPED
     }
 }

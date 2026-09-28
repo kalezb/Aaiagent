@@ -1,1 +1,1 @@
-export const historyRouter = { get: () => {}, delete: () => {} };
+export { onRequest } from "./route";

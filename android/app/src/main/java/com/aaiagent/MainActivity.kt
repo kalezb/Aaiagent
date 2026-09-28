@@ -104,13 +104,30 @@ class MainActivity : ComponentActivity() {
             hostingMode = withContext(Dispatchers.IO) {
                 HostingSessionPolicy.hostingMode(repository.getConfig(HostingSessionPolicy.MODE_KEY))
             }
-            val t = withContext(Dispatchers.IO) { repository.getActiveToken() }; if (t != null) token = t.token
+            val t = withContext(Dispatchers.IO) { repository.getActiveToken() }
             if (t != null) {
                 token = t.token
-                tokenVerified = true
                 tokenVerifyStatus = "✓ 钥匙已保存"
             }
             val u = withContext(Dispatchers.IO) { repository.getConfig("api_base_url") }; if (u != null) apiBase = u
+            if (token.isNotBlank()) {
+                tokenVerified = false
+                tokenVerifyStatus = "正在验证设备密钥..."
+                val verify = ApiService(apiBase).saveConfig(token, mapOf("action" to "verify_token"))
+                tokenVerified = verify.success
+                tokenVerifyStatus = if (verify.success) "设备密钥已验证" else "设备密钥无效或后端不可用"
+            }
+            enabledPlatforms = setOf(
+                withContext(Dispatchers.IO) { repository.getConfig(HostingSessionPolicy.PLATFORM_KEY) }
+                    ?.takeIf { it in setOf("soul", "qq", "immomo", "lianxin") }
+                    ?: "soul"
+            )
+            weatherEnabled = withContext(Dispatchers.IO) {
+                repository.getConfig(HostingSessionPolicy.WEATHER_KEY) != "false"
+            }
+            timeEnabled = withContext(Dispatchers.IO) {
+                repository.getConfig(HostingSessionPolicy.TIME_KEY) != "false"
+            }
             val loc = withContext(Dispatchers.IO) { repository.getLocation() }
             homeCity = loc["home"]?.get("city") ?: "重庆"; homeDistrict = loc["home"]?.get("district") ?: "两江新区"
             workCity = loc["work"]?.get("city") ?: "重庆"; workDistrict = loc["work"]?.get("district") ?: "两江新区"
@@ -134,7 +151,14 @@ class MainActivity : ComponentActivity() {
                 DashboardScreen(
                     isHosting = isHosting, engineState = engineState,
                     enabledPlatforms = enabledPlatforms,
-                    onTogglePlatform = { p, en -> enabledPlatforms = if (en) setOf(p) else enabledPlatforms },
+                    onTogglePlatform = { p, en ->
+                        if (en) {
+                            enabledPlatforms = setOf(p)
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                repository.setConfig(HostingSessionPolicy.PLATFORM_KEY, p)
+                            }
+                        }
+                    },
                     personas = personas, activePersonaId = activePersonaId,
                     onPersonaChange = { id -> activatePersona(id) },
                     token = token,
@@ -190,6 +214,19 @@ class MainActivity : ComponentActivity() {
         if (token.isBlank()) return
         try {
             val config = ApiService(apiBase).getConfig(token)
+            val serverPlatform = config.platform?.takeIf { it in setOf("soul", "qq", "immomo", "lianxin") }
+            if (serverPlatform != null) {
+                enabledPlatforms = setOf(serverPlatform)
+                withContext(Dispatchers.IO) { repository.setConfig(HostingSessionPolicy.PLATFORM_KEY, serverPlatform) }
+            }
+            config.weatherEnabled?.let {
+                weatherEnabled = it
+                withContext(Dispatchers.IO) { repository.setConfig(HostingSessionPolicy.WEATHER_KEY, it.toString()) }
+            }
+            config.timeEnabled?.let {
+                timeEnabled = it
+                withContext(Dispatchers.IO) { repository.setConfig(HostingSessionPolicy.TIME_KEY, it.toString()) }
+            }
             val serverPersonaId = config.activePersonaId?.takeIf { it.isNotBlank() }
             if (serverPersonaId != null && personas.any { it.id == serverPersonaId }) {
                 activePersonaId = serverPersonaId
@@ -318,12 +355,18 @@ class MainActivity : ComponentActivity() {
 
     private fun syncWeather() {
         lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                repository.setConfig(HostingSessionPolicy.WEATHER_KEY, weatherEnabled.toString())
+            }
             try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_weather", "enabled" to weatherEnabled.toString())) } catch (_: Exception) {}
         }
     }
 
     private fun syncTime() {
         lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                repository.setConfig(HostingSessionPolicy.TIME_KEY, timeEnabled.toString())
+            }
             try { ApiService(apiBase).saveConfig(token, mapOf("action" to "toggle_time", "enabled" to timeEnabled.toString())) } catch (_: Exception) {}
         }
     }

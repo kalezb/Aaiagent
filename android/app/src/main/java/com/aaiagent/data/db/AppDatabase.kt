@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.aaiagent.data.db.dao.ConfigDao
 import com.aaiagent.data.db.dao.ConversationSyncStateDao
 import com.aaiagent.data.db.dao.MessageCacheDao
@@ -41,6 +43,63 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `user_location` (
+                        `id` INTEGER NOT NULL,
+                        `home_city` TEXT NOT NULL,
+                        `home_district` TEXT NOT NULL,
+                        `work_city` TEXT NOT NULL,
+                        `work_district` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_2_4 = object : Migration(2, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `conversation_sync_state` (
+                        `id` TEXT NOT NULL,
+                        `platform` TEXT NOT NULL,
+                        `contactId` TEXT NOT NULL,
+                        `snapshotJson` TEXT NOT NULL,
+                        `nextSequence` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `message_sync_outbox` (
+                        `id` TEXT NOT NULL,
+                        `token` TEXT NOT NULL,
+                        `platform` TEXT NOT NULL,
+                        `contactId` TEXT NOT NULL,
+                        `contactName` TEXT NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `attempts` INTEGER NOT NULL,
+                        `nextAttemptAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_message_sync_outbox_nextAttemptAt_createdAt` " +
+                        "ON `message_sync_outbox` (`nextAttemptAt`, `createdAt`)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -48,7 +107,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "aaiagent.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_4)
                     .build()
                     .also { INSTANCE = it }
             }

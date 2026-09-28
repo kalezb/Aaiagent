@@ -53,8 +53,16 @@ object HostingController {
         ForegroundService.ensureRunning(appContext)
 
         if (enable) {
+            val apiBase = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
+            val tokenVerified = token.isNotBlank() && runCatching {
+                ApiService(apiBase).saveConfig(
+                    token,
+                    mapOf("action" to "verify_token")
+                ).success
+            }.getOrDefault(false)
             val failure = HostingControlPolicy.startFailure(
                 hasToken = token.isNotBlank(),
+                tokenVerified = tokenVerified,
                 accessibilityReady = AssistantAccessibilityService.sharedEngine != null
             )
             if (failure != null) {

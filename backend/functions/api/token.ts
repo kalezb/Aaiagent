@@ -1,1 +1,1 @@
-export const tokenRouter = { post: () => {}, put: () => {} };
+export { onRequest } from "./route";

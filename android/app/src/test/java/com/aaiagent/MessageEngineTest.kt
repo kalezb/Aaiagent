@@ -1,5 +1,6 @@
 package com.aaiagent
 
+import com.aaiagent.engine.HostingReplyAction
 import com.aaiagent.engine.AutomationLease
 import com.aaiagent.engine.BackendTaskPollPolicy
 import com.aaiagent.adapter.PlatformAdapter.VoiceTranscriptionResult
@@ -242,5 +243,28 @@ class MessageEngineTest {
             ReplyTaskAction.IGNORE,
             ReplyTaskPolicy.decide("manual", "qq", "soul")
         )
+    }
+
+    @Test
+    fun `hosting modes separate send fill-input and observe actions`() {
+        assertEquals(
+            HostingReplyAction.SEND,
+            HostingCompletionPolicy.replyAction(HostingMode.FULL_AUTO)
+        )
+        assertEquals(
+            HostingReplyAction.FILL_INPUT_ONLY,
+            HostingCompletionPolicy.replyAction(HostingMode.SEMI_AUTO)
+        )
+        assertEquals(
+            HostingReplyAction.OBSERVE_ONLY,
+            HostingCompletionPolicy.replyAction(HostingMode.MONITOR_ONLY)
+        )
+    }
+
+    @Test
+    fun `automation only owns a chat it opened itself`() {
+        assertTrue(HostingCompletionPolicy.ownsAutomatedChat("soul:alice", "soul:alice"))
+        assertFalse(HostingCompletionPolicy.ownsAutomatedChat(null, "soul:alice"))
+        assertFalse(HostingCompletionPolicy.ownsAutomatedChat("soul:alice", "soul:bob"))
     }
 }

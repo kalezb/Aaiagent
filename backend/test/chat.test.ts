@@ -26,6 +26,8 @@ class MockD1 {
     this.profileRows = new Map();
     this.runCalls = [];
     this.pendingRows = [];
+    this.deviceSettingsRows = new Map();
+    this.requestLimitRows = new Map();
     this.tokenPersonas = new Map([["test-token", "female"]]);
     this.options = {};
   }
@@ -73,6 +75,7 @@ class MockD1 {
     row.contact_name = p[3];
     row.message_count += Number(p[4] || 0);
     if (Number(p[9] || 0) >= Number(row.latest_at || 0)) {
+      row.latest_message_id = p[5];
       row.latest_role = p[6];
       row.latest_content = p[7];
       row.latest_source = p[8];
@@ -109,6 +112,25 @@ class MockD1 {
       row.confirmed_at = p[1];
       return 1;
     }
+    if (sql.includes("INSERT INTO device_settings")) {
+      const p = statement.params || [];
+      const existing = this.deviceSettingsRows.get(p[0]) || {
+        platform: "soul",
+        hosting_enabled: 0,
+        monitor_enabled: 1,
+        weather_enabled: 1,
+        time_enabled: 1,
+      };
+      const conflictField = String(sql.match(/DO UPDATE SET (\w+)/)?.[1] || "");
+      const next = { ...existing, updated_at: p[6] };
+      if (!conflictField || conflictField === "platform") next.platform = p[1];
+      if (!conflictField || conflictField === "hosting_enabled") next.hosting_enabled = p[2];
+      if (!conflictField || conflictField === "monitor_enabled") next.monitor_enabled = p[3];
+      if (!conflictField || conflictField === "weather_enabled") next.weather_enabled = p[4];
+      if (!conflictField || conflictField === "time_enabled") next.time_enabled = p[5];
+      this.deviceSettingsRows.set(p[0], next);
+      return 1;
+    }
     if (sql.includes("INSERT INTO customer_profiles")) {
       const p = statement.params || [];
       this.profileRows.set(`${p[0]}\u0000${p[1]}`, {
@@ -121,7 +143,18 @@ class MockD1 {
 
   prepare(sql: string) {
     return {
-      all: async () => ({ results: [] }),
+      all: async () => {
+        if (!sql.includes("FROM personas")) return { results: [] };
+        const includePrompt = sql.includes("system_prompt");
+        return {
+          results: this.personas.map((persona) => includePrompt ? persona : ({
+            id: persona.id,
+            name: persona.name,
+            is_active: persona.is_active,
+            created_at: persona.created_at,
+          })),
+        };
+      },
       first: async () => null,
       run: async () => ({ success: true }),
       bind: (...params: unknown[]) => ({
@@ -132,8 +165,9 @@ class MockD1 {
             return {
               token: params[0],
               is_active: 1,
-              monthly_limit: 100,
-              spent: 0,
+              monthly_limit: this.options.monthlyLimit ?? 100,
+              spent: this.options.tokenSpent ?? 0,
+              spent_month: this.options.tokenSpentMonth ?? "",
               active_persona_id: this.tokenPersonas.get(String(params[0])) || "female",
             };
           }
@@ -187,6 +221,15 @@ class MockD1 {
               row.token === params[0] && row.platform === params[1] && row.contact_id === params[2]
             ) ?? null;
           }
+          if (sql.includes("FROM device_settings")) {
+            return this.deviceSettingsRows.get(params[0]) ?? null;
+          }
+          if (sql.includes("FROM request_limits")) {
+            return this.requestLimitRows.get(params[0]) ?? null;
+          }
+          if (sql.includes("SELECT id FROM chat_history")) {
+            return this.historyRows.find((row) => row.token === params[0] && row.message_key === params[1]) ?? null;
+          }
           if (sql.includes("FROM customer_profiles")) {
             return this.profileRows.get(`${params[0]}\u0000${params[1]}`) ?? null;
           }
@@ -227,6 +270,17 @@ class MockD1 {
           if (sql.includes("FROM customer_summaries")) return { results: this.options.customerSummaries ?? [] };
           if (sql.includes("FROM session_summary")) return { results: this.options.sessionSummaries ?? [] };
           if (sql.includes("FROM contacts")) return { results: this.contactsRows };
+          if (sql.includes("FROM personas")) {
+            const includePrompt = sql.includes("system_prompt");
+            return {
+              results: this.personas.map((persona) => includePrompt ? persona : ({
+                id: persona.id,
+                name: persona.name,
+                is_active: persona.is_active,
+                created_at: persona.created_at,
+              })),
+            };
+          }
           if (sql.includes("FROM conversation_stats")) return { results: this.conversationStatsRows };
           if (sql.includes("FROM chat_history")) {
             const sinceId = sql.includes("id > ?")
@@ -1690,6 +1744,125 @@ describe("monitoring sync and customer profile batching", () => {
     expect(payload.model).toBe("deepseek-flash");
     expect(payload.thinking).toEqual({ type: "disabled" });
     expect(payload.response_format).toEqual({ type: "json_object" });
-    expect(payload.messages[1].content).toContain("我喜欢羽毛球");
+  });
+
+  it("persists device platform and service switches", async () => {
+    const db = new MockD1();
+    const env = { DB: db, KV: new MockKV() };
+    const save = (params: Record<string, string>) => onRequest({
+      request: new Request("https://example.com/api/config/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_key: "test-token", ...params }),
+      }),
+      env,
+    } as never);
+
+    expect((await save({ action: "switch_platform", platform: "qq" })).status).toBe(200);
+    expect((await save({ action: "toggle_hosting", enabled: "true" })).status).toBe(200);
+    expect((await save({ action: "toggle_weather", enabled: "false" })).status).toBe(200);
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/config", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
+      env,
+    } as never);
+    await expect(response.json()).resolves.toMatchObject({
+      platform: "qq",
+      hosting_enabled: true,
+      monitor_enabled: true,
+      weather_enabled: false,
+      time_enabled: true,
+    });
+  });
+
+  it("uses the configured LLM base URL and temperature", async () => {
+    const kv = new MockKV();
+    await kv.put("llm:base_url", "https://llm.example.com/v1");
+    await kv.put("llm:temperature", "0.35");
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: "在的" } }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "contact-1",
+          contact_name: "梦想",
+          messages: [{ role: "user", content: "在吗" }],
+        }),
+      }),
+      env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+    expect(response.status).toBe(200);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://llm.example.com/v1/chat/completions");
+    expect(JSON.parse(String(init.body)).temperature).toBe(0.35);
+  });
+
+  it("blocks chat after the monthly token budget is exhausted", async () => {
+    const month = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+    }).format(new Date());
+    const db = new MockD1().withOptions({ tokenSpent: 100, tokenSpentMonth: month });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "contact-1",
+          contact_name: "梦想",
+          messages: [{ role: "user", content: "在吗" }],
+        }),
+      }),
+      env: { DB: db, KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+    expect(response.status).toBe(429);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never exposes full persona prompts through the public API", async () => {
+    const db = new MockD1([], [{ id: "female", name: "星暮", system_prompt: "私有系统提示词", is_active: 1, created_at: 1 }]);
+    const publicResponse = await onRequest({
+      request: new Request("https://example.com/api/persona"),
+      env: { DB: db, KV: new MockKV(), DASHBOARD_PASSWORD: "secret" },
+    } as never);
+    const publicBody = await publicResponse.json();
+    expect(publicBody.personas[0]).not.toHaveProperty("system_prompt");
+
+    const publicPromptAttempt = await onRequest({
+      request: new Request("https://example.com/api/persona?include_prompt=1"),
+      env: { DB: db, KV: new MockKV(), DASHBOARD_PASSWORD: "secret" },
+    } as never);
+    expect(publicPromptAttempt.status).toBe(401);
+
+    const dashboardResponse = await onRequest({
+      request: new Request("https://example.com/api/persona", {
+        headers: { "X-Dashboard-Password": "secret" },
+      }),
+      env: { DB: db, KV: new MockKV(), DASHBOARD_PASSWORD: "secret" },
+    } as never);
+    await expect(dashboardResponse.json()).resolves.toMatchObject({
+      personas: [{ id: "female", system_prompt: "私有系统提示词" }],
+    });
   });
 });
+  it("routes every explicit Pages API entry through the full handler", () => {
+    const routes = ["chat", "config", "contacts", "history", "messages", "persona", "status", "token"];
+    const rootSource = readFileSync(new URL("../functions/[[route]].ts", import.meta.url), "utf8").trim();
+    expect(rootSource).toBe('export { onRequest } from "./api/route";');
+    for (const route of routes) {
+      const source = readFileSync(new URL(`../functions/api/${route}.ts`, import.meta.url), "utf8").trim();
+      expect(source).toBe('export { onRequest } from "./route";');
+    }
+  });

@@ -19,6 +19,7 @@ import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.GestureMonitor
 import com.aaiagent.engine.SoulInputState
 import com.aaiagent.engine.SoulMessageTime
+import com.aaiagent.engine.SoulViewportPolicy
 import com.aaiagent.engine.StickerMatcher
 import com.aaiagent.engine.VoiceHandler
 import kotlinx.coroutines.delay
@@ -660,7 +661,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             if (text.isNotEmpty() && text.length > 1) {
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
-                if (rect.top > 240 && rect.bottom < 2140) {
+                if (SoulViewportPolicy.isMessageVisible(
+                        top = rect.top,
+                        bottom = rect.bottom,
+                        screenHeight = service.resources.displayMetrics.heightPixels
+                    )
+                ) {
                     messages.add(ChatMessage(if (rect.left > screenWidth / 2) "self" else "other", text))
                 }
             }
@@ -675,7 +681,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         root: AccessibilityNodeInfo,
         text: String,
         expectedContactName: String?
+    ): SendResult = fillAndSend(service, root, text, expectedContactName, canProceed = { true })
+
+    override suspend fun fillAndSend(
+        service: AccessibilityService,
+        root: AccessibilityNodeInfo,
+        text: String,
+        expectedContactName: String?,
+        canProceed: () -> Boolean
     ): SendResult {
+        if (!canProceed()) return SendResult.STOPPED
         val currentRoot = waitForVerifiedChatRoot(expectedContactName)
             ?: run {
                 android.util.Log.w("AIA", "Soul send blocked: chat/title not verified, expected=$expectedContactName")
@@ -684,12 +699,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
         val beforeSelfCount = readMessages(currentRoot).count { it.sender == "self" }
         val input = findEditableInput(currentRoot) ?: return SendResult.TIMEOUT
-        if (!setTextAndVerify(text)) return SendResult.NOT_VERIFIED
+        if (!setTextAndVerify(text, canProceed)) {
+            return if (canProceed()) SendResult.NOT_VERIFIED else SendResult.STOPPED
+        }
 
+        if (!canProceed()) return SendResult.STOPPED
         waitForVerifiedChatRoot(expectedContactName) ?: return SendResult.NOT_VERIFIED
 
         delay(700)
-        val sendButton = findSendButtonWithRetry(input)
+        if (!canProceed()) return SendResult.STOPPED
+        val sendButton = findSendButtonWithRetry(input, canProceed)
+        if (!canProceed()) return SendResult.STOPPED
         val clicked = if (sendButton != null) {
             tapNode(sendButton)
         } else {
@@ -697,14 +717,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
         if (!clicked) return SendResult.TIMEOUT
 
-        val verified = verifySent(text, beforeSelfCount)
+        val verified = verifySent(text, beforeSelfCount, canProceed)
         if (verified == SendResult.BANNED) return SendResult.BANNED
         return verified
     }
 
     suspend fun fillInputOnly(text: String, expectedContactName: String? = null): Boolean {
         if (waitForVerifiedChatRoot(expectedContactName) == null) return false
-        return setTextAndVerify(text)
+        return setTextAndVerify(text) { true }
     }
 
     suspend fun clearInput(): Boolean {
@@ -738,17 +758,19 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return candidates.firstOrNull { it.isVisibleToUser }
     }
 
-    private suspend fun setTextAndVerify(text: String): Boolean {
+    private suspend fun setTextAndVerify(text: String, canProceed: () -> Boolean): Boolean {
         val expected = text.trim()
         if (expected.isEmpty()) return clearInput()
 
         repeat(3) { attempt ->
-            if (setTextDirect(expected)) {
+            if (!canProceed()) return false
+            if (setTextDirect(expected, canProceed)) {
                 android.util.Log.d("AIA", "Soul direct text succeeded attempt=${attempt + 1}")
                 return true
             }
 
-            if (pasteIntoInput(expected)) {
+            if (!canProceed()) return false
+            if (pasteIntoInput(expected, canProceed)) {
                 android.util.Log.d("AIA", "Soul clipboard paste succeeded attempt=${attempt + 1}")
                 return true
             }
@@ -760,7 +782,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return false
     }
 
-    private suspend fun setTextDirect(expected: String): Boolean {
+    private suspend fun setTextDirect(expected: String, canProceed: () -> Boolean): Boolean {
         val input = freshInputNode() ?: return false
         GestureMonitor.onAutomationActionStarted()
         try {
@@ -772,7 +794,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             GestureMonitor.onAutomationActionFinished()
         }
         delay(350)
-        return inputContains(expected)
+        return canProceed() && inputContains(expected)
     }
 
     private fun freshInputNode(): AccessibilityNodeInfo? {
@@ -796,7 +818,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             ?.trim()
     }
 
-    private suspend fun pasteIntoInput(expected: String): Boolean {
+    private suspend fun pasteIntoInput(expected: String, canProceed: () -> Boolean): Boolean {
         val clipboard = service.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             ?: return false
         val previous = runCatching {
@@ -806,6 +828,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return try {
             clipboard.setPrimaryClip(ClipData.newPlainText("AI托管回复", expected))
             val input = freshInputNode() ?: return false
+            if (!canProceed()) return false
             GestureMonitor.onAutomationActionStarted()
             try {
                 input.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
@@ -815,7 +838,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 GestureMonitor.onAutomationActionFinished()
             }
             delay(900)
-            inputContains(expected)
+            canProceed() && inputContains(expected)
         } catch (error: Exception) {
             android.util.Log.w("AIA", "Soul clipboard paste failed", error)
             false
@@ -834,9 +857,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
     }
 
-    private suspend fun findSendButtonWithRetry(input: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+    private suspend fun findSendButtonWithRetry(
+        input: AccessibilityNodeInfo,
+        canProceed: () -> Boolean
+    ): AccessibilityNodeInfo? {
         repeat(5) { attempt ->
+            if (!canProceed()) return null
             if (attempt > 0) delay(500)
+            if (!canProceed()) return null
             val root = service.rootInActiveWindow ?: return@repeat
             val byId = root.findAccessibilityNodeInfosByViewId(prefix + "btn_send")
                 .asSequence()
@@ -882,10 +910,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private suspend fun verifySent(
         text: String,
-        beforeSelfCount: Int
+        beforeSelfCount: Int,
+        canProceed: () -> Boolean
     ): SendResult {
         repeat(3) { attempt ->
+            if (!canProceed()) return SendResult.STOPPED
             delay(if (attempt == 0) 800 else 600)
+            if (!canProceed()) return SendResult.STOPPED
             val root = service.rootInActiveWindow ?: return@repeat
             if (detectBanned(root)) return SendResult.BANNED
 
@@ -904,7 +935,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 "AIA",
                 "send verify attempt=${attempt + 1} matched=$matched selfAdvanced=$selfAdvanced inputCleared=$inputCleared sendButtonVisible=$sendButtonVisible self=${selfMessages.size}/$beforeSelfCount last=${visibleMessages.lastOrNull()?.content}"
             )
-            if (matched || selfAdvanced || inputCleared) return SendResult.SUCCESS
+            if (matched || (selfAdvanced && inputCleared)) return SendResult.SUCCESS
         }
         return SendResult.NOT_VERIFIED
     }
@@ -1439,7 +1470,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                     ?: return@mapNotNull null
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
-                if (rect.top <= 240 || rect.bottom >= 2140) return@mapNotNull null
+                if (!SoulViewportPolicy.isMessageVisible(
+                        top = rect.top,
+                        bottom = rect.bottom,
+                        screenHeight = service.resources.displayMetrics.heightPixels
+                    )
+                ) return@mapNotNull null
                 LocatedMessage(
                     top = rect.top,
                     message = ChatMessage(

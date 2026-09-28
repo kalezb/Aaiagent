@@ -30,7 +30,12 @@ data class ChatResponse(
 data class ConfigResponse(
     @SerializedName("active_persona_id") val activePersonaId: String?,
     @SerializedName("active_persona_name") val activePersonaName: String?,
-    val location: ConfigLocation? = null
+    val location: ConfigLocation? = null,
+    val platform: String? = null,
+    @SerializedName("hosting_enabled") val hostingEnabled: Boolean? = null,
+    @SerializedName("monitor_enabled") val monitorEnabled: Boolean? = null,
+    @SerializedName("weather_enabled") val weatherEnabled: Boolean? = null,
+    @SerializedName("time_enabled") val timeEnabled: Boolean? = null
 )
 
 data class ConfigLocation(

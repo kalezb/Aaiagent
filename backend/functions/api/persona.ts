@@ -1,1 +1,1 @@
-export const personaRouter = { get: () => {}, put: () => {} };
+export { onRequest } from "./route";

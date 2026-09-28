@@ -1,3 +1,1 @@
-export const onRequest = async () => {
-  return new Response("OK");
-};
+export { onRequest } from "./api/route";

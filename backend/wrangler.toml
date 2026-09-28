@@ -8,6 +8,7 @@ pages_build_output_dir = "src"
 binding = "DB"
 database_name = "ai-agent-db"
 database_id = "c82b5c63-5c99-4867-a11c-937f308afeee"
+migrations_dir = "db/migrations"
 
 [[kv_namespaces]]
 binding = "KV"
@@ -18,7 +19,7 @@ DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
 VISION_API_BASE = "https://api.deepseek.com/v1"
 VISION_MODEL = "deepseek-flash"
 
-# Secrets 通过 wrangler secret put 命令设置：
+# Secrets are configured with `wrangler secret put`:
 #   wrangler secret put DEEPSEEK_API_KEY
 #   wrangler secret put WEATHER_API_KEY
 #   wrangler secret put DASHBOARD_PASSWORD

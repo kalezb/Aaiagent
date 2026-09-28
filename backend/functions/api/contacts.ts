@@ -1,1 +1,1 @@
-export const contactsRouter = { get: () => {}, post: () => {}, delete: () => {} };
+export { onRequest } from "./route";
