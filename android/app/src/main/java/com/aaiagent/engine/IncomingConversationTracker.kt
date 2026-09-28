@@ -19,11 +19,11 @@ object IncomingConversationTracker {
     fun isCompatible(expectedFingerprint: String, currentFingerprint: String): Boolean {
         if (expectedFingerprint.isBlank()) return false
         if (expectedFingerprint == currentFingerprint) return true
+        if (currentFingerprint.isBlank()) return true
         val expected = expectedFingerprint.split(SEPARATOR).filter(String::isNotEmpty)
         val current = currentFingerprint.split(SEPARATOR).filter(String::isNotEmpty)
-        return current.isNotEmpty() &&
-            current.size < expected.size &&
-            expected.takeLast(current.size) == current
+        if (current.isEmpty() || current.size > expected.size) return false
+        return expected.windowed(current.size).any { it == current }
     }
 
     fun isAlreadyHandled(handledFingerprint: String, currentFingerprint: String): Boolean {

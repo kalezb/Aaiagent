@@ -85,9 +85,9 @@ class ReplyDeliveryPolicyTest {
     }
 
     @Test
-    fun `new or disappearing incoming history invalidates a pending reply`() {
+    fun `new incoming history invalidates while a transient empty read does not`() {
         assertTrue(ReplyDeliveryPolicy.incomingChanged("old", "new"))
-        assertTrue(ReplyDeliveryPolicy.incomingChanged("old", ""))
+        assertFalse(ReplyDeliveryPolicy.incomingChanged("old", ""))
         assertFalse(ReplyDeliveryPolicy.incomingChanged("same", "same"))
     }
 

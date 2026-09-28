@@ -15,8 +15,9 @@ object SoulMessageIdentity {
         timestampText: String,
         timestampMillis: Long?
     ): String {
-        val timeAnchor = timestampMillis?.toString()
-            ?: timestampText.trim().takeIf(String::isNotEmpty)?.let { "text:$it" }
+        val visibleTimeAnchor = timestampText.trim().takeIf(String::isNotEmpty)
+        val timeAnchor = visibleTimeAnchor?.let { "text:$it" }
+            ?: timestampMillis?.toString()
             ?: "no-time"
         val contentAnchor = content.trim().replace(Regex("\\s+"), " ")
         return listOf("soul", sender, type, timeAnchor, contentAnchor)

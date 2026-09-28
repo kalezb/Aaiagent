@@ -115,6 +115,7 @@ class MessageEngine(
         activeLeaseToken = lease.acquire()
         val leaseToken = activeLeaseToken
         hostingJob = scope.launch {
+            maybeFlushSyncOutbox(force = true)
             runHostingLoop(leaseToken)
         }
     }
@@ -1278,17 +1279,25 @@ class MessageEngine(
         return ConversationIdentity.matches(expectedContactName, adapter.readChatTitle(root))
     }
 
-    private fun incomingStillCurrent(
+    private suspend fun incomingStillCurrent(
         adapter: PlatformAdapter,
         context: ConversationContext,
         expectedFingerprint: String
     ): Boolean {
         if (expectedFingerprint.isBlank()) return false
-        val root = service?.rootInActiveWindow ?: return false
-        if (root.packageName?.toString() != adapter.packageName || !adapter.isInChat(root)) return false
-        if (!ConversationIdentity.matches(context.contactName, adapter.readChatTitle(root))) return false
-        val current = IncomingMessageBatch.incomingHistoryFingerprint(adapter.readMessages(root))
-        return !ReplyDeliveryPolicy.incomingChanged(expectedFingerprint, current)
+        repeat(INCOMING_VERIFY_RETRIES) { attempt ->
+            val root = service?.rootInActiveWindow ?: return false
+            if (root.packageName?.toString() != adapter.packageName || !adapter.isInChat(root)) return false
+            if (!ConversationIdentity.matches(context.contactName, adapter.readChatTitle(root))) return false
+            val current = IncomingMessageBatch.incomingHistoryFingerprint(adapter.readMessages(root))
+            if (current.isNotBlank()) {
+                return !ReplyDeliveryPolicy.incomingChanged(expectedFingerprint, current)
+            }
+            if (attempt < INCOMING_VERIFY_RETRIES - 1) delay(INCOMING_VERIFY_RETRY_DELAY_MS)
+        }
+        // A transient accessibility tree can omit chat items while Soul redraws.
+        // Treat that as unreadable, not as proof that a new message arrived.
+        return true
     }
 
     private suspend fun confirmPendingReply(context: ConversationContext): Boolean {
@@ -1461,12 +1470,12 @@ class MessageEngine(
             )
             repository.persistSyncSnapshot(state, outbox)
         }
-        if (inserted >= SYNC_BATCH_SIZE) maybeFlushSyncOutbox(force = true)
+        if (inserted > 0) maybeFlushSyncOutbox(force = true)
     }
 
     private suspend fun maybeFlushSyncOutbox(force: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (!force && now - lastSyncFlushAt < SYNC_FLUSH_INTERVAL_MS) return
+        if (!SyncOutboxPolicy.shouldAttempt(lastSyncFlushAt, now, force, SYNC_FLUSH_INTERVAL_MS)) return
         lastSyncFlushAt = now
         val pending = withContext(Dispatchers.IO) { repository.pendingSyncMessages(now, 100) }
         if (pending.isEmpty()) return
@@ -1497,7 +1506,7 @@ class MessageEngine(
                     repository.deleteSyncMessages(ids)
                 } else {
                     val attempts = group.maxOf { it.attempts } + 1
-                    val backoff = minOf(300_000L, 1_000L shl minOf(attempts, 8))
+                    val backoff = SyncOutboxPolicy.retryDelayMs(attempts)
                     repository.markSyncMessagesFailed(ids, now + backoff)
                 }
             }
@@ -1648,7 +1657,8 @@ class MessageEngine(
         const val BACKEND_TASK_POLL_INTERVAL_MS = 30_000L
         const val USER_PAUSE_MS = 5_000L
         const val DEDUP_WINDOW_MS = 5 * 60 * 1000L
-        const val SYNC_BATCH_SIZE = 10
+        const val INCOMING_VERIFY_RETRIES = 3
+        const val INCOMING_VERIFY_RETRY_DELAY_MS = 150L
         const val SYNC_FLUSH_INTERVAL_MS = 10_000L
         const val MAX_CHAT_WAIT_RETRIES = 5
         const val READ_MESSAGE_RETRIES = 4

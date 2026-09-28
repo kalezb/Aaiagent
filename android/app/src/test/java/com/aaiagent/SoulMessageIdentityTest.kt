@@ -45,4 +45,24 @@ class SoulMessageIdentityTest {
 
         assertEquals(first, reread)
     }
+
+    @Test
+    fun `relative now label stays stable when the timestamp is recalculated`() {
+        val first = SoulMessageIdentity.key(
+            sender = "other",
+            type = "text",
+            content = "32",
+            timestampText = "刚刚",
+            timestampMillis = 1_000L
+        )
+        val reread = SoulMessageIdentity.key(
+            sender = "other",
+            type = "text",
+            content = "32",
+            timestampText = "刚刚",
+            timestampMillis = 9_000L
+        )
+
+        assertEquals(first, reread)
+    }
 }

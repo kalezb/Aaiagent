@@ -38,4 +38,32 @@ class IncomingConversationTrackerTest {
         assertTrue(IncomingConversationTracker.isAlreadyHandled(fingerprint, fingerprint))
         assertFalse(IncomingConversationTracker.isAlreadyHandled(fingerprint, ""))
     }
+
+    @Test
+    fun `a transiently empty accessibility snapshot does not invalidate a pending reply`() {
+        assertTrue(IncomingConversationTracker.isCompatible("text:hello\u001Ftext:there", ""))
+    }
+
+    @Test
+    fun `a partially visible older window remains compatible`() {
+        val expected = listOf("text:one", "text:two", "text:three")
+        val current = listOf("text:two", "text:three")
+
+        assertTrue(
+            IncomingConversationTracker.isCompatible(
+                IncomingConversationTracker.fingerprint(expected),
+                IncomingConversationTracker.fingerprint(current)
+            )
+        )
+    }
+
+    @Test
+    fun `a genuinely appended message remains incompatible`() {
+        assertFalse(
+            IncomingConversationTracker.isCompatible(
+                "text:one\u001Ftext:two",
+                "text:one\u001Ftext:two\u001Ftext:three"
+            )
+        )
+    }
 }
