@@ -138,19 +138,28 @@ export function buildRelationshipBoundaryPrompt(stage, incomingText, historyMess
     .map((message) => String(message.content || ""))
     .join(" ");
   const relationshipTopic = /(?:老公|老婆|婚姻|夫妻|感情|异地|分居|离婚|公婆|婆婆|家庭)/u.test(recentIncoming);
-  const intimateTopic = /(?:两性|性生活|夫妻生活|做爱|上床|开房|床事|裸|身体|黄腔|胸|腿|下面)/u.test(recentIncoming);
-  if (!relationshipTopic && !intimateTopic) return "";
+  const explicitIntimateTopic = /(?:两性|性生活|夫妻生活|做爱|上床|开房|床事|裸照|裸体|黄腔|约炮|约你|见面|出来见|发.{0,3}(?:照片|视频)|拍.{0,3}(?:照片|视频)|交换.{0,3}(?:照片|图)|私密|隐私内容|身体细节)/u.test(recentIncoming);
+  const suggestiveIntimateTopic = /(?:(?:让我|我来|给你).{0,3}检查|检查.{0,4}(?:你|身体|干净|洗澡)|洗干净|陪我|想不想我|想我没|睡了吗|梦到我|抱抱|亲亲)/u.test(recentIncoming);
+  const affectionateTopic = /(?:好看|漂亮|气质|身材|可爱|有魅力|嘴甜|喜欢你|想你|心动|夸你|养眼)/u.test(recentIncoming);
+  if (!relationshipTopic && !explicitIntimateTopic && !suggestiveIntimateTopic && !affectionateTopic) return "";
+
+  if (explicitIntimateTopic) {
+    return "【暧昧边界-明确越界】自然拒绝，不接性细节、不约见、不交换照片或视频、不聊隐私内容；用一句带过并收线，不解释、不说教。";
+  }
+  if (suggestiveIntimateTopic) {
+    return "【暧昧边界-暗示】轻挡一次后停，不顺着想象，也不追问答细节；例如“别闹 聊点正常的”，语气自然，不说教。";
+  }
+  if (affectionateTopic) {
+    return "【暧昧边界-轻度】对方只是夸赞、嘴甜或说想你，可以自然接一句，但不主动加码、不调情升级；对方继续追问就轻松带过。";
+  }
 
   const level = Number(stage || 0);
   if (level <= 1) {
-    if (intimateTopic) return "【两性边界】你们还不熟。不要接两性细节或黄腔，用一句自然收线，例如“这个不聊这么细”或“成年人话点到为止”，不要突然说教。";
     return "【家庭边界】你们还不熟。只可简短确认已婚等基本事实，不展开老公、公婆或夫妻矛盾，不装熟、不抱怨婚姻。";
   }
   if (level === 2) {
-    if (intimateTopic) return "【两性边界】可以接一句成年人观点或玩笑，不主动升级，不讲露骨细节；越界时自然收线，例如“成年人话点到为止”，不突然说教。";
     return "【家庭边界】可以自然聊聚少离多、关系一般等感受，但不把家庭矛盾当主要话题，不连续倾诉。";
   }
-  if (intimateTopic) return "【两性边界】比较熟可以接成年人观点和分寸内的玩笑，但不主动升级、不讲露骨细节，也不承诺见面、照片、语音或视频。";
   return "【家庭边界】比较熟可以聊一般家庭感受，但仍不主动倒苦水，不用家庭矛盾换取亲近。";
 }
 
@@ -253,7 +262,7 @@ export function buildLayeredSystemPrompt({
   const newContact = Number(relationStageLevel || 0) === 1;
   const fixed = [
     personaPrompt,
-    "【底线】不报价，不催单，不主动暧昧，不主动提见面；不主动给联系方式，对方索要QQ、微信或电话时先自然拒绝，只有系统明确给出可发送的QQ时才能回复，绝不能自己编号码；被质疑AI自然带过；用户没提供过的信息不编造。",
+    "【底线】不报价，不催单，不主动升级暧昧，不主动提见面；对方轻度夸赞或嘴甜可自然接一句，对方暗示就轻挡收线，明确越界就拒绝；不主动给联系方式，对方索要QQ、微信或电话时先自然拒绝，只有系统明确给出可发送的QQ时才能回复，绝不能自己编号码；被质疑AI自然带过；用户没提供过的信息不编造。",
     "【说话方式】像熟人微信聊天，优先短句，1到3句，能一句说清就一句。不要客服腔、AI腔、总结或说教，不要每条都反问。",
     "【角色】聊天记录里的“对方说”是客户说的，“你说”是你之前说的，不能弄混。时间戳只是上下文，不要写进回复。",
     "同一客户绑定多个平台账号时按同一个人连续记忆，记忆必须连续，不要说忘记别的平台聊过什么。",

@@ -412,7 +412,8 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
     expect(payload.messages[0].content).toContain("你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。");
     expect(payload.messages[0].content).toContain("像熟人微信聊天，优先短句，1到3句");
-    expect(payload.messages[0].content).toContain("不报价，不催单，不主动暧昧，不主动提见面");
+    expect(payload.messages[0].content).toContain("不报价，不催单，不主动升级暧昧，不主动提见面");
+    expect(payload.messages[0].content).toContain("对方轻度夸赞或嘴甜可自然接一句");
     expect(payload.messages[0].content).toContain("不主动给联系方式");
     expect(payload.messages[0].content).toContain("绝不能自己编号码");
     expect(payload.messages[0].content).not.toContain("别刚加好友就推销回收，别主动提见面");
@@ -505,7 +506,10 @@ describe("chat logic", () => {
   it("builds relationship and intimate-topic boundaries by stage", () => {
     expect(buildRelationshipBoundaryPrompt(1, "你老公经常不在家吗", [])).toContain("只可简短确认已婚等基本事实");
     expect(buildRelationshipBoundaryPrompt(2, "你老公经常不在家吗", [])).toContain("可以自然聊聚少离多");
-    expect(buildRelationshipBoundaryPrompt(3, "想聊聊两性话题", [])).toContain("不主动升级、不讲露骨细节");
+    expect(buildRelationshipBoundaryPrompt(3, "想聊聊两性话题", [])).toContain("不接性细节");
+    expect(buildRelationshipBoundaryPrompt(2, "你今天真好看 想你了", [])).toContain("可以自然接一句");
+    expect(buildRelationshipBoundaryPrompt(2, "让我检查一下 过来陪陪我", [])).toContain("轻挡一次后停");
+    expect(buildRelationshipBoundaryPrompt(3, "发张照片看看 想约你见面", [])).toContain("不约见、不交换照片或视频");
     expect(buildRelationshipBoundaryPrompt(2, "今天天气不错", [])).toBe("");
   });
 

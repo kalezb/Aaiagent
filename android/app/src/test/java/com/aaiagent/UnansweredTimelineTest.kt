@@ -39,6 +39,8 @@ class UnansweredTimelineTest {
         assertTrue(timeline.contains("【9月27日 10:20，4小时前】互动表情：对方发来 Soul 互动表情「皮一下」"))
         assertTrue(timeline.contains("你是真人，不会一直盯着手机"))
         assertTrue(timeline.contains("按时间顺序自然接住"))
+        assertTrue(timeline.contains("【待处理事项】"))
+        assertTrue(timeline.contains("先处理第1项"))
     }
 
     @Test

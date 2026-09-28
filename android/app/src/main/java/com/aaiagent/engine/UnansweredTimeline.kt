@@ -44,9 +44,13 @@ object UnansweredTimeline {
         } else {
             "这是客户在我方最后一次回复后连续发来的同一轮未回复消息。"
         }
-        return "$lead\n$lines\n" +
+        val pendingPlan = PendingTopicPolicy.build(incoming)?.prompt()
+        val timeline = "$lead\n$lines\n" +
             "你是真人，不会一直盯着手机。请把这当成同一次回来看到的连续消息，" +
             "按时间顺序自然接住，优先回最新一条。当前时间=${formatNow(nowMillis)}。"
+        return listOf(timeline, pendingPlan.orEmpty())
+            .filter(String::isNotBlank)
+            .joinToString("\n")
     }
 
     private fun formatNow(nowMillis: Long): String {
