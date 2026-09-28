@@ -282,7 +282,7 @@ export function buildLayeredSystemPrompt({
   ].filter(Boolean);
 
   const scenarios = [];
-  if (messageDelay?.prompt) scenarios.push("【消息时效】" + messageDelay.prompt);
+  if (messageDelay?.prompt) scenarios.push("【时间关系】" + messageDelay.prompt);
 
   const incoming = latestIncomingText(messages);
   if (/(?:做什么工作|干什么工作|做什么的|干什么的|你的职业|你是做哪行)/u.test(incoming)) {

@@ -30,8 +30,12 @@ object UnansweredTimeline {
                     ?.let { formatter.format(Instant.ofEpochMilli(it).atZone(chinaZone)) }
                     .orEmpty()
             }
+            val relativeAge = message.timestampMillis?.let { relativeAgeLabel(it, nowMillis) }
+            val timeLabel = listOf(time, relativeAge.orEmpty())
+                .filter(String::isNotBlank)
+                .joinToString("，")
+            val timePrefix = timeLabel.takeIf(String::isNotEmpty)?.let { "【$it】" }.orEmpty()
             val type = typeLabel(message)
-            val timePrefix = time.takeIf(String::isNotEmpty)?.let { "【$it】" }.orEmpty()
             "$timePrefix$type${message.content.trim()}"
         }
 
@@ -41,12 +45,25 @@ object UnansweredTimeline {
             "这是客户在我方最后一次回复后连续发来的同一轮未回复消息。"
         }
         return "$lead\n$lines\n" +
-            "请按时间顺序理解，不要逐条机械回复，不要假装每条都是刚刚发生的；" +
-            "优先自然接住最新一条，同时承接前面表达的关注点。当前时间=${formatNow(nowMillis)}。"
+            "你是真人，不会一直盯着手机。请把这当成同一次回来看到的连续消息，" +
+            "按时间顺序自然接住，优先回最新一条。当前时间=${formatNow(nowMillis)}。"
     }
 
     private fun formatNow(nowMillis: Long): String {
         return formatter.format(Instant.ofEpochMilli(nowMillis).atZone(chinaZone))
+    }
+
+    private fun relativeAgeLabel(epochMillis: Long, nowMillis: Long): String? {
+        val seconds = ((nowMillis - epochMillis) / 1000L).coerceAtLeast(0L)
+        if (seconds < 5 * 60L) return null
+        if (seconds < 60 * 60L) return "${(seconds / 60L).coerceAtLeast(1L)}分钟前"
+        if (seconds < 24 * 60 * 60L) {
+            val hours = seconds / 3600L
+            val minutes = (seconds % 3600L) / 60L
+            return if (minutes > 0) "${hours}小时${minutes}分前" else "${hours}小时前"
+        }
+        val days = seconds / (24 * 60 * 60L)
+        return if (days < 30) "${days}天前" else "${days / 30}个月前"
     }
 
     private fun typeLabel(message: ChatMessage): String {

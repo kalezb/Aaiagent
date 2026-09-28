@@ -698,7 +698,7 @@ describe("chat logic", () => {
       content: "明天有空吗",
       created_at: now - 2 * 86400,
     }, now);
-    expect(oldInvite.prompt).toContain("已经失效的邀约");
+    expect(oldInvite.prompt).toContain("较早前的邀约");
     expect(sanitizeStaleAssistantReply("明天可以 我有空", oldInvite)).toBe("那会儿没看到 你现在还有事吗");
 
     const oldBusiness = getMessageDelayPolicy({
@@ -706,19 +706,19 @@ describe("chat logic", () => {
       content: "现在还收手机吗",
       created_at: now - 3 * 86400,
     }, now);
-    expect(oldBusiness.prompt).toContain("刚看到你前几天问的");
-    expect(sanitizeStaleAssistantReply("刚看到你前几天问的 还收的 你现在要处理吗", oldBusiness))
-      .toBe("刚看到你前几天问的 还收的 你现在要处理吗");
+    expect(oldBusiness.prompt).toContain("较早前问的回收问题");
+    expect(sanitizeStaleAssistantReply("还收的 你现在要处理吗", oldBusiness))
+      .toBe("还收的 你现在要处理吗");
   });
 
-  it("injects a compact time fact and removes an invalid late-night question", async () => {
+  it("adds relative age and blocks only a false just-arrived claim", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-24T21:14:00.000Z"));
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ choices: [{ message: { content: "谢谢 你眼光不错|||你怎么这个点还醒着" } }] }),
+        JSON.stringify({ choices: [{ message: { content: "谢谢 你眼光不错|||你这个点才想起我" } }] }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );
@@ -745,14 +745,14 @@ describe("chat logic", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      reply: "谢谢 你眼光不错",
+      reply: "谢谢 你眼光不错|||才看到",
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
-    expect(payload.messages[0].content).toContain("【消息时效】");
+    expect(payload.messages[0].content).toContain("【时间关系】");
     expect(payload.messages[0].content).toContain("已隔 2 小时 53 分");
-    expect(payload.messages[0].content).toContain("禁止问“这个点还没睡”");
-    expect(payload.messages.at(-1).content).toContain("[9月25日 02:21] 对方说：你这高跟鞋真好看");
+    expect(payload.messages[0].content).toContain("你是真人，不会一直盯着手机");
+    expect(payload.messages.at(-1).content).toContain("[9月25日 02:21，2 小时 53 分前] 对方说：你这高跟鞋真好看");
   });
 
   it("uses past mode for old greetings instead of pretending the message just arrived", async () => {
@@ -789,12 +789,12 @@ describe("chat logic", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      reply: "在的 前几天有点忙",
+      reply: "刚忙完 刚看到你消息|||在的 前几天有点忙",
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const prompt = JSON.parse(String(init.body)).messages[0].content;
-    expect(prompt).toContain("已进入过去模式");
-    expect(prompt).toContain("刚看到你前几天发的");
+    expect(prompt).toContain("较早前的消息");
+    expect(prompt).toContain("你是真人，不会一直盯着手机");
     expect(prompt).toContain("已隔 3 天 22 小时");
   });
 

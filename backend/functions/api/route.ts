@@ -301,7 +301,7 @@ export function getMessageDelayPolicy(message, nowSec = Math.floor(Date.now() / 
     level: "unknown",
     messageType,
     pastMode: false,
-    prompt: "对方消息没有可靠发送时间。不要默认说刚刚、刚看到、这个点或刚忙完，只根据消息内容回复。",
+    prompt: "对方消息没有可靠时间，按内容自然回复。",
   };
 
   const ageSeconds = Math.max(0, nowSec - epoch);
@@ -315,64 +315,38 @@ export function getMessageDelayPolicy(message, nowSec = Math.floor(Date.now() / 
   else if (ageSeconds > 7 * 86400 && ageSeconds <= 30 * 86400) level = "past_7_30d";
   else if (ageSeconds > 30 * 86400) level = "past_over_30d";
 
-  const timing = "对方发：" + formatChinaClock(epoch) + "，现在：" + formatChinaClock(nowSec) + "，已隔 " + formatChineseDuration(ageSeconds) + "。";
+  const timing = "对方最后一条是" + formatChinaMessageTime(epoch) + "发的，现在" + formatChinaMessageTime(nowSec) +
+    "，已隔 " + formatChineseDuration(ageSeconds) + "。";
   const pastMode = ageSeconds > 24 * 3600;
+  const humanRule = "你是真人，不会一直盯着手机。按真实时间间隔自然接着聊，不必刻意解释迟到。";
   if (level === "immediate") return { hasTimestamp: true, ageSeconds, level, messageType, pastMode, prompt: "" };
-  if (level === "short_wait") return {
-    hasTimestamp: true,
-    ageSeconds,
-    level,
-    messageType,
-    pastMode,
-    prompt: timing + "自然接话，不强调等待。",
-  };
-  if (level === "acknowledge") return {
-    hasTimestamp: true,
-    ageSeconds,
-    level,
-    messageType,
-    pastMode,
-    prompt: timing + "必要时可以自然说刚看到，不要解释具体忙什么。",
-  };
-  if (level === "explicit_delay") return {
-    hasTimestamp: true,
-    ageSeconds,
-    level,
-    messageType,
-    pastMode,
-    prompt: timing + "必须承认已经隔了一段时间，禁止问“这个点还没睡”或暗示消息刚收到。",
-  };
-  if (level === "dayparted") return {
-    hasTimestamp: true,
-    ageSeconds,
-    level,
-    messageType,
-    pastMode,
-    prompt: timing + "说明时可以说刚看到你早上、下午或昨晚发的，不要虚构刚忙完，也不要说刚起床、刚睡醒、刚醒。",
-  };
-
-  let typeRule = "这是旧消息，只回应原话中现在仍成立的内容，不逐条补答，也不编造这几天在做什么。";
-  if (messageType === "business") {
-    typeRule = "这是仍可能有效的回收问题，可以简短回答；先承认看过旧消息，例如“刚看到你前几天问的”，再回答当前是否还能处理。";
-  } else if (messageType === "expired_invite") {
-    typeRule = "这是已经失效的邀约，不能回答明天可以、有空、到时候或好啊；改成“那会儿没看到 你现在还有事吗”。";
-  } else if (messageType === "night") {
-    typeRule = "不要隔几天补一句晚安、早点睡或追问当时状态，只简短回应对方现在是否还好。";
-  } else if (messageType === "emotion") {
-    typeRule = "不要假装当时就在陪聊，只简短问问对方现在是否还好。";
-  } else if (messageType === "greeting") {
-    typeRule = "可以简短回“在的 刚看到你前几天发的”，不要装作刚刚收到。";
+  if (!pastMode) {
+    return {
+      hasTimestamp: true,
+      ageSeconds,
+      level,
+      messageType,
+      pastMode,
+      prompt: timing + humanRule,
+    };
   }
-  if (level === "past_4_7d") typeRule = "只说隔了几天才看到，不编造这几天做了什么。" + typeRule;
-  if (level === "past_7_30d" || level === "past_over_30d") typeRule = "消息已经过去较久，谨慎回复，不追问已经失效的话题。" + typeRule;
-  if (level === "past_over_30d" && messageType !== "business" && messageType !== "normal") typeRule = "这更像一条已经失效的旧消息，优先跳过式处理，只做最简单的回应。" + typeRule;
+
+  let typeRule = "这是较早前的消息，先回应原话，不要当成当前邀约。";
+  if (messageType === "business") {
+    typeRule = "这是较早前问的回收问题；如果现在仍然有效，可以简短回应。";
+  } else if (messageType === "expired_invite") {
+    typeRule = "这是较早前的邀约，不能回答明天可以或我有空，改成问对方现在是否还需要。";
+  } else if (messageType === "night" || messageType === "emotion") {
+    typeRule = "只回应原话，不要假装当时就在陪聊。";
+  }
+
   return {
     hasTimestamp: true,
     ageSeconds,
     level,
     messageType,
     pastMode,
-    prompt: timing + "已进入过去模式。禁止说刚起床、刚睡醒、刚醒。" + typeRule,
+    prompt: timing + typeRule + humanRule,
   };
 }
 
@@ -414,12 +388,11 @@ function resolveIncomingDelayPolicy(messages, historyMessages, nowSec) {
 function staleReplyFallback(policy) {
   if (!policy?.hasTimestamp) return "";
   if (policy.pastMode) {
-    if (policy.messageType === "business") return "刚看到你前几天问的 还收的 你现在要处理吗";
+    if (policy.messageType === "business") return "才看到你之前问的 还收的 你现在要处理吗";
     if (policy.messageType === "expired_invite") return "那会儿没看到 你现在还有事吗";
-    if (policy.messageType === "night" || policy.messageType === "emotion") return "刚看到你前几天发的 最近还好吧";
-    return "刚看到你前几天发的";
+    return "才看到";
   }
-  return "在的 刚看到";
+  return "才看到";
 }
 
 function cleanStaleReplySegment(value, policy) {
@@ -428,23 +401,10 @@ function cleanStaleReplySegment(value, policy) {
   if (policy.pastMode && policy.messageType === "expired_invite" && /(?:明天|今天|晚点|周末|到时候|我有空|可以|好啊)/u.test(reply)) {
     return staleReplyFallback(policy);
   }
-  if (policy.pastMode && (policy.messageType === "night" || policy.messageType === "emotion") && /^(?:晚安|早点休息|睡吧|我睡了)[啊呀吧。！!]*$/u.test(reply)) {
-    return staleReplyFallback(policy);
-  }
-  if (Number(policy.ageSeconds || 0) >= 2 * 3600) {
+  if (Number(policy.ageSeconds || 0) > 30 * 60) {
     reply = reply
-      .replace(/(?:你|你这边)?(?:怎么|还|这么晚)?这个点(?:还)?(?:没睡|不睡|醒着)(?:吗)?/gu, "")
-      .replace(/(?:大)?半夜(?:还)?(?:不睡|没睡|醒着)(?:吗)?/gu, "")
-      .replace(/这么晚(?:还)?(?:没睡|不睡|醒着)(?:吗)?/gu, "");
-  }
-  if (policy.pastMode) {
-    reply = reply
-      .replace(/(?:我)?刚忙完/gu, "")
-      .replace(/(?:我)?刚到家/gu, "")
-      .replace(/(?:我)?刚看到(?:你)?(?:的)?消息/gu, "")
-      .replace(/(?:我)?刚刚看到/gu, "")
-      .replace(/(?:你)?现在还在外面吗/gu, "")
-      .replace(/(?:我)?这几天(?:一直)?在忙/gu, "");
+      .replace(/(?:你|你这边)?(?:这个点|这么晚|现在|刚刚|刚)(?:才)?(?:想起我|想到我|找我|给我发消息|发我消息)/gu, "才看到")
+      .replace(/(?:你|你这边)?刚(?:发|发来|发给我)(?:的)?(?:消息)?/gu, "才看到你之前发的");
   }
   return reply
     .replace(/^[，,。！？!?\s]+|[，,。！？!?\s]+$/gu, "")
@@ -467,8 +427,8 @@ function formatCurrentChatMessage(message, nowSec = Math.floor(Date.now() / 1000
   const speaker = message?.role === "assistant" ? "你说" : "对方说";
   let timeLabel = String(message?.timestamp || "").trim() || (epoch ? formatChinaMessageTime(epoch) : "");
   if (epoch > 0 && message?.role === "user") {
-    const ageHours = Math.max(0, Math.floor((nowSec - epoch) / 3600));
-    if (ageHours >= 24) timeLabel += "，距今约" + ageHours + "小时";
+    const ageSeconds = Math.max(0, nowSec - epoch);
+    if (ageSeconds >= 5 * 60) timeLabel += "，" + formatChineseDuration(ageSeconds) + "前";
   }
   return (timeLabel ? "[" + timeLabel + "] " : "") + speaker + "：" + String(message?.content || "");
 }

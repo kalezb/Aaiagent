@@ -34,10 +34,11 @@ class UnansweredTimelineTest {
         val timeline = UnansweredTimeline.build(messages, nowMillis = base + 40 * 60 * 60 * 1000L)!!
 
         assertTrue(timeline.contains("跨时间连续发来的同一轮未回复消息"))
-        assertTrue(timeline.contains("【9月25日 22:10】最近怎么不说话了"))
-        assertTrue(timeline.contains("【9月26日 18:30】分享动态：对方转发了你的动态"))
-        assertTrue(timeline.contains("互动表情：对方发来 Soul 互动表情「皮一下」"))
-        assertTrue(timeline.contains("不要逐条机械回复"))
+        assertTrue(timeline.contains("【9月25日 22:10，1天前】最近怎么不说话了"))
+        assertTrue(timeline.contains("【9月26日 18:30，20小时前】分享动态：对方转发了你的动态"))
+        assertTrue(timeline.contains("【9月27日 10:20，4小时前】互动表情：对方发来 Soul 互动表情「皮一下」"))
+        assertTrue(timeline.contains("你是真人，不会一直盯着手机"))
+        assertTrue(timeline.contains("按时间顺序自然接住"))
     }
 
     @Test
