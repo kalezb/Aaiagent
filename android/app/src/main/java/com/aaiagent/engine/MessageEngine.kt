@@ -95,6 +95,7 @@ class MessageEngine(
         currentPlatform = platform
         hostingEnabled = true
         GestureMonitor.onAutomationActionStarted(protectionMs = 1_500L)
+        android.util.Log.d("AIA", "HostingStarted platform=$platform mode=$hostingMode")
         RuntimeJournal.stateChange(state.toString(), "HostingStarted")
 
         if (hostingJob?.isActive == true && lease.owns(activeLeaseToken)) {

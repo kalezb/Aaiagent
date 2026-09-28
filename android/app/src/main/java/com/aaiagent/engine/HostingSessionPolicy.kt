@@ -50,4 +50,8 @@ object HostingSessionPolicy {
     fun hostingMode(value: String?): HostingMode {
         return HostingMode.values().firstOrNull { it.name == value } ?: HostingMode.FULL_AUTO
     }
+
+    fun effectiveMode(modeOverride: HostingMode?, persistedModeValue: String?): HostingMode {
+        return modeOverride ?: hostingMode(persistedModeValue)
+    }
 }

@@ -39,9 +39,16 @@ object HostingController {
                 repository.getConfig(HostingSessionPolicy.PLATFORM_KEY)
             }?.trim()?.takeIf { it.isNotBlank() }
             ?: "soul"
-        val mode = modeOverride ?: withContext(Dispatchers.IO) {
-            HostingSessionPolicy.hostingMode(repository.getConfig(HostingSessionPolicy.MODE_KEY))
+        val persistedModeValue = if (modeOverride == null) {
+            withContext(Dispatchers.IO) { repository.getConfig(HostingSessionPolicy.MODE_KEY) }
+        } else {
+            null
         }
+        val mode = HostingSessionPolicy.effectiveMode(modeOverride, persistedModeValue)
+        android.util.Log.d(
+            "AIA",
+            "Hosting toggle requested enable=$enable source=${if (modeOverride == null) "floating" else "main"} platform=$platform mode=$mode persistedMode=$persistedModeValue"
+        )
 
         ForegroundService.ensureRunning(appContext)
 

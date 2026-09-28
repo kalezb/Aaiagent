@@ -101,6 +101,9 @@ class MainActivity : ComponentActivity() {
         repository = AppRepository(db)
 
         lifecycleScope.launch {
+            hostingMode = withContext(Dispatchers.IO) {
+                HostingSessionPolicy.hostingMode(repository.getConfig(HostingSessionPolicy.MODE_KEY))
+            }
             val t = withContext(Dispatchers.IO) { repository.getActiveToken() }; if (t != null) token = t.token
             if (t != null) {
                 token = t.token
@@ -138,7 +141,7 @@ class MainActivity : ComponentActivity() {
                     onTokenChange = { token = it.trim(); tokenVerified = false; tokenVerifyStatus = "" },
                     location = UserLocationEntity(homeCity = homeCity, homeDistrict = homeDistrict, workCity = workCity, workDistrict = workDistrict),
                     onLocationSave = { hc, hd, wc, wd -> homeCity = hc; homeDistrict = hd; workCity = wc; workDistrict = wd },
-                    hostingMode = hostingMode, onHostingModeChange = { hostingMode = it },
+                    hostingMode = hostingMode, onHostingModeChange = { selectHostingMode(it) },
                     onToggleHosting = { toggleHosting(it) },
                     personaVerifyStatus = personaVerifyStatus, onVerifyPersona = { verifyPersona() },
                     locationSaveStatus = locationSaveStatus, onSaveLocation = { saveLocation() },
@@ -342,9 +345,23 @@ class MainActivity : ComponentActivity() {
     // ═══ 托管 ═══
 
     // ═══ 托管 ═══
+    private fun selectHostingMode(mode: HostingMode) {
+        hostingMode = mode
+        val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
+        if (engine?.hostingEnabled == true) {
+            engine.hostingMode = mode
+            HostingSessionPolicy.markStarted(engine.currentPlatform, mode)
+        }
+        lifecycleScope.launch(Dispatchers.IO) {
+            repository.setConfig(HostingSessionPolicy.MODE_KEY, mode.name)
+        }
+        android.util.Log.d("AIA", "Hosting mode selected mode=$mode persisted=true")
+    }
+
     private fun toggleHosting(enable: Boolean) {
         val platform = enabledPlatforms.firstOrNull() ?: "soul"
         val mode = hostingMode
+        android.util.Log.d("AIA", "Hosting toggle requested enable=$enable source=main platform=$platform mode=$mode")
         isHosting = enable
         engineState = if (enable) "启动中..." else "正在关闭..."
         lifecycleScope.launch {

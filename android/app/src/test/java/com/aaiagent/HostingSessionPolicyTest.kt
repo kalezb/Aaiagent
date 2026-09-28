@@ -65,6 +65,8 @@ class HostingSessionPolicyTest {
 
     @Test
     fun `restores known mode and falls back to full auto`() {
+        assertEquals(HostingMode.SEMI_AUTO, HostingSessionPolicy.effectiveMode(null, "SEMI_AUTO"))
+        assertEquals(HostingMode.FULL_AUTO, HostingSessionPolicy.effectiveMode(HostingMode.FULL_AUTO, "SEMI_AUTO"))
         assertEquals(HostingMode.SEMI_AUTO, HostingSessionPolicy.hostingMode("SEMI_AUTO"))
         assertEquals(HostingMode.FULL_AUTO, HostingSessionPolicy.hostingMode("bad-value"))
         assertEquals(HostingMode.FULL_AUTO, HostingSessionPolicy.hostingMode(null))
