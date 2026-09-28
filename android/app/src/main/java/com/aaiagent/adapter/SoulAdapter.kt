@@ -17,6 +17,7 @@ import com.aaiagent.adapter.PlatformAdapter.SendResult
 import com.aaiagent.engine.ChatTitlePolicy
 import com.aaiagent.engine.ConversationIdentity
 import com.aaiagent.engine.GestureMonitor
+import com.aaiagent.engine.InteractionVisionCache
 import com.aaiagent.engine.SoulInputState
 import com.aaiagent.engine.SoulMessageTime
 import com.aaiagent.engine.SoulViewportPolicy
@@ -29,6 +30,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private val prefix = "cn.soulapp.android:id/"
     private var emptyScanStreak = 0
+
+    init {
+        InteractionVisionCache.initialize(service.applicationContext)
+    }
 
     private data class LocatedMessage(
         val top: Int,
@@ -228,7 +233,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                             content = content,
                             type = finalType,
                             timestampText = timestamp.text,
-                            timestampMillis = timestamp.epochMillis
+                            timestampMillis = timestamp.epochMillis,
+                            identityKey = stableMessageKey(
+                                sender = sender,
+                                type = finalType,
+                                timestampText = timestamp.text,
+                                timestampMillis = timestamp.epochMillis,
+                                fallbackTop = itemBounds.top
+                            )
                         ),
                         stickerRect = stickerRect
                     )
@@ -250,6 +262,19 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 located.stickerRect?.let { pendingStickers.add(PendingSticker(index, it)) }
             }
         return messages
+    }
+
+    private fun stableMessageKey(
+        sender: String,
+        type: String,
+        timestampText: String,
+        timestampMillis: Long?,
+        fallbackTop: Int
+    ): String {
+        val timeAnchor = timestampMillis?.toString()
+            ?: timestampText.trim().takeIf(String::isNotEmpty)?.let { "text:$it" }
+            ?: "top:$fallbackTop"
+        return listOf("soul", sender, type, timeAnchor).joinToString(":")
     }
 
     override suspend fun transcribeIncomingVoices(
@@ -277,8 +302,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             index in messages.indices && messages[index].type == SoulInteractionMessage.TYPE
         }
         val match = StickerMatcher.matchAllDetailed(service, validPending.map { it.rect })
+        val unresolved = mutableSetOf<Int>()
         validPending.forEachIndexed { index, pending ->
-            val name = match.names.getOrNull(index) ?: return@forEachIndexed
+            val name = match.names.getOrNull(index)
+            if (name.isNullOrBlank()) {
+                unresolved.add(pending.messageIndex)
+                return@forEachIndexed
+            }
             val modelText = StickerMatcher.modelTextFor(name) ?: "[互动表情：$name]"
             result[pending.messageIndex] = result[pending.messageIndex].copy(
                 content = modelText,
@@ -287,7 +317,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
         return StickerRecognitionResult(
             messages = result,
-            failedIndexes = if (match.captureSucceeded) emptySet() else validPending.map { it.messageIndex }.toSet()
+            failedIndexes = unresolved
         )
     }
 
@@ -667,7 +697,20 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                         screenHeight = service.resources.displayMetrics.heightPixels
                     )
                 ) {
-                    messages.add(ChatMessage(if (rect.left > screenWidth / 2) "self" else "other", text))
+                    val sender = if (rect.left > screenWidth / 2) "self" else "other"
+                    messages.add(
+                        ChatMessage(
+                            sender = sender,
+                            content = text,
+                            identityKey = stableMessageKey(
+                                sender = sender,
+                                type = "text",
+                                timestampText = "",
+                                timestampMillis = null,
+                                fallbackTop = rect.top
+                            )
+                        )
+                    )
                 }
             }
         }
@@ -1481,7 +1524,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                     message = ChatMessage(
                         sender = "other",
                         content = modelText,
-                        type = "text"
+                        type = "text",
+                        identityKey = stableMessageKey(
+                            sender = "other",
+                            type = "system_interaction",
+                            timestampText = "",
+                            timestampMillis = null,
+                            fallbackTop = rect.top
+                        )
                     )
                 )
             }

@@ -17,6 +17,7 @@ data class ChatRequest(
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
     val messages: List<Map<String, Any>>,
+    @SerializedName("conversation_timeline") val conversationTimeline: String? = null,
     val location: Map<String, Map<String, String>>? = null
 )
 

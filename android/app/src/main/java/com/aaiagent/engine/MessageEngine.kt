@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.aaiagent.adapter.AdapterRegistry
 import com.aaiagent.adapter.PlatformAdapter
 import com.aaiagent.adapter.SoulAdapter
+import com.aaiagent.adapter.SoulInteractionMessage
 import com.aaiagent.adapter.SoulMediaType
 import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.repository.AppRepository
@@ -507,11 +508,9 @@ class MessageEngine(
             var root = chatRoot
             var messages = readMessagesWithRetry(adapter, root, context.contactName, leaseToken)
             // Soul 互动表情本地识别
-            var failedStickerIndexes = emptySet<Int>()
             if (adapter is com.aaiagent.adapter.SoulAdapter) {
                 val recognition = adapter.recognizePendingStickers(messages)
                 messages = recognition.messages
-                failedStickerIndexes = recognition.failedIndexes
             }
             if (messages.isEmpty()) {
                 RuntimeJournal.readMessages(0, "")
@@ -581,7 +580,10 @@ class MessageEngine(
                 } else if (delivery.isComplete) {
                     android.util.Log.w("AIA", "reply sent but backend confirmation failed; retry on next scan")
                 }
-                if (delivery.status == ReplyDeliveryStatus.STALE) clearPendingReply(context)
+                if (delivery.status == ReplyDeliveryStatus.STALE) {
+                    clearPendingReply(context)
+                    delay(STALE_REPLY_COOLDOWN_MS)
+                }
                 return
             }
 
@@ -592,12 +594,6 @@ class MessageEngine(
                 return
             }
             val incomingBatch = IncomingMessageBatch.select(messages) ?: return
-            if (failedStickerIndexes.any { index -> messages.getOrNull(index) in incomingBatch.incoming }) {
-                RuntimeJournal.recovery("互动表情截图失败，保留聊天页下次重试")
-                delay(1_000)
-                state = EngineState.Idle
-                return
-            }
             val latestIncoming = incomingBatch.latestIncoming
             android.util.Log.d(
                 "AIA",
@@ -706,6 +702,7 @@ class MessageEngine(
                     } else if (delivery.status == ReplyDeliveryStatus.STALE) {
                         clearPendingReply(context)
                         android.util.Log.d("AIA", "reply delivery stopped because newer messages arrived")
+                        delay(STALE_REPLY_COOLDOWN_MS)
                     }
                 }
                 HostingReplyAction.FILL_INPUT_ONLY -> {
@@ -767,6 +764,18 @@ class MessageEngine(
         expectedContactName: String
     ): MediaUnderstanding {
         val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages)
+        if (mediaTarget.type == SoulInteractionMessage.TYPE) {
+            InteractionVisionCache.get(mediaTarget.identityKey)?.let { cached ->
+                android.util.Log.d("AIA", "interaction vision cache hit key=${mediaTarget.identityKey}")
+                return MediaUnderstanding(
+                    replaceLatest(
+                        messages,
+                        mediaTarget,
+                        ImageUnderstandingPolicy.modelFacts(mediaTarget.type, cached)
+                    )
+                )
+            }
+        }
         if (mediaTarget.type == "text" ||
             mediaTarget.type == "unknown" ||
             mediaTarget.type == SoulMediaType.VOICE_EMOJI ||
@@ -845,11 +854,16 @@ class MessageEngine(
             "vision result type=${mediaTarget.type} length=${vision.description.length}"
         )
 
+        val modelFacts = ImageUnderstandingPolicy.modelFacts(mediaTarget.type, vision.description)
+        if (mediaTarget.type == SoulInteractionMessage.TYPE) {
+            InteractionVisionCache.put(mediaTarget.identityKey, vision.description)
+        }
+
         return MediaUnderstanding(
             replaceLatest(
                 messages,
                 mediaTarget,
-                ImageUnderstandingPolicy.modelFacts(mediaTarget.type, vision.description)
+                modelFacts
             )
         )
     }
@@ -911,6 +925,9 @@ class MessageEngine(
         val requestStartedAt = System.currentTimeMillis()
         val location = withContext(Dispatchers.IO) { repository.getLocation() }
         var requestMessages = messages
+        var conversationTimeline = UnansweredTimeline.build(
+            IncomingMessageBatch.select(requestMessages)?.incoming ?: requestMessages
+        )
         var recalcCount = 0
         var requestId = UUID.randomUUID().toString()
 
@@ -923,6 +940,9 @@ class MessageEngine(
         repeat(MAX_LLM_RETRIES) {
             if (!canContinue(leaseToken, interactionEpoch)) return null
             val freshnessRequestId = synchronized(context) { context.llmRequestId }
+            conversationTimeline = UnansweredTimeline.build(
+                IncomingMessageBatch.select(requestMessages)?.incoming ?: requestMessages
+            )
             android.util.Log.d(
                 "AIA",
                 "chat request attempt=${it + 1}/$MAX_LLM_RETRIES contact=${context.contactName} messages=${requestMessages.size} requestId=$requestId"
@@ -943,6 +963,7 @@ class MessageEngine(
                                 "created_at" to (it.timestampMillis?.div(1000L) ?: 0L)
                             )
                         },
+                        conversationTimeline = conversationTimeline,
                         location = location
                     )
                 )
@@ -1373,7 +1394,7 @@ class MessageEngine(
             val messages = adapter.readMessages(root)
             val fingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
             synchronized(context) {
-                if (fingerprint != context.lastIncomingFingerprint) {
+                if (ReplyDeliveryPolicy.incomingChanged(context.lastIncomingFingerprint, fingerprint)) {
                     context.lastIncomingFingerprint = fingerprint
                     context.llmRequestId++
                     context.pendingReplyParts.clear()
@@ -1480,5 +1501,6 @@ class MessageEngine(
         const val READ_MESSAGE_RETRIES = 4
         const val VISUAL_RETURN_RETRIES = 4
         const val MAX_LLM_RETRIES = 3
+        const val STALE_REPLY_COOLDOWN_MS = 1_000L
     }
 }

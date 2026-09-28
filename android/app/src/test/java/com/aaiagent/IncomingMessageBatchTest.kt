@@ -2,9 +2,12 @@ package com.aaiagent
 
 import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 import com.aaiagent.engine.IncomingMessageBatch
+import com.aaiagent.engine.ReplyDeliveryPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IncomingMessageBatchTest {
@@ -122,5 +125,57 @@ class IncomingMessageBatchTest {
             IncomingMessageBatch.incomingHistoryFingerprint(listOf(first, selfReply)),
             IncomingMessageBatch.incomingHistoryFingerprint(listOf(first, selfReply, repeated))
         )
+    }
+
+    @Test
+    fun `recognized interaction keeps the same stable identity`() {
+        val raw = ChatMessage(
+            sender = "other",
+            content = "[Soul互动表情]",
+            type = "interaction",
+            identityKey = "soul:other:interaction:100"
+        )
+        val recognized = raw.copy(
+            content = "对方发来 Soul 互动表情「皮一下」：对方和你开玩笑，气氛轻松调皮",
+            type = "text"
+        )
+
+        assertEquals(
+            IncomingMessageBatch.incomingHistoryFingerprint(listOf(raw)),
+            IncomingMessageBatch.incomingHistoryFingerprint(listOf(recognized))
+        )
+    }
+
+    @Test
+    fun `old messages scrolling out do not invalidate the pending reply`() {
+        val first = ChatMessage("other", "第一条", "text", identityKey = "1")
+        val second = ChatMessage("other", "第二条", "text", identityKey = "2")
+        val third = ChatMessage("other", "第三条", "text", identityKey = "3")
+        val fourth = ChatMessage("other", "第四条", "text", identityKey = "4")
+
+        val expected = IncomingMessageBatch.incomingHistoryFingerprint(
+            listOf(first, second, third, fourth)
+        )
+        val current = IncomingMessageBatch.incomingHistoryFingerprint(listOf(third, fourth))
+
+        assertFalse(ReplyDeliveryPolicy.incomingChanged(expected, current))
+    }
+
+    @Test
+    fun `a genuinely new incoming message invalidates the pending reply`() {
+        val first = ChatMessage("other", "第一条", "text", identityKey = "1")
+        val second = ChatMessage("other", "第二条", "text", identityKey = "2")
+        val third = ChatMessage("other", "第三条", "text", identityKey = "3")
+        val fourth = ChatMessage("other", "第四条", "text", identityKey = "4")
+        val newer = ChatMessage("other", "新消息", "text", identityKey = "5")
+
+        val expected = IncomingMessageBatch.incomingHistoryFingerprint(
+            listOf(first, second, third, fourth)
+        )
+        val current = IncomingMessageBatch.incomingHistoryFingerprint(
+            listOf(second, third, fourth, newer)
+        )
+
+        assertTrue(ReplyDeliveryPolicy.incomingChanged(expected, current))
     }
 }

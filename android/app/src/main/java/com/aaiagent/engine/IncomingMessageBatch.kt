@@ -5,21 +5,28 @@ import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 object IncomingMessageBatch {
     fun fingerprint(selection: Selection): String {
         return IncomingConversationTracker.fingerprint(
-            selection.incoming.map { "${it.type}:${it.content}" }
+            selection.incoming.map(::stableToken)
         )
     }
 
     fun visibleFingerprint(messages: List<ChatMessage>): String {
         return IncomingConversationTracker.fingerprint(
-            messages.map { "${it.sender}:${it.type}:${it.content}" }
+            messages.map { "${it.sender}:${stableToken(it)}" }
         )
     }
 
     fun incomingHistoryFingerprint(messages: List<ChatMessage>): String {
         return IncomingConversationTracker.fingerprint(
             messages.filter { it.sender != "self" }
-                .map { "${it.type}:${it.content}" }
+                .map(::stableToken)
         )
+    }
+
+    fun stableToken(message: ChatMessage): String {
+        if (message.identityKey.isNotBlank()) {
+            return "id:${IncomingMessageTracker.fingerprint(message.identityKey)}"
+        }
+        return "${message.type}:${IncomingMessageTracker.fingerprint(message.content)}"
     }
 
     fun select(messages: List<ChatMessage>): Selection? {

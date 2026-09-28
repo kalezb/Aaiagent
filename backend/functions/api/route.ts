@@ -1670,6 +1670,7 @@ export const onRequest = async (context) => {
       const contact_name = String(body.contact_name || "").trim().slice(0, 200);
       const location = body.location;
       const messages = body.messages;
+      const conversationTimeline = String(body.conversation_timeline || "").trim().slice(0, 2400);
       const requestId = String(body.request_id || "").trim().slice(0, 120) || crypto.randomUUID();
       if (!platform || !contact_id || !contact_name) return json({ error: "缺少必要参数" }, 400);
       if (!validateChatMessages(messages)) return json({ error: "消息格式无效或数量超限" }, 400);
@@ -1846,6 +1847,7 @@ export const onRequest = async (context) => {
         contactPolicy,
         messages,
         historyMessages,
+        conversationTimeline,
       });
       timing.context_ms = Date.now() - contextStartedAt;
 

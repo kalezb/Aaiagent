@@ -89,7 +89,8 @@ interface PlatformAdapter {
         val content: String,
         val type: String = "text",
         val timestampText: String = "",
-        val timestampMillis: Long? = null
+        val timestampMillis: Long? = null,
+        val identityKey: String = ""
     )
 
     data class ConversationInfo(

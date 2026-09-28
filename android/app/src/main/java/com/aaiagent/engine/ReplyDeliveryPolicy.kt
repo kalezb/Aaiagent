@@ -106,6 +106,6 @@ object ReplyDeliveryPolicy {
     }
 
     fun incomingChanged(expectedFingerprint: String, currentFingerprint: String): Boolean {
-        return expectedFingerprint.isNotBlank() && expectedFingerprint != currentFingerprint
+        return !IncomingConversationTracker.isCompatible(expectedFingerprint, currentFingerprint)
     }
 }

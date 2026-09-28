@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { getMessageDelayPolicy, onRequest, sanitizeStaleAssistantReply } from "../functions/api/[[route]]";
 import {
+  buildLayeredSystemPrompt,
   buildRelationshipBoundaryPrompt,
   countContactRequests,
   isContactRequest,
@@ -1855,6 +1856,30 @@ describe("monitoring sync and customer profile batching", () => {
     await expect(dashboardResponse.json()).resolves.toMatchObject({
       personas: [{ id: "female", system_prompt: "私有系统提示词" }],
     });
+  });
+
+  it("includes the compact unanswered-message timeline in the prompt", () => {
+    const prompt = buildLayeredSystemPrompt({
+      personaPrompt: "你是星暮。",
+      platform: "soul",
+      profileContext: "",
+      currentDatetime: "2026年9月28日 19:00",
+      weekday: "周一",
+      activityNow: "你在家休息",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "两江新区" },
+      weather: "",
+      activity: { activeDays: 0 },
+      stageText: "刚认识",
+      relationStageLevel: 1,
+      messageDelay: null,
+      contactPolicy: {},
+      messages: [{ role: "user", content: "在干嘛" }],
+      historyMessages: [],
+      conversationTimeline: "客户连续三天发来文字、动态和互动表情。",
+    });
+
+    expect(prompt).toContain("【未回复消息时间线】客户连续三天发来文字、动态和互动表情。");
   });
 });
   it("routes every explicit Pages API entry through the full handler", () => {

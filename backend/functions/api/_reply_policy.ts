@@ -248,6 +248,7 @@ export function buildLayeredSystemPrompt({
   contactPolicy,
   messages,
   historyMessages,
+  conversationTimeline = "",
 }) {
   const newContact = Number(relationStageLevel || 0) === 1;
   const fixed = [
@@ -273,6 +274,7 @@ export function buildLayeredSystemPrompt({
       ? "今天" + weather.condition + weather.temp + "度。"
       : "",
     "【关系阶段】" + stageText,
+    conversationTimeline ? "【未回复消息时间线】" + conversationTimeline : "",
     activity.activeDays >= 2
       ? "这个客户最近7天有" + activity.activeDays + "天主动找过你，别假装你们天天都在聊。"
       : "",
