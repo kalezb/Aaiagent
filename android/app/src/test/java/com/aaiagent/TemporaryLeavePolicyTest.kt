@@ -33,6 +33,15 @@ class TemporaryLeavePolicyTest {
     }
 
     @Test
+    fun `sleep questions and wakeful messages do not start cooldown`() {
+        assertNull(TemporaryLeavePolicy.detect("睡了没"))
+        assertNull(TemporaryLeavePolicy.detect("你睡了吗"))
+        assertNull(TemporaryLeavePolicy.detect("睡了，但是没完全睡着"))
+        assertFalse(TemporaryLeavePolicy.shouldWaitForNextIncoming("睡了没"))
+        assertFalse(TemporaryLeavePolicy.shouldWaitForNextIncoming("睡了，但是没完全睡着"))
+    }
+
+    @Test
     fun `busy meal outing and sleep have separate cooldowns`() {
         assertEquals("忙碌", TemporaryLeavePolicy.detect("我去忙了，回头聊")?.reason)
         assertEquals("吃饭", TemporaryLeavePolicy.detect("先去吃饭，晚点聊")?.reason)

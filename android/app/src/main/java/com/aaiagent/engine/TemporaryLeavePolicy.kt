@@ -36,7 +36,10 @@ object TemporaryLeavePolicy {
     }
 
     private fun isDirectQuestion(text: String): Boolean {
-        return text.contains('?') || text.contains('？')
+        if (text.contains('?') || text.contains('？')) return true
+        val withoutEnding = text.trimEnd('。', '!', '！', '~', '～')
+        if (QUESTION_ENDINGS.any(withoutEnding::endsWith)) return true
+        return QUESTION_PHRASES.any(withoutEnding::contains)
     }
 
     private fun detectNormalized(
@@ -100,10 +103,16 @@ object TemporaryLeavePolicy {
     )
 
     private val SLEEP_FUTURE = listOf(
-        "去睡觉", "睡觉去", "睡了", "晚安", "休息了", "明早聊", "明天聊"
+        "去睡觉", "睡觉去", "我先睡", "我睡了", "睡了睡了", "那睡了", "晚安", "休息了", "明早聊", "明天聊"
     )
 
     private val GENERIC_DEFER = listOf(
         "一会儿聊", "等会儿聊", "等会聊", "待会聊", "晚点聊", "回头聊", "稍后聊", "回聊"
+    )
+
+    private val QUESTION_ENDINGS = listOf("吗", "嘛", "没", "没有")
+    private val QUESTION_PHRASES = listOf(
+        "几点", "什么时候", "怎么", "为什么", "干啥", "干嘛", "做什么",
+        "是不是", "有没有", "在不在", "睡不睡", "睡了吗", "睡了没", "吃了没"
     )
 }
