@@ -32,6 +32,66 @@ data class ReplyDeliveryResult(
 }
 
 object ReplyDeliveryPolicy {
+    fun planParts(
+        parts: List<String>,
+        randomUnit: Double = kotlin.random.Random.nextDouble()
+    ): List<String> {
+        val cleaned = parts.map(::cleanPart).filter(String::isNotEmpty)
+        if (cleaned.isEmpty()) return emptyList()
+
+        val count = choosePartCount(cleaned, randomUnit.coerceIn(0.0, 1.0))
+        if (cleaned.size == 1 && cleaned[0].length > 24) {
+            return splitLongReply(cleaned[0], count)
+        }
+        return prepareParts(cleaned, count)
+    }
+
+    private fun choosePartCount(parts: List<String>, randomUnit: Double): Int {
+        if (parts.size == 1) {
+            val length = parts[0].length
+            if (length <= 24) return 1
+            return when {
+                length <= 36 -> if (randomUnit < 0.55) 1 else 2
+                length <= 56 -> if (randomUnit < 0.30) 1 else if (randomUnit < 0.78) 2 else 3
+                else -> if (randomUnit < 0.18) 1 else if (randomUnit < 0.68) 2 else 3
+            }
+        }
+
+        if (parts.size == 2) {
+            val totalLength = parts.sumOf(String::length)
+            return if (totalLength <= 32 && randomUnit < 0.45) 1 else 2
+        }
+
+        return when {
+            randomUnit < 0.28 -> 1
+            randomUnit < 0.78 -> 2
+            else -> 3
+        }
+    }
+
+    private fun splitLongReply(text: String, desiredParts: Int): List<String> {
+        if (desiredParts <= 1) return listOf(text)
+        val atoms = text.split(Regex("(?<=[。！？!?；;])|\\s+"))
+            .map(::cleanPart)
+            .filter(String::isNotEmpty)
+            .flatMap { atom -> if (atom.length <= 24) listOf(atom) else atom.chunked(18) }
+        if (atoms.isEmpty()) return emptyList()
+
+        val packed = mutableListOf<String>()
+        var current = ""
+        for (atom in atoms) {
+            val candidate = if (current.isBlank()) atom else "$current $atom"
+            if (current.isNotBlank() && candidate.length > 24) {
+                packed += current
+                current = atom
+            } else {
+                current = candidate
+            }
+        }
+        if (current.isNotBlank()) packed += current
+        return packed.ifEmpty { listOf(text) }
+    }
+
     fun delayAfterPart(part: String, randomUnit: Double = kotlin.random.Random.nextDouble()): Long {
         val normalized = randomUnit.coerceIn(0.0, 1.0)
         return if (part.length >= 16) {

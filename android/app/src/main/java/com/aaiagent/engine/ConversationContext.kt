@@ -13,5 +13,6 @@ data class ConversationContext(
     var pendingReplyId: String = "",
     var pendingReplyIncomingFingerprint: String = "",
     var pendingReplyBatchFingerprint: String = "",
-    var lastRepliedIncomingFingerprint: String = ""
+    var lastRepliedIncomingFingerprint: String = "",
+    var lastLeaveTriggerKey: String = ""
 )

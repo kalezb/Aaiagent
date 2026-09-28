@@ -30,6 +30,20 @@ class AppRepository(private val db: AppDatabase) {
     fun getConfig(key: String): String? = db.configDao().getValue(key)
     fun setConfig(key: String, value: String) = db.configDao().set(ConfigEntity(key, value))
 
+    fun getContactLeaveCooldownUntil(platform: String, contactId: String): Long? {
+        val key = leaveCooldownKey(platform, contactId)
+        return getConfig(key)?.toLongOrNull()
+    }
+
+    fun setContactLeaveCooldownUntil(platform: String, contactId: String, untilMillis: Long) {
+        if (contactId.isBlank() || untilMillis <= 0L) return
+        setConfig(leaveCooldownKey(platform, contactId), untilMillis.toString())
+    }
+
+    private fun leaveCooldownKey(platform: String, contactId: String): String {
+        return "contact_leave_cooldown:${platform.trim().lowercase()}:${contactId.trim()}"
+    }
+
     fun getApiBaseUrl(): String = getConfig("api_base_url") ?: "https://ai-agent-api.pages.dev"
     fun getPersonaId(): String = getConfig("persona_id") ?: "female"
 

@@ -197,6 +197,10 @@ class MessageEngine(
         if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
             val title = adapter.readChatTitle(activeRoot)
             if (!title.isNullOrBlank()) {
+                if (isContactCoolingDown(title, title)) {
+                    state = EngineState.Idle
+                    return false
+                }
                 if (isContactAllowed(title, title)) {
                     markHandled(title)
                     processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
@@ -219,8 +223,11 @@ class MessageEngine(
             listRoot,
             shouldClick = true,
             contactFilter = { contactName, contactId ->
-                !isHandled(contactId) && isContactAllowed(contactName, contactId)
+                !isHandled(contactId) &&
+                    !isContactCoolingDown(contactName, contactId) &&
+                    isContactAllowed(contactName, contactId)
             }
+
         )
         if (info == null) {
             state = EngineState.Idle
@@ -269,6 +276,7 @@ class MessageEngine(
             synchronized(context) {
                 context.lastIncomingFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
             }
+            captureVisibleLeaveIfNeeded(context, messages)
             RuntimeJournal.readMessages(messages.size, messages.lastOrNull()?.content.orEmpty())
         } catch (error: CancellationException) {
             throw error
@@ -372,6 +380,7 @@ class MessageEngine(
         leaseToken: String
     ): Boolean {
         if (!isContactAllowed(task.contactName, task.contactId)) return true
+        if (isContactCoolingDown(task.contactName, task.contactId)) return true
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: return true
         val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: return false
         RuntimeJournal.clickConversation(conversation.contactName, true)
@@ -583,6 +592,7 @@ class MessageEngine(
 
             val lastMessage = messages.lastOrNull() ?: return
             if (!ConversationReplyPolicy.shouldReply(lastMessage.sender)) {
+                captureVisibleLeaveIfNeeded(context, messages)
                 android.util.Log.d("AIA", "conversation has no unanswered incoming message")
                 if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "no unanswered incoming message")
                 return
@@ -1041,7 +1051,7 @@ class MessageEngine(
             .map { it.trim().trimEnd('。', '，', ',', '.', '~', '～').trim() }
             .filter { it.isNotEmpty() && it.length <= 60 }
         val rawParts = if (segments.isNotEmpty()) segments else listOf(outgoing.trimEnd('。', '，', '~', '～'))
-        val parts = ReplyDeliveryPolicy.prepareParts(ReplyDeliveryPolicy.expandLongReply(rawParts))
+        val parts = ReplyDeliveryPolicy.planParts(rawParts)
         if (parts.isEmpty()) return ReplyDeliveryResult(ReplyDeliveryStatus.FAILED, 0, 0)
         android.util.Log.d("AIA", "outgoing reply sanitized segments=${parts.size} length=${outgoing.length}")
 
@@ -1052,7 +1062,7 @@ class MessageEngine(
             context.pendingReplyIncomingFingerprint = deliveryFingerprint
             context.pendingReplyBatchFingerprint = incomingBatchFingerprint
         }
-        return deliverReplyParts(
+        val delivery = deliverReplyParts(
             adapter = adapter,
             context = context,
             parts = parts,
@@ -1060,6 +1070,10 @@ class MessageEngine(
             leaseToken = leaseToken,
             interactionEpoch = interactionEpoch
         )
+        if (delivery.isComplete) {
+            persistLeaveCooldownIfNeeded(context, parts.joinToString(" "), "send:${System.currentTimeMillis()}")
+        }
+        return delivery
     }
 
     private suspend fun deliverReplyParts(
@@ -1238,6 +1252,55 @@ class MessageEngine(
     }
 
     private fun conversationKey(contactId: String): String = "$currentPlatform:$contactId"
+
+    private suspend fun isContactCoolingDown(contactName: String?, contactId: String?): Boolean {
+        val keys = listOf(contactId, contactName)
+            .mapNotNull { it?.trim() }
+            .filter(String::isNotEmpty)
+            .distinct()
+        if (keys.isEmpty()) return false
+        val now = System.currentTimeMillis()
+        return withContext(Dispatchers.IO) {
+            keys.any { key ->
+                (repository.getContactLeaveCooldownUntil(currentPlatform, key) ?: 0L) > now
+            }
+        }
+    }
+
+    private suspend fun persistLeaveCooldownIfNeeded(
+        context: ConversationContext,
+        text: String,
+        triggerKey: String
+    ) {
+        val decision = TemporaryLeavePolicy.detect(text) ?: return
+        val until = System.currentTimeMillis() + decision.durationMs
+        withContext(Dispatchers.IO) {
+            repository.setContactLeaveCooldownUntil(currentPlatform, context.contactId, until)
+        }
+        synchronized(context) {
+            context.lastLeaveTriggerKey = triggerKey
+        }
+        RuntimeJournal.recovery(
+            "离开冷却已记录 contact=${context.contactName.ifBlank { context.contactId }} reason=${decision.reason}"
+        )
+    }
+
+    private suspend fun captureVisibleLeaveIfNeeded(
+        context: ConversationContext,
+        messages: List<PlatformAdapter.ChatMessage>
+    ) {
+        val trailingSelf = messages.takeLastWhile { it.sender == "self" }
+        if (trailingSelf.isEmpty()) return
+        val triggerKey = trailingSelf.joinToString("|") {
+            it.identityKey.ifBlank { "${it.timestampText}:${it.content}" }
+        }
+        if (triggerKey.isBlank() || triggerKey == context.lastLeaveTriggerKey) return
+        persistLeaveCooldownIfNeeded(
+            context = context,
+            text = trailingSelf.joinToString(" ") { it.content },
+            triggerKey = triggerKey
+        )
+    }
 
     private fun markHandled(contactId: String) {
         if (contactId.isBlank()) return

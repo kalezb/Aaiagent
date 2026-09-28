@@ -44,10 +44,36 @@ class ReplyDeliveryPolicyTest {
     }
 
     @Test
-    fun `long single reply is split into short chat bubbles`() {
-        val longReply = "在的 刚忙完 你想聊什么就直说 我看到消息会回你 不用一直等我"
-        val parts = ReplyDeliveryPolicy.expandLongReply(listOf(longReply))
+    fun `random planning can send one two or three natural bubbles`() {
+        assertEquals(
+            listOf("一 二 三"),
+            ReplyDeliveryPolicy.planParts(listOf("一", "二", "三"), randomUnit = 0.1)
+        )
+        assertEquals(
+            listOf("一", "二 三"),
+            ReplyDeliveryPolicy.planParts(listOf("一", "二", "三"), randomUnit = 0.5)
+        )
+        assertEquals(
+            listOf("一", "二", "三"),
+            ReplyDeliveryPolicy.planParts(listOf("一", "二", "三"), randomUnit = 0.95)
+        )
+    }
 
+    @Test
+    fun `two model parts can still be sent as one short reply`() {
+        assertEquals(
+            listOf("在的 刚忙完"),
+            ReplyDeliveryPolicy.planParts(listOf("在的", "刚忙完"), randomUnit = 0.2)
+        )
+    }
+
+    @Test
+    fun `long single reply can use a random natural bubble count`() {
+        val longReply = "在的 刚忙完 你想聊什么就直说 我看到消息会回你 不用一直等我"
+        val onePart = ReplyDeliveryPolicy.planParts(listOf(longReply), randomUnit = 0.1)
+        val parts = ReplyDeliveryPolicy.planParts(listOf(longReply), randomUnit = 0.95)
+
+        assertEquals(listOf(longReply), onePart)
         assertTrue(parts.size in 2..3)
         assertTrue(parts.all { it.length <= 24 })
         assertEquals(longReply.replace(" ", ""), parts.joinToString("").replace(" ", ""))
@@ -55,7 +81,7 @@ class ReplyDeliveryPolicyTest {
 
     @Test
     fun `short reply is not split just to imitate typing`() {
-        assertEquals(listOf("不语音哈 打字可以"), ReplyDeliveryPolicy.expandLongReply(listOf("不语音哈 打字可以")))
+        assertEquals(listOf("不语音哈 打字可以"), ReplyDeliveryPolicy.planParts(listOf("不语音哈 打字可以")))
     }
 
     @Test
