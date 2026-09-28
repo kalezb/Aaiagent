@@ -12,8 +12,8 @@ android {
         applicationId = "com.aaiagent"
         minSdk = 26
         targetSdk = 34
-        versionName = "20260928-223058"
-        versionCode = 928223058
+        versionName = "20260928-230121"
+        versionCode = 928230121
     }
 
     buildTypes {
