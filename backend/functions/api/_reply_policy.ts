@@ -171,8 +171,10 @@ export function isExplicitBusinessIntent(value) {
   return explicit || deviceIntent;
 }
 
-const BUSINESS_DRIFT_PATTERN = /(?:手机|旧机|新机|二手机|设备|回收|上门|报价|型号|机型|自用|出手|出不出|准备出|换机|闲置|能收|验机|iphone|苹果|华为|小米|荣耀|oppo|vivo|三星|一加|红米|魅族|真我|\d{1,2}\s*(?:pro|max|plus|ultra))/iu;
-const BUSINESS_DRIFT_TAIL = /(?:[。!?！？]|\s)(?:你|那|对了)?[^，,。!?！？\n|]{0,20}(?:手机|旧机|新机|二手机|回收|上门|报价|型号|机型|闲置|iphone|苹果|华为|小米|荣耀|oppo|vivo|三星|一加|红米|魅族|真我|\d{1,2}\s*(?:pro|max|plus|ultra))[^，,。!?！？\n|]{0,24}(?:自用|出手|出不出|准备出|卖|收|换机|处理|报价|价格|多少钱|型号|用啥)[^，,。!?！？\n|]*/giu;
+const BUSINESS_DEVICE = "(?:手机|旧机|新机|二手机|设备|iphone|苹果|华为|小米|荣耀|oppo|vivo|三星|一加|红米|魅族|真我|\\d{1,2}\\s*(?:pro|max|plus|ultra))";
+const BUSINESS_ACTION = "(?:回收|上门(?:收|取)|报价|验机|出手|出不出|准备出|卖|收|换机|处理|价格|多少钱|型号|机型|自用|闲置|能收)";
+const BUSINESS_DRIFT_PATTERN = new RegExp(`(?:${BUSINESS_DEVICE}[^，,。!?！？\\n|]{0,20}${BUSINESS_ACTION}|${BUSINESS_ACTION}[^，,。!?！？\\n|]{0,20}${BUSINESS_DEVICE})`, "iu");
+const BUSINESS_DRIFT_TAIL = new RegExp(`(?:[。!?！？]|\\s)(?:你|那|对了)?[^，,。!?！？\\n|]{0,20}${BUSINESS_DEVICE}[^，,。!?！？\\n|]{0,24}${BUSINESS_ACTION}[^，,。!?！？\\n|]*`, "giu");
 
 export function sanitizeBusinessTopicDrift(value, incomingText) {
   const reply = String(value || "").trim();

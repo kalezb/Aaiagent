@@ -569,6 +569,21 @@ describe("chat logic", () => {
     )).toBe("你那16pro到底是自用还是想出嘛");
   });
 
+  it("keeps ordinary phone mentions while removing explicit business hooks", () => {
+    expect(sanitizeBusinessTopicDrift(
+      "你也可以带着手机去吧",
+      "你也可以带着手机去吧",
+    )).toBe("你也可以带着手机去吧");
+    expect(sanitizeBusinessTopicDrift(
+      "这个手机镜头拍得挺清爽",
+      "刚扔了张照片过来",
+    )).toBe("这个手机镜头拍得挺清爽");
+    expect(sanitizeBusinessTopicDrift(
+      "现在这行情能稳住就不错了 你那16pro到底是自用还是想出嘛",
+      "打的太严了 好多事都不能做",
+    )).toBe("现在这行情能稳住就不错了");
+  });
+
   it("uses the exact relationship stage guidance", async () => {
     const now = Math.floor(Date.now() / 1000);
     const historyRows = (total: number, recentUserMessages: number) => Array.from({ length: total }, (_, index) => ({
