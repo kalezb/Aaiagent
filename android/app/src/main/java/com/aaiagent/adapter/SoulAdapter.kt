@@ -48,7 +48,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     /** readMessages 把待识别表情和消息索引绑定，避免混入其他消息后错位。 */
     private val pendingStickers = mutableListOf<PendingSticker>()
-    private var pendingQuickMenuItems = emptyList<StickerMatcher.QuickMenuItem>()
 
     override fun isInChat(root: AccessibilityNodeInfo): Boolean {
         return root.packageName?.toString() == packageName &&
@@ -117,7 +116,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val timestampTracker = SoulMessageTime.ContextTracker()
         val locatedMessages = mutableListOf<LocatedMessage>()
         pendingStickers.clear()
-        pendingQuickMenuItems = readQuickMenuItems(root)
 
         for (item in messageItems) {
             if (!item.isVisibleToUser) continue
@@ -282,36 +280,49 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
      * 返回替换后的 messages 副本。
      */
     suspend fun recognizePendingStickers(
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
+        expectedLatestPreview: String = ""
     ): StickerRecognitionResult {
         if (pendingStickers.isEmpty()) return StickerRecognitionResult(messages)
         val result = messages.toMutableList()
+        val previewLabel = SoulInteractionPreview.resolve(expectedLatestPreview)
         val validPending = pendingStickers.filter { pending ->
             val index = pending.messageIndex
             index in messages.indices && messages[index].type == SoulInteractionMessage.TYPE
         }
-        val match = StickerMatcher.matchAllDetailed(
-            service = service,
-            boundsList = validPending.map { it.rect },
-            quickMenuItems = pendingQuickMenuItems
-        )
         val unresolved = mutableSetOf<Int>()
-        validPending.forEachIndexed { index, pending ->
-            val name = match.names.getOrNull(index)
-            val quickMenuLabel = match.quickMenuLabels.getOrNull(index)
-            val modelText = when {
-                !name.isNullOrBlank() -> StickerMatcher.modelTextFor(name)
-                !quickMenuLabel.isNullOrBlank() -> StickerMatcher.quickMenuTextFor(quickMenuLabel)
-                else -> null
+        val remainingPending = mutableListOf<PendingSticker>()
+
+        validPending.forEach { pending ->
+            val isLatestIncoming = pending.messageIndex == messages.lastIndex &&
+                messages[pending.messageIndex].sender == "other"
+            if (isLatestIncoming && !previewLabel.isNullOrBlank()) {
+                result[pending.messageIndex] = result[pending.messageIndex].copy(
+                    content = SoulInteractionPreview.modelTextFor(previewLabel),
+                    type = "text"
+                )
+            } else {
+                remainingPending.add(pending)
             }
-            if (modelText.isNullOrBlank()) {
-                unresolved.add(pending.messageIndex)
-                return@forEachIndexed
-            }
-            result[pending.messageIndex] = result[pending.messageIndex].copy(
-                content = modelText,
-                type = "text"
+        }
+
+        if (remainingPending.isNotEmpty()) {
+            val match = StickerMatcher.matchAllDetailed(
+                service = service,
+                boundsList = remainingPending.map { it.rect }
             )
+            remainingPending.forEachIndexed { index, pending ->
+                val name = match.names.getOrNull(index)
+                val modelText = StickerMatcher.modelTextFor(name.orEmpty())
+                if (modelText.isNullOrBlank()) {
+                    unresolved.add(pending.messageIndex)
+                } else {
+                    result[pending.messageIndex] = result[pending.messageIndex].copy(
+                        content = modelText,
+                        type = "text"
+                    )
+                }
+            }
         }
         return StickerRecognitionResult(
             messages = result,
@@ -1490,26 +1501,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             content = readChildText(cardRoot, "content"),
             forwardedByOther = forwardedByOther
         )
-    }
-
-    private fun readQuickMenuItems(root: AccessibilityNodeInfo): List<StickerMatcher.QuickMenuItem> {
-        return root.findAccessibilityNodeInfosByViewId(prefix + "cl_menu_item")
-            .asSequence()
-            .filter(::isVisibleOnScreen)
-            .mapNotNull { item ->
-                val label = item.findAccessibilityNodeInfosByViewId(prefix + "tv_menu_text")
-                    .mapNotNull { it.text?.toString()?.trim() }
-                    .firstOrNull { it.isNotEmpty() && it.length <= 16 }
-                    ?: return@mapNotNull null
-                val icon = item.findAccessibilityNodeInfosByViewId(prefix + "iv_menu_icon")
-                    .firstOrNull(::isVisibleOnScreen)
-                    ?: return@mapNotNull null
-                val bounds = Rect()
-                icon.getBoundsInScreen(bounds)
-                if (bounds.width() <= 0 || bounds.height() <= 0) null
-                else StickerMatcher.QuickMenuItem(label = label, iconBounds = bounds)
-            }
-            .toList()
     }
 
     private fun readChildText(parent: AccessibilityNodeInfo, viewId: String): String? {

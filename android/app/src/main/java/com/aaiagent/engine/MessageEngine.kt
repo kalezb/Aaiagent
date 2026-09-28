@@ -242,7 +242,14 @@ class MessageEngine(
             return true
         }
 
-        processVerifiedChat(adapter, verifiedChat, info.contactId, info.contactName, leaseToken)
+        processVerifiedChat(
+            adapter = adapter,
+            chatRoot = verifiedChat,
+            contactId = info.contactId,
+            contactName = info.contactName,
+            leaseToken = leaseToken,
+            latestListPreview = info.preview
+        )
         markHandled(info.contactId)
         return true
     }
@@ -385,7 +392,14 @@ class MessageEngine(
         val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: return false
         RuntimeJournal.clickConversation(conversation.contactName, true)
         val chatRoot = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: return true
-        processVerifiedChat(adapter, chatRoot, conversation.contactId, conversation.contactName, leaseToken)
+        processVerifiedChat(
+            adapter = adapter,
+            chatRoot = chatRoot,
+            contactId = conversation.contactId,
+            contactName = conversation.contactName,
+            leaseToken = leaseToken,
+            latestListPreview = conversation.preview
+        )
         return true
     }
 
@@ -407,7 +421,8 @@ class MessageEngine(
         chatRoot: AccessibilityNodeInfo,
         contactId: String,
         contactName: String,
-        leaseToken: String
+        leaseToken: String,
+        latestListPreview: String = ""
     ) {
         automationOwnedChatKey = conversationKey(contactId)
         if (!isContactAllowed(contactName, contactId)) {
@@ -426,7 +441,7 @@ class MessageEngine(
         }
 
         try {
-            processConversation(adapter, context, chatRoot, leaseToken)
+            processConversation(adapter, context, chatRoot, leaseToken, latestListPreview)
         } finally {
             activeContext = null
         }
@@ -500,7 +515,8 @@ class MessageEngine(
         adapter: PlatformAdapter,
         context: ConversationContext,
         chatRoot: AccessibilityNodeInfo,
-        leaseToken: String
+        leaseToken: String,
+        latestListPreview: String = ""
     ) {
         val interactionEpoch = GestureMonitor.interactionEpoch()
         val conversationStartedAt = System.currentTimeMillis()
@@ -512,7 +528,10 @@ class MessageEngine(
             var messages = readMessagesWithRetry(adapter, root, context.contactName, leaseToken)
             // Soul 互动表情本地识别
             if (adapter is com.aaiagent.adapter.SoulAdapter) {
-                val recognition = adapter.recognizePendingStickers(messages)
+                val recognition = adapter.recognizePendingStickers(
+                    messages = messages,
+                    expectedLatestPreview = latestListPreview
+                )
                 messages = recognition.messages
             }
             if (messages.isEmpty()) {
