@@ -49,14 +49,27 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     override fun readChatTitle(root: AccessibilityNodeInfo): String? {
-        val titles = root.findAccessibilityNodeInfosByViewId(prefix + "tv_title")
-        for (node in titles) {
-            val text = node.text?.toString()?.trim()
-            if (!text.isNullOrEmpty() && node.isVisibleToUser) {
-                return ChatTitlePolicy.sanitize(text)
+        val candidates = root.findAccessibilityNodeInfosByViewId(prefix + "tv_title")
+            .mapNotNull { node ->
+                val text = node.text?.toString()?.trim().orEmpty()
+                if (text.isEmpty() || !node.isVisibleToUser) return@mapNotNull null
+
+                val bounds = Rect()
+                node.getBoundsInScreen(bounds)
+                if (bounds.width() <= 0 || bounds.height() <= 0) return@mapNotNull null
+
+                SoulChatTitleCandidate(
+                    text = text,
+                    top = bounds.top,
+                    insideTopBar = findAncestorByViewId(node, "c_ct_chat_title_info") != null,
+                    insideCardDescription = findAncestorByViewId(node, "cardDescContainer") != null
+                )
             }
-        }
-        return null
+        val title = SoulChatTitlePolicy.choose(
+            candidates = candidates,
+            screenHeight = service.resources.displayMetrics.heightPixels
+        ) ?: return null
+        return ChatTitlePolicy.sanitize(title)
     }
 
     override fun isInMessageList(root: AccessibilityNodeInfo): Boolean {
