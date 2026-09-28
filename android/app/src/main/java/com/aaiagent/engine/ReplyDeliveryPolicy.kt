@@ -168,4 +168,8 @@ object ReplyDeliveryPolicy {
     fun incomingChanged(expectedFingerprint: String, currentFingerprint: String): Boolean {
         return !IncomingConversationTracker.isCompatible(expectedFingerprint, currentFingerprint)
     }
+
+    fun effectiveFingerprint(recomputedFingerprint: String?, originalFingerprint: String): String {
+        return recomputedFingerprint?.takeIf(String::isNotBlank) ?: originalFingerprint
+    }
 }

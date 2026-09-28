@@ -92,6 +92,13 @@ class ReplyDeliveryPolicyTest {
     }
 
     @Test
+    fun `recomputed reply fingerprints replace the stale original`() {
+        assertEquals("fresh", ReplyDeliveryPolicy.effectiveFingerprint("fresh", "old"))
+        assertEquals("old", ReplyDeliveryPolicy.effectiveFingerprint(null, "old"))
+        assertEquals("old", ReplyDeliveryPolicy.effectiveFingerprint("", "old"))
+    }
+
+    @Test
     fun `follow-up bubbles use short fast typing delays`() {
         assertEquals(200L, ReplyDeliveryPolicy.delayAfterPart("短句", 0.0))
         assertEquals(500L, ReplyDeliveryPolicy.delayAfterPart("短句", 1.0))

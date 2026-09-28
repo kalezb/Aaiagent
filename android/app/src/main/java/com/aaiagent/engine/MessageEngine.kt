@@ -47,7 +47,9 @@ enum class HostingMode {
 
 private data class ReplySuggestion(
     val content: String,
-    val replyId: String?
+    val replyId: String?,
+    val deliveryFingerprint: String? = null,
+    val incomingBatchFingerprint: String? = null
 )
 
 class MessageEngine(
@@ -722,7 +724,9 @@ class MessageEngine(
                     api = api,
                     token = token,
                     leaseToken = leaseToken,
-                    interactionEpoch = interactionEpoch
+                    interactionEpoch = interactionEpoch,
+                    initialDeliveryFingerprint = deliveryFingerprint,
+                    initialIncomingBatchFingerprint = incomingBatchFingerprint
                 ) ?: return
             }
 
@@ -730,19 +734,27 @@ class MessageEngine(
             when (HostingCompletionPolicy.replyAction(hostingMode)) {
                 HostingReplyAction.SEND -> {
                     state = EngineState.AboutToSend
+                    val sendDeliveryFingerprint = ReplyDeliveryPolicy.effectiveFingerprint(
+                        reply.deliveryFingerprint,
+                        deliveryFingerprint
+                    )
+                    val sendIncomingBatchFingerprint = ReplyDeliveryPolicy.effectiveFingerprint(
+                        reply.incomingBatchFingerprint,
+                        incomingBatchFingerprint
+                    )
                     val delivery = sendReply(
                         adapter = adapter,
                         context = context,
                         reply = reply.content,
                         replyId = reply.replyId,
-                        incomingBatchFingerprint = incomingBatchFingerprint,
-                        deliveryFingerprint = deliveryFingerprint,
+                        incomingBatchFingerprint = sendIncomingBatchFingerprint,
+                        deliveryFingerprint = sendDeliveryFingerprint,
                         leaseToken = leaseToken,
                         interactionEpoch = interactionEpoch
                     )
                     if (delivery.isComplete && delivery.confirmed) {
                         synchronized(context) {
-                            context.lastRepliedIncomingFingerprint = incomingBatchFingerprint
+                            context.lastRepliedIncomingFingerprint = sendIncomingBatchFingerprint
                         }
                         clearPendingReply(context)
                         if (HostingCompletionPolicy.shouldReturnToMessageList(
@@ -976,12 +988,16 @@ class MessageEngine(
         api: ApiService,
         token: String,
         leaseToken: String,
-        interactionEpoch: Long
+        interactionEpoch: Long,
+        initialDeliveryFingerprint: String,
+        initialIncomingBatchFingerprint: String
     ): ReplySuggestion? {
         state = EngineState.WaitingLLM
         val requestStartedAt = System.currentTimeMillis()
         val location = withContext(Dispatchers.IO) { repository.getLocation() }
         var requestMessages = messages
+        var latestDeliveryFingerprint = initialDeliveryFingerprint
+        var latestIncomingBatchFingerprint = initialIncomingBatchFingerprint
         var conversationTimeline = UnansweredTimeline.build(
             IncomingMessageBatch.select(requestMessages)?.incoming ?: requestMessages
         )
@@ -1057,7 +1073,12 @@ class MessageEngine(
                         "AIA",
                         "chat_timing stage=llm elapsed=${System.currentTimeMillis() - requestStartedAt} replyId=${response.replyId.orEmpty()}"
                     )
-                    return ReplySuggestion(response.reply.trim(), response.replyId)
+                    return ReplySuggestion(
+                        content = response.reply.trim(),
+                        replyId = response.replyId,
+                        deliveryFingerprint = latestDeliveryFingerprint,
+                        incomingBatchFingerprint = latestIncomingBatchFingerprint
+                    )
                 }
                 ReplyFreshnessDecision.ABORT_STALE -> {
                     android.util.Log.d("AIA", "discard stale reply and wait for newest messages")
@@ -1069,8 +1090,12 @@ class MessageEngine(
                     val freshRoot = service?.rootInActiveWindow ?: return null
                     if (!verifyCurrentChat(adapter, context.contactName)) return null
                     val freshMessages = adapter.readMessages(freshRoot)
-                    val freshIncoming = IncomingMessageBatch.select(freshMessages)?.incoming
-                    if (!freshIncoming.isNullOrEmpty()) requestMessages = freshIncoming
+                    val freshBatch = IncomingMessageBatch.select(freshMessages)
+                    if (freshBatch != null) {
+                        requestMessages = freshBatch.incoming
+                        latestDeliveryFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(freshMessages)
+                        latestIncomingBatchFingerprint = IncomingMessageBatch.fingerprint(freshBatch)
+                    }
                     delay(250)
                 }
             }
