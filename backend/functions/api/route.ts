@@ -1039,7 +1039,24 @@ function mergeMemorySummary(existingSummary, messages, maxChars = 800) {
   return merged.length <= maxChars ? merged : merged.slice(merged.length - maxChars);
 }
 
+function dedupeNearbyHistory(messages) {
+  const result = [];
+  for (const message of messages || []) {
+    const previous = result[result.length - 1];
+    const sameSpeaker = previous &&
+      String(previous.role || "user") === String(message.role || "user") &&
+      String(previous.platform || "") === String(message.platform || "") &&
+      String(previous.contact_id || "") === String(message.contact_id || "");
+    const sameContent = previous && String(previous.content || "").trim() === String(message.content || "").trim();
+    const nearby = previous && Math.abs(Number(previous.created_at || 0) - Number(message.created_at || 0)) <= 10;
+    if (sameSpeaker && sameContent && nearby) continue;
+    result.push(message);
+  }
+  return result;
+}
+
 function dedupeHistoryAgainstCurrent(historyMessages, currentMessages) {
+  historyMessages = dedupeNearbyHistory(historyMessages);
   const remaining = new Map();
   for (const message of currentMessages || []) {
     const key = String(message.role || "user") + "\u0000" + String(message.content || "").trim();

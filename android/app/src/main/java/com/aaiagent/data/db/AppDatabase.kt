@@ -10,12 +10,14 @@ import com.aaiagent.data.db.dao.ConfigDao
 import com.aaiagent.data.db.dao.ConversationSyncStateDao
 import com.aaiagent.data.db.dao.MessageCacheDao
 import com.aaiagent.data.db.dao.MessageSyncOutboxDao
+import com.aaiagent.data.db.dao.PendingReplyConfirmationDao
 import com.aaiagent.data.db.dao.TokenDao
 import com.aaiagent.data.db.dao.UserLocationDao
 import com.aaiagent.data.db.entity.ConfigEntity
 import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.db.entity.MessageCacheEntity
 import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
+import com.aaiagent.data.db.entity.PendingReplyConfirmationEntity
 import com.aaiagent.data.db.entity.TokenEntity
 import com.aaiagent.data.db.entity.UserLocationEntity
 
@@ -26,9 +28,10 @@ import com.aaiagent.data.db.entity.UserLocationEntity
         MessageCacheEntity::class,
         ConversationSyncStateEntity::class,
         MessageSyncOutboxEntity::class,
-        UserLocationEntity::class
+        PendingReplyConfirmationEntity::class,
+        UserLocationEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -37,6 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun messageCacheDao(): MessageCacheDao
     abstract fun conversationSyncStateDao(): ConversationSyncStateDao
     abstract fun messageSyncOutboxDao(): MessageSyncOutboxDao
+    abstract fun pendingReplyConfirmationDao(): PendingReplyConfirmationDao
     abstract fun userLocationDao(): UserLocationDao
 
     companion object {
@@ -100,6 +104,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `pending_reply_confirmations` (
+                        `replyId` TEXT NOT NULL,
+                        `token` TEXT NOT NULL,
+                        `sentContent` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `attempts` INTEGER NOT NULL,
+                        `nextAttemptAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`replyId`)
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_pending_reply_confirmations_nextAttemptAt_createdAt` " +
+                        "ON `pending_reply_confirmations` (`nextAttemptAt`, `createdAt`)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -107,7 +133,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "aaiagent.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }

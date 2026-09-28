@@ -24,6 +24,10 @@ object HostingCompletionPolicy {
         return mode != HostingMode.MONITOR_ONLY
     }
 
+    fun shouldRevisitRecentContact(mode: HostingMode): Boolean {
+        return mode == HostingMode.FULL_AUTO
+    }
+
     fun shouldLeaveAfterRead(mode: HostingMode): Boolean {
         return mode == HostingMode.FULL_AUTO
     }

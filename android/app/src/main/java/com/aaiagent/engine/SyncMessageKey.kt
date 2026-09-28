@@ -6,9 +6,11 @@ object SyncMessageKey {
         contactId: String,
         role: String,
         content: String,
-        sequence: Long
+        sequence: Long,
+        createdAt: Long? = null,
     ): String {
-        val fingerprint = listOf(role, content.trim(), sequence).joinToString("\u001f")
+        val timeAnchor = createdAt?.takeIf { it > 0L }?.toString() ?: "sequence:$sequence"
+        val fingerprint = listOf(role, content.trim(), timeAnchor).joinToString("\u001f")
         return "sync:${platform.trim()}:${contactId.trim()}:${fnv1a(fingerprint)}".take(220)
     }
 

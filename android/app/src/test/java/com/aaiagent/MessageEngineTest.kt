@@ -63,6 +63,9 @@ class MessageEngineTest {
         assertTrue(HostingCompletionPolicy.canPerformScreenActions(HostingMode.FULL_AUTO))
         assertTrue(HostingCompletionPolicy.canPerformScreenActions(HostingMode.SEMI_AUTO))
         assertFalse(HostingCompletionPolicy.canPerformScreenActions(HostingMode.MONITOR_ONLY))
+        assertTrue(HostingCompletionPolicy.shouldRevisitRecentContact(HostingMode.FULL_AUTO))
+        assertFalse(HostingCompletionPolicy.shouldRevisitRecentContact(HostingMode.SEMI_AUTO))
+        assertFalse(HostingCompletionPolicy.shouldRevisitRecentContact(HostingMode.MONITOR_ONLY))
     }
 
     @Test
@@ -195,6 +198,14 @@ class MessageEngineTest {
         assertEquals(first, SyncMessageKey.build("soul", "contact-1", "user", "hello", 0))
         assertTrue(first.startsWith("sync:soul:contact-1:"))
         assertFalse(first == SyncMessageKey.build("soul", "contact-1", "user", "hello", 1))
+        assertEquals(
+            SyncMessageKey.build("soul", "contact-1", "user", "hello", 0, 1_700_000_000L),
+            SyncMessageKey.build("soul", "contact-1", "user", "hello", 8, 1_700_000_000L),
+        )
+        assertFalse(
+            SyncMessageKey.build("soul", "contact-1", "user", "hello", 0, 1_700_000_000L) ==
+                SyncMessageKey.build("soul", "contact-1", "user", "hello", 0, 1_700_000_001L)
+        )
     }
 
     @Test

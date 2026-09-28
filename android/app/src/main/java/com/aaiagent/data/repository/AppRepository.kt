@@ -6,6 +6,7 @@ import com.aaiagent.data.db.entity.ConfigEntity
 import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.db.entity.MessageCacheEntity
 import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
+import com.aaiagent.data.db.entity.PendingReplyConfirmationEntity
 import com.aaiagent.data.db.entity.TokenEntity
 import com.aaiagent.data.db.entity.UserLocationEntity
 
@@ -124,6 +125,22 @@ class AppRepository(private val db: AppDatabase) {
     }
 
     suspend fun syncOutboxCount(): Int = db.messageSyncOutboxDao().count()
+
+    suspend fun enqueueReplyConfirmation(item: PendingReplyConfirmationEntity) {
+        db.pendingReplyConfirmationDao().insert(item)
+    }
+
+    suspend fun pendingReplyConfirmations(now: Long, limit: Int = 50): List<PendingReplyConfirmationEntity> {
+        return db.pendingReplyConfirmationDao().pending(now, limit)
+    }
+
+    suspend fun deleteReplyConfirmation(replyId: String) {
+        db.pendingReplyConfirmationDao().delete(replyId)
+    }
+
+    suspend fun markReplyConfirmationFailed(replyId: String, nextAttemptAt: Long) {
+        db.pendingReplyConfirmationDao().markFailed(replyId, nextAttemptAt)
+    }
 
     fun cleanOldCache() {
         val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L

@@ -401,6 +401,9 @@ describe("chat logic", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
     expect(payload.max_tokens).toBe(88);
+    expect(payload.messages[0].content).toContain("最新消息优先");
+    expect(payload.messages[0].content).toContain("事实边界");
+    expect(payload.messages[0].content).toContain("年龄、婚姻和家庭信息必须沿用");
     expect(payload.messages[0].content).toContain("【当前平台】soul。");
     expect(payload.messages[0].content).not.toContain("语气：");
     expect(payload.messages[0].content).not.toContain("偏文艺");
@@ -632,6 +635,42 @@ describe("chat logic", () => {
 
     const highVolumeStage2 = await promptFor(historyRows(25, 3));
     expect(highVolumeStage2).toContain("你们聊过几次了，可以自然一点，延续之前的话题。");
+  });
+
+  it("deduplicates nearby duplicate history before building model context", async () => {
+    const kv = new MockKV();
+    await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
+    const now = Math.floor(Date.now() / 1000);
+    const db = new MockD1([
+      { id: 1, token: "test-token", platform: "soul", contact_id: "contact-1", contact_name: "测试", role: "user", content: "重复消息", created_at: now - 2 },
+      { id: 2, token: "test-token", platform: "soul", contact_id: "contact-1", contact_name: "测试", role: "user", content: "重复消息", created_at: now - 1 },
+    ]);
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "在呢" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          platform: "soul",
+          contact_id: "contact-1",
+          contact_name: "测试",
+          messages: [{ role: "user", content: "最新问题" }],
+        }),
+      }),
+      env: { DB: db, KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    expect(response.status).toBe(200);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const historyMessages = JSON.parse(String(init.body)).messages.filter((message) => String(message.content).includes("重复消息"));
+    expect(historyMessages).toHaveLength(1);
   });
 
   it("uses a compact profile and only ten recent unique history messages", async () => {
