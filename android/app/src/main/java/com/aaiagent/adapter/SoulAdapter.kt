@@ -234,12 +234,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                             type = finalType,
                             timestampText = timestamp.text,
                             timestampMillis = timestamp.epochMillis,
-                            identityKey = stableMessageKey(
+                            identityKey = SoulMessageIdentity.key(
                                 sender = sender,
                                 type = finalType,
+                                content = content,
                                 timestampText = timestamp.text,
-                                timestampMillis = timestamp.epochMillis,
-                                fallbackTop = itemBounds.top
+                                timestampMillis = timestamp.epochMillis
                             )
                         ),
                         stickerRect = stickerRect
@@ -262,19 +262,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 located.stickerRect?.let { pendingStickers.add(PendingSticker(index, it)) }
             }
         return messages
-    }
-
-    private fun stableMessageKey(
-        sender: String,
-        type: String,
-        timestampText: String,
-        timestampMillis: Long?,
-        fallbackTop: Int
-    ): String {
-        val timeAnchor = timestampMillis?.toString()
-            ?: timestampText.trim().takeIf(String::isNotEmpty)?.let { "text:$it" }
-            ?: "top:$fallbackTop"
-        return listOf("soul", sender, type, timeAnchor).joinToString(":")
     }
 
     override suspend fun transcribeIncomingVoices(
@@ -702,12 +689,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                         ChatMessage(
                             sender = sender,
                             content = text,
-                            identityKey = stableMessageKey(
+                            identityKey = SoulMessageIdentity.key(
                                 sender = sender,
                                 type = "text",
+                                content = text,
                                 timestampText = "",
-                                timestampMillis = null,
-                                fallbackTop = rect.top
+                                timestampMillis = null
                             )
                         )
                     )
@@ -1525,12 +1512,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                         sender = "other",
                         content = modelText,
                         type = "text",
-                        identityKey = stableMessageKey(
+                        identityKey = SoulMessageIdentity.key(
                             sender = "other",
                             type = "system_interaction",
+                            content = modelText,
                             timestampText = "",
-                            timestampMillis = null,
-                            fallbackTop = rect.top
+                            timestampMillis = null
                         )
                     )
                 )

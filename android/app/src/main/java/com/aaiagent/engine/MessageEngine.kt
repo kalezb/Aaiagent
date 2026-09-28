@@ -35,7 +35,6 @@ sealed class EngineState {
     object WaitingLLM : EngineState()
     object AboutToSend : EngineState()
     object Sending : EngineState()
-    object UserInChatRoom : EngineState()
     object Paused : EngineState()
     object Error : EngineState()
 }
@@ -198,11 +197,6 @@ class MessageEngine(
         if (activeRoot?.packageName?.toString() == adapter.packageName && adapter.isInChat(activeRoot)) {
             val title = adapter.readChatTitle(activeRoot)
             if (!title.isNullOrBlank()) {
-                val ownedKey = automationOwnedChatKey
-                if (!HostingCompletionPolicy.ownsAutomatedChat(ownedKey, conversationKey(title))) {
-                    state = EngineState.UserInChatRoom
-                    return false
-                }
                 if (isContactAllowed(title, title)) {
                     markHandled(title)
                     processVerifiedChat(adapter, activeRoot, title, title, leaseToken)
@@ -210,7 +204,7 @@ class MessageEngine(
                     markHandled(title)
                     returnToMessageList(adapter, leaseToken, "contact filtered")
                 }
-                return true
+                return false
             }
         }
 
@@ -593,6 +587,10 @@ class MessageEngine(
                 if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "no unanswered incoming message")
                 return
             }
+            android.util.Log.d(
+                "AIA",
+                "last bubble is incoming; processing reply content=${lastMessage.content.take(30)}"
+            )
             val incomingBatch = IncomingMessageBatch.select(messages) ?: return
             val latestIncoming = incomingBatch.latestIncoming
             android.util.Log.d(
@@ -601,12 +599,13 @@ class MessageEngine(
             )
             RuntimeJournal.readMessages(messages.size, latestIncoming.content)
             val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
-            if (IncomingConversationTracker.isAlreadyHandled(
-                handledFingerprint = context.lastRepliedIncomingFingerprint,
-                currentFingerprint = incomingBatchFingerprint
-            )) {
-                android.util.Log.d("AIA", "conversation already handled, skip duplicate reply")
-                returnToMessageList(adapter, leaseToken, "duplicate batch")
+            if (hostingMode == HostingMode.SEMI_AUTO &&
+                IncomingConversationTracker.isAlreadyHandled(
+                    handledFingerprint = context.lastRepliedIncomingFingerprint,
+                    currentFingerprint = incomingBatchFingerprint
+                )
+            ) {
+                android.util.Log.d("AIA", "semi-auto reply already filled, skip duplicate generation")
                 return
             }
             synchronized(context) {
