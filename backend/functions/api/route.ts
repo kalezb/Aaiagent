@@ -7,6 +7,7 @@ import {
   replyGenerationSettings,
   resolveContactRequestPolicy,
   sanitizeContactDisclosure,
+  sanitizeBusinessTopicDrift,
   sanitizeNewContactBusinessReply,
 } from "./_reply_policy";
 
@@ -1848,7 +1849,9 @@ export const onRequest = async (context) => {
       const rawReply = data.choices?.[0]?.message?.content?.trim() || "\u6069\u6069\uff0c\u597d\u7684\u3002";
       const cleanedReply = sanitizeAssistantReply(rawReply);
       const staleSafeReply = sanitizeStaleAssistantReply(cleanedReply, messageDelay) || "\u6069\u6069\uff0c\u597d\u7684\u3002";
-      const reply = sanitizeNewContactBusinessReply(staleSafeReply, stage, latestIncomingText(messages));
+      const incomingText = latestIncomingText(messages);
+      const topicSafeReply = sanitizeBusinessTopicDrift(staleSafeReply, incomingText);
+      const reply = sanitizeNewContactBusinessReply(topicSafeReply, stage, incomingText);
       const safeReply = sanitizeContactDisclosure(reply, { allowed: contactPolicy.allowed, contactQq: contactPolicy.contactQq });
       const nowSec = Math.floor(Date.now() / 1000);
 

@@ -52,4 +52,15 @@ class UnansweredTimelineTest {
 
         assertTrue(UnansweredTimeline.build(messages)!!.contains("同一轮未回复消息"))
     }
+
+    @Test
+    fun `incoming farewell is clearly marked as the other person's action`() {
+        val messages = listOf(
+            ChatMessage("other", "我先去处理点事", "text", "今天 10:00"),
+            ChatMessage("other", "洗澡去了 回聊", "text", "今天 10:03")
+        )
+
+        val timeline = UnansweredTimeline.build(messages)!!
+        assertTrue(timeline.contains("对方暂离：洗澡去了 回聊"))
+    }
 }

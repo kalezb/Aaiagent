@@ -63,6 +63,7 @@ class MessageEngine(
     private var hostingJob: Job? = null
     private var lastBackendTaskPollAt: Long = 0L
     private var lastSyncFlushAt: Long = 0L
+    private val contactSyncTimes = mutableMapOf<String, Long>()
 
     @Volatile
     var state: EngineState = EngineState.Idle
@@ -628,6 +629,34 @@ class MessageEngine(
             )
             RuntimeJournal.readMessages(messages.size, latestIncoming.content)
             val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
+            val ignoredIncomingFingerprint = synchronized(context) {
+                context.lastIgnoredIncomingFingerprint
+            }
+            if (IncomingConversationTracker.isAlreadyHandled(
+                    handledFingerprint = ignoredIncomingFingerprint,
+                    currentFingerprint = incomingBatchFingerprint
+                )
+            ) {
+                android.util.Log.d("AIA", "incoming farewell already handled, skip duplicate generation")
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) {
+                    returnToMessageList(adapter, leaseToken, "incoming farewell already handled")
+                }
+                return
+            }
+            if (TemporaryLeavePolicy.shouldWaitForNextIncoming(latestIncoming.content)) {
+                val reason = TemporaryLeavePolicy.detect(latestIncoming.content)?.reason ?: "对方暂离"
+                synchronized(context) {
+                    context.lastIgnoredIncomingFingerprint = incomingBatchFingerprint
+                }
+                RuntimeJournal.recovery(
+                    "客户暂离，等新消息再回复 contact=${context.contactName.ifBlank { context.contactId }} reason=$reason"
+                )
+                android.util.Log.d("AIA", "incoming farewell detected reason=$reason, wait for next incoming")
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) {
+                    returnToMessageList(adapter, leaseToken, "incoming farewell")
+                }
+                return
+            }
             if (hostingMode == HostingMode.SEMI_AUTO &&
                 IncomingConversationTracker.isAlreadyHandled(
                     handledFingerprint = context.lastRepliedIncomingFingerprint,
@@ -959,11 +988,7 @@ class MessageEngine(
         var recalcCount = 0
         var requestId = UUID.randomUUID().toString()
 
-        runCatching {
-            api.registerContact(token, currentPlatform, context.contactId, context.contactName)
-        }
-            .onSuccess { android.util.Log.d("AIA", "contact sync result=$it") }
-            .onFailure { android.util.Log.w("AIA", "contact sync failed: ${it.message}", it) }
+        scheduleContactSync(api, token, context.contactId, context.contactName)
 
         repeat(MAX_LLM_RETRIES) {
             if (!canContinue(leaseToken, interactionEpoch)) return null
@@ -1271,6 +1296,28 @@ class MessageEngine(
     }
 
     private fun conversationKey(contactId: String): String = "$currentPlatform:$contactId"
+
+    private fun scheduleContactSync(
+        api: ApiService,
+        token: String,
+        contactId: String,
+        contactName: String
+    ) {
+        val key = conversationKey(contactId)
+        val now = System.currentTimeMillis()
+        synchronized(contactSyncTimes) {
+            val lastSyncedAt = contactSyncTimes[key] ?: 0L
+            if (now - lastSyncedAt < CONTACT_SYNC_THROTTLE_MS) return
+            contactSyncTimes[key] = now
+        }
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                api.registerContact(token, currentPlatform, contactId, contactName)
+            }
+                .onSuccess { android.util.Log.d("AIA", "contact sync result=$it contact=$contactName") }
+                .onFailure { android.util.Log.w("AIA", "contact sync failed: ${it.message}", it) }
+        }
+    }
 
     private suspend fun isContactCoolingDown(contactName: String?, contactId: String?): Boolean {
         val keys = listOf(contactId, contactName)
@@ -1583,5 +1630,6 @@ class MessageEngine(
         const val VISUAL_RETURN_RETRIES = 4
         const val MAX_LLM_RETRIES = 3
         const val STALE_REPLY_COOLDOWN_MS = 1_000L
+        const val CONTACT_SYNC_THROTTLE_MS = 5 * 60 * 1000L
     }
 }

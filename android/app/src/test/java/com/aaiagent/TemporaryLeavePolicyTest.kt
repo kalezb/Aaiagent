@@ -4,6 +4,8 @@ import com.aaiagent.engine.TemporaryLeavePolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TemporaryLeavePolicyTest {
@@ -44,5 +46,13 @@ class TemporaryLeavePolicyTest {
 
         assertEquals("稍后聊", decision?.reason)
         assertEquals(8 * 60_000L, decision?.durationMs)
+    }
+
+    @Test
+    fun `other person farewell waits for a new incoming message`() {
+        assertTrue(TemporaryLeavePolicy.shouldWaitForNextIncoming("洗澡去了 回聊"))
+        assertTrue(TemporaryLeavePolicy.shouldWaitForNextIncoming("我去忙了 晚点聊"))
+        assertFalse(TemporaryLeavePolicy.shouldWaitForNextIncoming("我刚洗完澡"))
+        assertFalse(TemporaryLeavePolicy.shouldWaitForNextIncoming("你几点去洗澡？"))
     }
 }

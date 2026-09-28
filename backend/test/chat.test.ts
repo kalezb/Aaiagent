@@ -9,6 +9,7 @@ import {
   isVoiceCallRequest,
   resolveContactRequestPolicy,
   sanitizeContactDisclosure,
+  sanitizeBusinessTopicDrift,
   sanitizeNewContactBusinessReply,
 } from "../functions/api/_reply_policy";
 
@@ -408,6 +409,7 @@ describe("chat logic", () => {
     expect(payload.messages[0].content).toContain("【新客边界】");
     expect(payload.messages[0].content).toContain("禁止主动提工作、手机、回收、旧设备")
     expect(payload.messages[0].content).toContain("“对方说”是客户说的，“你说”是你之前说的");
+    expect(payload.messages[0].content).toContain("客户说去洗澡、去忙、晚点聊或回聊，是客户暂离");
     expect(payload.messages[0].content).not.toContain("短句聊天风格");
     expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
     expect(payload.messages[0].content).toContain("你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。");
@@ -554,6 +556,17 @@ describe("chat logic", () => {
       1,
       "现在还收手机吗",
     )).toBe("新旧手机和老年机都能收");
+  });
+
+  it("does not resurface an old device sale question when the latest message is unrelated", () => {
+    expect(sanitizeBusinessTopicDrift(
+      "现在这行情，能稳住就不错了 你那16pro到底是自用还是想出嘛",
+      "打的太严了 好多事都不能做",
+    )).toBe("现在这行情，能稳住就不错了");
+    expect(sanitizeBusinessTopicDrift(
+      "你那16pro到底是自用还是想出嘛",
+      "16pro还出吗",
+    )).toBe("你那16pro到底是自用还是想出嘛");
   });
 
   it("uses the exact relationship stage guidance", async () => {

@@ -165,9 +165,28 @@ export function buildRelationshipBoundaryPrompt(stage, incomingText, historyMess
 
 export function isExplicitBusinessIntent(value) {
   const text = String(value || "").replace(/\s+/gu, "");
-  return /(?:还|现在).{0,8}收(?:手机|旧手机)?|收手机|收旧手机|回收|上门.{0,6}(?:收|取)|换机|旧手机|闲置设备|手机.{0,6}(?:卖|出|处理)|(?:咨询|问问).{0,8}(?:回收|收手机)/u.test(text);
+  const explicit = /(?:还|现在).{0,8}收(?:手机|旧手机)?|收手机|收旧手机|回收|上门.{0,6}(?:收|取)|换机|旧手机|闲置设备|手机.{0,6}(?:卖|出|处理)|(?:咨询|问问).{0,8}(?:回收|收手机)/u.test(text);
+  const deviceIntent = /(?:iphone|苹果|华为|小米|荣耀|oppo|vivo|三星|一加|红米|魅族|真我|\d{1,2}\s*(?:pro|max|plus|ultra))/iu.test(text) &&
+    /(?:出|收|卖|换|自用|处理|报价|价格|多少钱|型号|回收)/u.test(text);
+  return explicit || deviceIntent;
 }
 
+const BUSINESS_DRIFT_PATTERN = /(?:手机|旧机|新机|二手机|设备|回收|上门|报价|型号|机型|自用|出手|出不出|准备出|换机|闲置|能收|验机|iphone|苹果|华为|小米|荣耀|oppo|vivo|三星|一加|红米|魅族|真我|\d{1,2}\s*(?:pro|max|plus|ultra))/iu;
+const BUSINESS_DRIFT_TAIL = /(?:[。!?！？]|\s)(?:你|那|对了)?[^，,。!?！？\n|]{0,20}(?:手机|旧机|新机|二手机|回收|上门|报价|型号|机型|闲置|iphone|苹果|华为|小米|荣耀|oppo|vivo|三星|一加|红米|魅族|真我|\d{1,2}\s*(?:pro|max|plus|ultra))[^，,。!?！？\n|]{0,24}(?:自用|出手|出不出|准备出|卖|收|换机|处理|报价|价格|多少钱|型号|用啥)[^，,。!?！？\n|]*/giu;
+
+export function sanitizeBusinessTopicDrift(value, incomingText) {
+  const reply = String(value || "").trim();
+  if (!reply || isExplicitBusinessIntent(incomingText)) return reply;
+  const withoutOldDeviceHook = reply.replace(BUSINESS_DRIFT_TAIL, "");
+  const kept = withoutOldDeviceHook
+    .split(/\|\|\||\r?\n/u)
+    .map((part) => part.trim())
+    .filter((part) => part && !BUSINESS_DRIFT_PATTERN.test(part));
+  if (kept.length) return kept.join("|||");
+  return /(?:累|难|烦|压力|严|不能做|不容易|郁闷|心情不好)/u.test(String(incomingText || ""))
+    ? "嗯 听着确实挺累的"
+    : "嗯 我在听 你继续说";
+}
 const BUSINESS_LEAK_TERMS = /(?:手机回收|数码回收|旧手机|二手机|回收旧|回收手机|上门收|上门取|验机|报价|机型|型号|闲置设备|能收|收的)/u;
 
 export function sanitizeNewContactBusinessReply(value, relationStageLevel, incomingText) {
@@ -266,6 +285,7 @@ export function buildLayeredSystemPrompt({
     "【说话方式】像熟人微信聊天，优先短句，1到3句，能一句说清就一句。不要客服腔、AI腔、总结或说教，不要每条都反问。",
     "【角色】聊天记录里的“对方说”是客户说的，“你说”是你之前说的，不能弄混。时间戳只是上下文，不要写进回复。",
     "同一客户绑定多个平台账号时按同一个人连续记忆，记忆必须连续，不要说忘记别的平台聊过什么。",
+    "【角色-暂离】客户说去洗澡、去忙、晚点聊或回聊，是客户暂离，不是你刚洗完或刚忙完；等客户回来后的新消息再接，不要把双方状态倒过来写。",
     newContact ? "【新客边界】你们还不熟，禁止主动提工作、手机、回收、旧设备、上门、型号、报价或任何业务话题；只聊当前消息本身。只有对方明确聊到手机、换机或旧设备时才可以自然接一句。" : "",
   ];
 
@@ -298,6 +318,9 @@ export function buildLayeredSystemPrompt({
     scenarios.push("【直接问职业】直接回答你做二手手机和数码回收，平时线上沟通、合适就安排当地师傅上门。不要顺着立刻推销，也不要主动问对方有没有手机卖。");
   } else if (messageDelay?.messageType === "business") {
     scenarios.push("【主动聊到回收】先回答对方问的事。可以自然说新旧手机、坏手机、老年机都能收，但不要报价，不要催拍照片，不要马上索取型号。");
+  }
+  if (!isExplicitBusinessIntent(incoming)) {
+    scenarios.push("【话题锁定】最新消息没有明确聊手机、换机或回收。历史里的型号和出售问题只是背景，不要主动追问，也不要把它重新拉成当前话题。");
   }
 
   const relationshipPrompt = buildRelationshipBoundaryPrompt(relationStageLevel, incoming, historyMessages);

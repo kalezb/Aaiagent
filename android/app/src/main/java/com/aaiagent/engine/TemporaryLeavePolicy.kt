@@ -12,12 +12,37 @@ object TemporaryLeavePolicy {
         text: String,
         randomUnit: Double = Random.nextDouble()
     ): TemporaryLeaveDecision? {
-        val normalized = text
+        val normalized = normalize(text)
+        if (normalized.isEmpty() || isDirectQuestion(normalized)) return null
+        return detectNormalized(normalized, randomUnit)
+    }
+
+    /**
+     * A farewell from the other person means they are leaving the current chat.
+     * The agent should wait for a new incoming message instead of treating the
+     * customer's "去洗澡/去忙/回聊" as its own current activity.
+     */
+    fun shouldWaitForNextIncoming(text: String): Boolean {
+        val normalized = normalize(text)
+        if (normalized.isEmpty() || isDirectQuestion(normalized)) return false
+        return detectNormalized(normalized, randomUnit = 0.0) != null
+    }
+
+    private fun normalize(text: String): String {
+        return text
             .trim()
             .replace(Regex("\\s+"), "")
             .replace('，', ',')
-        if (normalized.isEmpty()) return null
+    }
 
+    private fun isDirectQuestion(text: String): Boolean {
+        return text.contains('?') || text.contains('？')
+    }
+
+    private fun detectNormalized(
+        normalized: String,
+        randomUnit: Double
+    ): TemporaryLeaveDecision? {
         val random = randomUnit.coerceIn(0.0, 1.0)
         return when {
             hasAny(normalized, WASH_FUTURE) ->
@@ -79,6 +104,6 @@ object TemporaryLeavePolicy {
     )
 
     private val GENERIC_DEFER = listOf(
-        "一会儿聊", "等会儿聊", "等会聊", "待会聊", "晚点聊", "回头聊", "稍后聊"
+        "一会儿聊", "等会儿聊", "等会聊", "待会聊", "晚点聊", "回头聊", "稍后聊", "回聊"
     )
 }

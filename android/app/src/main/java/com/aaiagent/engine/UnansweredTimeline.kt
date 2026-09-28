@@ -76,6 +76,7 @@ object UnansweredTimeline {
         ) {
             return "互动表情："
         }
+        if (TemporaryLeavePolicy.detect(message.content) != null) return "对方暂离："
         return when (message.type) {
             "interaction" -> "互动表情："
             "moment_card" -> "分享动态："
