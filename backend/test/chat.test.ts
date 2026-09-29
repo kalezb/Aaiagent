@@ -4,9 +4,13 @@ import { getMessageDelayPolicy, onRequest, sanitizeStaleAssistantReply } from ".
 import {
   buildLayeredSystemPrompt,
   buildRelationshipBoundaryPrompt,
+  buildTurnBrief,
+  classifyConversationTurn,
   countContactRequests,
   isContactRequest,
   isVoiceCallRequest,
+  localAgeReply,
+  replyGenerationSettings,
   resolveContactRequestPolicy,
   sanitizeContactDisclosure,
   sanitizeBusinessTopicDrift,
@@ -365,12 +369,20 @@ describe("chat logic", () => {
     expect(messages.slice(-10).at(-1)?.content).toBe("message-49");
   });
 
+  it("ships compact persona cards instead of per-turn style manuals", () => {
+    const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
+    expect(schema).toContain("你是星暮，29岁女性");
+    expect(schema).toContain("你做全国二手手机和数码回收");
+    expect(schema).not.toContain("每条回复50字以内");
+    expect(schema).not.toContain("以后是否给QQ由系统门槛决定");
+  });
+
   it("passes base persona, platform, location, time and role context to the model", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ choices: [{ message: { content: "在的 刚忙完|||你先忙你的|||晚点聊" } }] }),
+        JSON.stringify({ choices: [{ message: { content: "在的" } }] }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );
@@ -396,32 +408,68 @@ describe("chat logic", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      reply: "在的 刚忙完|||你先忙你的|||晚点聊",
+      reply: "在的",
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
-    expect(payload.max_tokens).toBe(88);
-    expect(payload.messages[0].content).toContain("最新消息优先");
-    expect(payload.messages[0].content).toContain("事实边界");
-    expect(payload.messages[0].content).toContain("年龄、婚姻和家庭信息必须沿用");
+    expect(payload.max_tokens).toBe(64);
+    expect(payload.messages[0].content).toContain("【交流方式】");
+    expect(payload.messages[0].content).toContain("普通消息通常回1句");
+    expect(payload.messages[0].content).toContain("【事实与边界】");
     expect(payload.messages[0].content).toContain("【当前平台】soul。");
-    expect(payload.messages[0].content).not.toContain("语气：");
-    expect(payload.messages[0].content).not.toContain("偏文艺");
-    expect(payload.messages[0].content).toContain("你住在重庆两江新区，但不要主动提工作地点");
-    expect(payload.messages[0].content).not.toContain("工作地在重庆两江新区");
-    expect(payload.messages[0].content).toContain("【新客边界】");
-    expect(payload.messages[0].content).toContain("禁止主动提工作、手机、回收、旧设备")
-    expect(payload.messages[0].content).toContain("“对方说”是客户说的，“你说”是你之前说的");
-    expect(payload.messages[0].content).toContain("客户说去洗澡、去忙、晚点聊或回聊，是客户暂离");
-    expect(payload.messages[0].content).not.toContain("短句聊天风格");
-    expect(payload.messages[0].content).not.toContain("直接自然接住夸奖");
+    expect(payload.messages[0].content).toContain("【地址】你住在重庆两江新区，工作地在重庆两江新区。");
+    expect(payload.messages[0].content).toContain("【新客节奏】");
+    expect(payload.messages[0].content).not.toContain("【当前天气】");
     expect(payload.messages[0].content).toContain("你们刚加上，从陌生人正常聊起，别叫昵称，别假设你们很熟。");
-    expect(payload.messages[0].content).toContain("像熟人微信聊天，优先短句，1到3句");
-    expect(payload.messages[0].content).toContain("不报价，不催单，不主动升级暧昧，不主动提见面");
-    expect(payload.messages[0].content).toContain("对方轻度夸赞或嘴甜可自然接一句");
-    expect(payload.messages[0].content).toContain("不主动给联系方式");
-    expect(payload.messages[0].content).toContain("绝不能自己编号码");
-    expect(payload.messages[0].content).not.toContain("别刚加好友就推销回收，别主动提见面");
+    expect(payload.messages[0].content).toContain("【本轮接话】");
+    expect(payload.messages[0].content).not.toContain("最新消息优先");
+    expect(payload.messages[0].content).not.toContain("话题锁定");
+  });
+
+  it("builds a concise turn brief instead of forcing a fixed reply template", () => {
+    expect(classifyConversationTurn([{ role: "user", content: "你好" }])).toBe("greeting");
+    expect(classifyConversationTurn([{ role: "user", content: "你多大" }])).toBe("age");
+    expect(classifyConversationTurn([{ role: "user", content: "你做什么工作的" }])).toBe("work");
+    expect(classifyConversationTurn([{ role: "user", content: "今天累死了" }])).toBe("emotion");
+    expect(classifyConversationTurn([{ role: "user", content: "旧手机还收吗" }])).toBe("business");
+
+    const greeting = buildTurnBrief({
+      messages: [{ role: "user", content: "你好" }],
+      currentDatetime: "2026-09-29 03:00:00",
+      relationStageLevel: 1,
+    });
+    expect(greeting).toContain("场景：问候或确认你在不在");
+    expect(greeting).toContain("通常只回1句");
+    expect(greeting).toContain("不要汇报自己正在做什么");
+    expect(greeting).toContain("三连");
+    expect(greeting).toContain("不要只回“咋啦”");
+    expect(greeting).toContain("你好呀");
+
+    const age = buildTurnBrief({ messages: [{ role: "user", content: "你多大了" }] });
+    expect(age).toContain("场景：对方询问年龄");
+    expect(age).toContain("你呢");
+
+    const emotion = buildTurnBrief({ messages: [{ role: "user", content: "今天累死了" }] });
+    expect(emotion).toContain("先接住情绪");
+    expect(emotion).toContain("不要把话题拐到手机或业务");
+
+    const business = buildTurnBrief({ messages: [{ role: "user", content: "旧手机还收吗" }] });
+    expect(business).toContain("先直接回答对方问的业务问题");
+    expect(business).toContain("不报价、不催单");
+  });
+
+  it("uses shorter token budgets for ordinary chat and leaves room only when needed", () => {
+    expect(replyGenerationSettings([{ role: "user", content: "你好" }], null, {}).maxTokens).toBe(64);
+    expect(replyGenerationSettings(
+      [{ role: "user", content: "你好" }],
+      { messageType: "greeting" },
+      {},
+    ).maxTokens).toBe(40);
+    expect(replyGenerationSettings(
+      [{ role: "user", content: "旧手机还收吗" }],
+      { messageType: "business" },
+      {},
+    ).maxTokens).toBe(96);
   });
 
   it("answers a voice-chat request locally without spending a model call", async () => {
@@ -446,6 +494,44 @@ describe("chat logic", () => {
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
       reply: "不语音哈 打字可以",
+      local: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("answers age questions from the active persona without calling the model", () => {
+    expect(localAgeReply([{ role: "user", content: "你多大了" }], "你是星暮，29岁女性，重庆人。")).toBe("29了 你呢");
+    expect(localAgeReply([{ role: "user", content: "你几岁" }], "你是陈屿，33岁男性，重庆人。")).toBe("33了 你呢");
+    expect(localAgeReply([{ role: "user", content: "今天真累" }], "你是星暮，29岁女性。")).toBe("");
+    expect(localAgeReply([{ role: "user", content: "你多大了" }], "没有年龄的人设")).toBe("");
+  });
+
+  it("returns the local age reply through the chat endpoint", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          request_id: "age-request-1",
+          platform: "soul",
+          contact_id: "age-new",
+          contact_name: "临时年龄测试",
+          messages: [{ role: "user", content: "你多大了" }],
+        }),
+      }),
+      env: {
+        DB: new MockD1([], [{ id: "female", name: "星暮", system_prompt: "你是星暮，29岁女性，重庆人。" }]),
+        KV: new MockKV(),
+        DEEPSEEK_API_KEY: "deepseek-key",
+      },
+    } as never);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      action: "send",
+      reply: "29了 你呢",
       local: true,
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -820,10 +906,11 @@ describe("chat logic", () => {
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
-    expect(payload.messages[0].content).toContain("【时间关系】");
+    expect(payload.messages[0].content).toContain("时间关系：");
     expect(payload.messages[0].content).toContain("已隔 2 小时 53 分");
     expect(payload.messages[0].content).toContain("你是真人，不会一直盯着手机");
-    expect(payload.messages.at(-1).content).toContain("[9月25日 02:21，2 小时 53 分前] 对方说：你这高跟鞋真好看");
+    expect(payload.messages.at(-1).role).toBe("user");
+    expect(payload.messages.at(-1).content).toContain("[9月25日 02:21，2 小时 53 分前] 你这高跟鞋真好看");
   });
 
   it("uses past mode for old greetings instead of pretending the message just arrived", async () => {
@@ -1070,7 +1157,9 @@ describe("chat logic", () => {
     expect(prompt).toContain("星期五");
     expect(prompt).not.toContain("业务消息可以远程回复");
     expect(prompt).not.toContain("有正常作息和情绪");
-    expect(prompt).toContain("现在是深夜，你在家休息，偶尔看下手机");
+    expect(prompt).toContain("通常只回1句");
+    expect(prompt).toContain("不要汇报自己正在做什么");
+    expect(prompt).not.toContain("你在家休息");
     expect(prompt).not.toContain("远程回下业务消息")
     expect(prompt).not.toContain("躺床上睡不着");
     await expect(response.json()).resolves.toMatchObject({
@@ -1240,10 +1329,13 @@ describe("chat logic", () => {
     const migration = readFileSync(new URL("../db/migrations/20260928_device_persona_and_pending_replies.sql", import.meta.url), "utf8");
     const newContactMigration = readFileSync(new URL("../db/migrations/20260928_new_contact_natural_reply.sql", import.meta.url), "utf8");
     const contactMigration = readFileSync(new URL("../db/migrations/20260928_contact_gate_relationship_layers.sql", import.meta.url), "utf8");
+    const compactMigration = readFileSync(new URL("../db/migrations/20260929_compact_personas.sql", import.meta.url), "utf8");
 
     expect(schema).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
     expect(migration).toContain("你是星暮，29岁女性，重庆人，已婚未育。");
-    expect(schema).toContain("你平时有自己的手机数码生意");
+    expect(schema).toContain("你做全国二手手机和数码回收");
+    expect(compactMigration).toContain("你做全国二手手机和数码回收");
+    expect(schema).not.toContain("每条回复50字以内");
     expect(schema).not.toContain("你负责全国二手手机和数码设备回收");
     expect(newContactMigration).toContain("不靠陌生人推销");
     expect(newContactMigration).toContain("只有对方明确问工作")
@@ -1564,9 +1656,10 @@ describe("customer dashboard and cross-platform memory", () => {
     expect(response.status).toBe(200);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const promptMessages = JSON.parse(String(init.body)).messages;
-    expect(promptMessages[0].content).toContain("记忆必须连续");
+    expect(promptMessages[0].content).toContain("【连续记忆】");
+    expect(promptMessages[0].content).toContain("按同一个人延续聊天");
     expect(promptMessages.some((message) => String(message.content).includes("[qq"))).toBe(true);
-    expect(promptMessages.some((message) => String(message.content).includes("那就周六见"))).toBe(true);
+    expect(promptMessages.some((message) => message.role === "assistant" && String(message.content).includes("那就周六见"))).toBe(true);
   });
 
   it("pulls and completes dashboard manual replies", async () => {
@@ -1936,15 +2029,12 @@ describe("monitoring sync and customer profile batching", () => {
       profileContext: "",
       currentDatetime: "2026年9月28日 19:00",
       weekday: "周一",
-      activityNow: "你在家休息",
       homeLocation: { city: "重庆", district: "两江新区" },
       workLocation: { city: "重庆", district: "两江新区" },
       weather: "",
-      activity: { activeDays: 0 },
       stageText: "刚认识",
       relationStageLevel: 1,
       messageDelay: null,
-      contactPolicy: {},
       messages: [{ role: "user", content: "在干嘛" }],
       historyMessages: [],
       conversationTimeline: "客户连续三天发来文字、动态和互动表情。",

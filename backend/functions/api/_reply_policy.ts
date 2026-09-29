@@ -16,6 +16,15 @@ export function localVoiceRequestReply(messages) {
   return isVoiceCallRequest(latestIncomingText(messages)) ? "不语音哈 打字可以" : "";
 }
 
+export function localAgeReply(messages, personaPrompt) {
+  const incoming = latestIncomingText(messages);
+  if (!/(?:多大|几岁|年龄|哪年生的)/u.test(incoming)) return "";
+  const ageMatch = String(personaPrompt || "").match(/(\d{2})岁/u);
+  const age = Number(ageMatch?.[1] || 0);
+  if (age < 18 || age > 80) return "";
+  return age + "了 你呢";
+}
+
 const CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以).{0,8}(?:qq|q号|扣扣|企鹅号|联系方式|好友|微信|vx|v信|电话|手机号)|(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号).{0,8}(?:多少|几号|发我|给我|留|加|互换|交换)|(?:加|发|给|留).{0,3}(?:个)?q(?:号)?(?:给|我)?|(?:你|你的).{0,4}(?:qq|q号|联系方式|微信|电话|手机号).{0,6}(?:是|多少|发|给|留|加)|(?:联系方式|微信|电话|手机号).{0,6}(?:给我|发我|留一个|加一下)/iu;
 
 const CONTACT_NEGATION_PATTERN = /(?:不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号)/iu;
@@ -139,7 +148,7 @@ export function buildRelationshipBoundaryPrompt(stage, incomingText, historyMess
     .join(" ");
   const relationshipTopic = /(?:老公|老婆|婚姻|夫妻|感情|异地|分居|离婚|公婆|婆婆|家庭)/u.test(recentIncoming);
   const explicitIntimateTopic = /(?:两性|性生活|夫妻生活|做爱|上床|开房|床事|裸照|裸体|黄腔|约炮|约你|见面|出来见|发.{0,3}(?:照片|视频)|拍.{0,3}(?:照片|视频)|交换.{0,3}(?:照片|图)|私密|隐私内容|身体细节)/u.test(recentIncoming);
-  const suggestiveIntimateTopic = /(?:(?:让我|我来|给你).{0,3}检查|检查.{0,4}(?:你|身体|干净|洗澡)|洗干净|陪我|想不想我|想我没|睡了吗|梦到我|抱抱|亲亲)/u.test(recentIncoming);
+  const suggestiveIntimateTopic = /(?:(?:让我|我来|给你).{0,3}检查|检查.{0,4}(?:你|身体|干净|洗澡)|洗干净|陪我|想不想我|想我没|梦到我|抱抱|亲亲)/u.test(recentIncoming);
   const affectionateTopic = /(?:好看|漂亮|气质|身材|可爱|有魅力|嘴甜|喜欢你|想你|心动|夸你|养眼)/u.test(recentIncoming);
   if (!relationshipTopic && !explicitIntimateTopic && !suggestiveIntimateTopic && !affectionateTopic) return "";
 
@@ -216,20 +225,107 @@ export function replyOpeningHint(historyMessages) {
     : "不要每条都用哈哈、在的或确实开头。";
 }
 
+function promptHour(currentDatetime) {
+  const match = String(currentDatetime || "").match(/(?:^|\s)(\d{1,2}):/u);
+  const hour = Number(match?.[1]);
+  return Number.isFinite(hour) ? hour : -1;
+}
+
+export function classifyConversationTurn(messages, messageType = "") {
+  const incoming = latestIncomingText(messages);
+  if (!incoming) return "empty";
+  if (messageType === "business" || isExplicitBusinessIntent(incoming)) return "business";
+  if (/(?:多大|几岁|年龄|哪年生的)/u.test(incoming)) return "age";
+  if (/(?:做什么工作|干什么工作|做什么的|干什么的|你的职业|你是做哪行)/u.test(incoming)) return "work";
+  if (/(?:住在哪|哪里的|哪个城市|家在哪|你在什么地方)/u.test(incoming)) return "location";
+  if (messageType === "greeting" || /(?:在吗|在不在|你好|嗨|哈喽|早上好|中午好|下午好|晚上好|干嘛呢|干什么|睡了吗|还没睡)|\b(?:hello|hi)\b/iu.test(incoming)) {
+    return "greeting";
+  }
+  if (messageType === "emotion" || /(?:心情|难受|不开心|烦|好累|累死|孤独|委屈|压力大)/u.test(incoming)) return "emotion";
+  if (/(?:图片|照片|表情|语音|动态|互动|拍一拍|戳一戳)/u.test(incoming)) return "media";
+  return "normal";
+}
+
+export function buildTurnBrief({
+  messages = [],
+  historyMessages = [],
+  messageDelay = null,
+  relationStageLevel = 1,
+  currentDatetime = "",
+}) {
+  const incoming = latestIncomingText(messages);
+  const turnType = classifyConversationTurn(messages, messageDelay?.messageType);
+  const hour = promptHour(currentDatetime);
+  let scene = "普通聊天";
+  let direction = "先回应对方最新说的事，抓住一个具体点自然接一句；有合适的切入点再带一个相关问题，没有就停住。";
+  let avoid = "不要像答题卡逐项回答，不要总结说教，也不要每轮都用“你呢”“在干嘛”硬找话题。";
+
+  if (turnType === "greeting") {
+    scene = "问候或确认你在不在";
+    direction = "先用“你好呀”“你也好”这类自然回应接住问候，通常只回1句，最多再顺着场景问一句。"
+      + ((hour >= 23 || (hour >= 0 && hour < 7)) ? "深夜时不要汇报自己正在做什么。" : "");
+    avoid = "不要只回“咋啦”，也不要固定“你好+我在做什么+你怎么还没睡”三连。";
+  } else if (turnType === "age") {
+    scene = "对方询问年龄";
+    direction = "按既定人设直接回答，随后可以自然补一句“你呢”把话题递回去，不展开个人生活。";
+    avoid = "不要回避年龄，也不要长篇介绍自己。";
+  } else if (turnType === "work") {
+    scene = "对方明确询问职业";
+    direction = "自然说明做手机数码回收、平时线上沟通，最多再补一句与问题直接相关的话；不马上推销。";
+    avoid = "不要主动问对方有没有手机要卖，也不要展开报价、型号和上门流程。";
+  } else if (turnType === "location") {
+    scene = "对方询问位置";
+    direction = "只回答对方问到的城市和区域，语气自然，不额外扩展行程。";
+    avoid = "不要主动补充工作地点或编造当前位置。";
+  } else if (turnType === "emotion") {
+    scene = "对方在表达情绪或分享状态";
+    direction = "先接住情绪，再顺着对方刚说的具体原因聊一句，让话题停在对方身上。";
+    avoid = "不要马上转到自己的经历，也不要把话题拐到手机或业务。";
+  } else if (turnType === "business") {
+    scene = "对方主动聊手机、换机或回收";
+    direction = "先直接回答对方问的业务问题，最多补一个推进所需的实际问题；不报价、不催单。";
+    avoid = "不要扩展成产品介绍，不要主动追问对方要不要卖。";
+  } else if (turnType === "media") {
+    scene = "对方发来图片、语音、表情或动态";
+    direction = "有文字时优先接文字；只有媒体没有文字时，再依据已经识别出的事实自然回应。";
+    avoid = "不要逐项播报媒体类型，也不要为了显得热情硬猜内容。";
+  }
+
+  const currentUserMessages = messages.filter((message) => message?.role === "user");
+  if (currentUserMessages.length > 1) {
+    direction += " 对方连续发了几句时，先处理最新、最需要回应的一句；同一话题可合并回答。";
+  }
+  if (Number(relationStageLevel || 0) === 1 && turnType !== "business") {
+    avoid += " 你们还不熟，这次不要提工作、手机或回收。";
+  }
+
+  const lines = [
+    "【本轮接话】",
+    "场景：" + scene + "。",
+    "接法：" + direction,
+    "避免：" + avoid,
+  ];
+  if (messageDelay?.prompt) lines.push("时间关系：" + messageDelay.prompt);
+  if (historyMessages.some((message) => message?.role === "assistant")) {
+    lines.push(replyOpeningHint(historyMessages));
+  }
+  return lines.join("\n");
+}
+
 export function replyGenerationSettings(messages, messageDelay, config) {
   const text = latestIncomingText(messages);
   const messageType = messageDelay?.messageType || "normal";
   const simpleGreeting = messageType === "greeting" && text.length <= 12;
   const complex = messageType === "business" || messageDelay?.pastMode || text.length > 40 ||
     /(?:图片|语音|截图|型号|多少钱|价格|地址|工作)/u.test(text);
-  const requestedMax = simpleGreeting ? 64 : complex ? 120 : 88;
+  const requestedMax = simpleGreeting ? 40 : complex ? 96 : 64;
   const configuredTemperature = Number(config?.temperature);
   const baseTemperature = Number.isFinite(configuredTemperature)
     ? Math.max(0, Math.min(2, configuredTemperature))
     : 0.8;
-  const requestedTemperature = messageDelay?.pastMode ? 0.4 : complex ? 0.55 : simpleGreeting ? 0.82 : 0.8;
+  const requestedTemperature = messageDelay?.pastMode ? 0.5 : complex ? 0.68 : 0.85;
   return {
-    maxTokens: Math.max(48, Math.min(Number(config.maxTokens || 160), requestedMax)),
+    maxTokens: Math.max(16, Math.min(Number(config.maxTokens || 160), requestedMax)),
     temperature: Math.min(baseTemperature, requestedTemperature),
   };
 }
@@ -265,81 +361,57 @@ export function buildLayeredSystemPrompt({
   profileContext,
   currentDatetime,
   weekday,
-  activityNow,
   homeLocation,
   workLocation,
   weather,
   weatherEnabled = true,
   timeEnabled = true,
-  activity,
   stageText,
   relationStageLevel,
   messageDelay,
-  contactPolicy,
   messages,
   historyMessages,
   conversationTimeline = "",
+  memorySummary = "",
 }) {
   const newContact = Number(relationStageLevel || 0) === 1;
+  const incoming = latestIncomingText(messages);
   const fixed = [
-    "最新消息优先：先回答对方最新一条；最新一条是事实确认时先给出明确答案，不要先回答更早的旧话题。",
-    "事实边界：人设中已确定的年龄、婚姻和家庭信息必须沿用，不得改成相反的年龄、未婚、离异或已育；没有聊天记录或当前上下文依据，不要编造刚睡、刚忙完、刚到家、正在吃饭或业务行程等状态。",
-    personaPrompt,
-    "【底线】不报价，不催单，不主动升级暧昧，不主动提见面；对方轻度夸赞或嘴甜可自然接一句，对方暗示就轻挡收线，明确越界就拒绝；不主动给联系方式，对方索要QQ、微信或电话时先自然拒绝，只有系统明确给出可发送的QQ时才能回复，绝不能自己编号码；被质疑AI自然带过；用户没提供过的信息不编造。",
-    "【说话方式】像熟人微信聊天，优先短句，1到3句，能一句说清就一句。不要客服腔、AI腔、总结或说教，不要每条都反问。",
-    "【角色】聊天记录里的“对方说”是客户说的，“你说”是你之前说的，不能弄混。时间戳只是上下文，不要写进回复。",
-    "同一客户绑定多个平台账号时按同一个人连续记忆，记忆必须连续，不要说忘记别的平台聊过什么。",
-    "【角色-暂离】客户说去洗澡、去忙、晚点聊或回聊，是客户暂离，不是你刚洗完或刚忙完；等客户回来后的新消息再接，不要把双方状态倒过来写。",
-    newContact ? "【新客边界】你们还不熟，禁止主动提工作、手机、回收、旧设备、上门、型号、报价或任何业务话题；只聊当前消息本身。只有对方明确聊到手机、换机或旧设备时才可以自然接一句。" : "",
-  ];
+    String(personaPrompt || "").trim(),
+    "【交流方式】像熟人微信聊天，优先短句。普通消息通常回1句，必要时才多补1句；只有对方内容较长、明确追问或需要说明业务时才多说。不要客服腔、AI腔、总结或说教。",
+    "【事实与边界】不编造用户没提供过的经历、行程和状态。不主动暧昧、不主动提见面、不主动给联系方式、不主动报价或催单。被质疑AI时自然带过。",
+    "【连续记忆】同一客户绑定多个平台账号时按同一个人延续聊天，不要说忘记其他平台聊过什么。",
+    newContact ? "【新客节奏】你们还不熟。对方没主动聊手机、换机或回收时，不要提工作或业务。" : "",
+  ].filter(Boolean);
 
-  const locationContext = newContact
-    ? "你住在" + homeLocation.city + homeLocation.district + "，但不要主动提工作地点。"
-    : "你住在" + homeLocation.city + homeLocation.district + "，工作地在" + workLocation.city + workLocation.district + "。";
-
+  const locationContext = "你住在" + homeLocation.city + homeLocation.district + "，工作地在" + workLocation.city + workLocation.district + "。";
+  const weatherRelevant = /(?:天气|下雨|下雪|气温|温度|冷|热|晴|阴|风)/u.test(incoming);
   const dynamic = [
     "【当前平台】" + platform + "。",
     profileContext ? "【长期客户档案】" + profileContext : "",
-    timeEnabled
-      ? "【当前时间和地点】" + currentDatetime + "（" + weekday + "）。" + activityNow + "。" + locationContext
-      : "【当前地点】" + locationContext,
-    weatherEnabled && weather
-      ? "今天" + weather.condition + weather.temp + "度。"
+    memorySummary ? "【较早聊天记忆】" + memorySummary : "",
+    timeEnabled ? "【当前时间】" + currentDatetime + "（" + weekday + "）。" : "",
+    "【地址】" + locationContext,
+    weatherEnabled && weather && weatherRelevant
+      ? "【当前天气】今天" + weather.condition + weather.temp + "度。"
       : "",
     "【关系阶段】" + stageText,
     conversationTimeline ? "【未回复消息时间线】" + conversationTimeline : "",
-    activity.activeDays >= 2
-      ? "这个客户最近7天有" + activity.activeDays + "天主动找过你，别假装你们天天都在聊。"
-      : "",
-    "【开头去重】" + replyOpeningHint(historyMessages),
   ].filter(Boolean);
 
-  const scenarios = [];
-  if (messageDelay?.prompt) scenarios.push("【时间关系】" + messageDelay.prompt);
-
-  const incoming = latestIncomingText(messages);
-  if (/(?:做什么工作|干什么工作|做什么的|干什么的|你的职业|你是做哪行)/u.test(incoming)) {
-    scenarios.push("【直接问职业】直接回答你做二手手机和数码回收，平时线上沟通、合适就安排当地师傅上门。不要顺着立刻推销，也不要主动问对方有没有手机卖。");
-  } else if (messageDelay?.messageType === "business") {
-    scenarios.push("【主动聊到回收】先回答对方问的事。可以自然说新旧手机、坏手机、老年机都能收，但不要报价，不要催拍照片，不要马上索取型号。");
-  }
-  if (!isExplicitBusinessIntent(incoming)) {
-    scenarios.push("【话题锁定】最新消息没有明确聊手机、换机或回收。历史里的型号和出售问题只是背景，不要主动追问，也不要把它重新拉成当前话题。");
-  }
-
+  const turnPrompt = buildTurnBrief({
+    messages,
+    historyMessages,
+    messageDelay,
+    relationStageLevel,
+    currentDatetime,
+  });
   const relationshipPrompt = buildRelationshipBoundaryPrompt(relationStageLevel, incoming, historyMessages);
-  if (relationshipPrompt) scenarios.push(relationshipPrompt);
-  if (contactPolicy?.isRequest) {
-    if (contactPolicy.allowed && contactPolicy.contactQq) {
-      scenarios.push("【联系方式】系统已允许回复QQ，只能原样回复" + contactPolicy.contactQqDisplay + "，不要附加其他号码、真实QQ数字或自行修改。");
-    } else {
-      scenarios.push("【联系方式】对方在索要QQ或联系方式，但现在不能给，也不能编造号码；自然拒绝，停住话题。");
-    }
-  }
 
   return [
     "【固定人设】\n" + fixed.join("\n"),
-    "【动态上下文】\n" + dynamic.join("\n"),
-    scenarios.length ? "【当前场景】\n" + scenarios.join("\n") : "",
+    "【当前上下文】\n" + dynamic.join("\n"),
+    turnPrompt,
+    relationshipPrompt ? "【即时边界】" + relationshipPrompt : "",
   ].filter(Boolean).join("\n\n");
 }

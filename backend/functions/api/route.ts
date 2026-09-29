@@ -3,6 +3,7 @@ import {
   countContactRequests,
   latestIncomingText,
   loadOrCreatePendingReply,
+  localAgeReply,
   localVoiceRequestReply,
   replyGenerationSettings,
   resolveContactRequestPolicy,
@@ -425,13 +426,12 @@ export function sanitizeStaleAssistantReply(value, policy) {
 
 function formatCurrentChatMessage(message, nowSec = Math.floor(Date.now() / 1000)) {
   const epoch = requestMessageEpochSeconds(message);
-  const speaker = message?.role === "assistant" ? "你说" : "对方说";
   let timeLabel = String(message?.timestamp || "").trim() || (epoch ? formatChinaMessageTime(epoch) : "");
   if (epoch > 0 && message?.role === "user") {
     const ageSeconds = Math.max(0, nowSec - epoch);
     if (ageSeconds >= 5 * 60) timeLabel += "，" + formatChineseDuration(ageSeconds) + "前";
   }
-  return (timeLabel ? "[" + timeLabel + "] " : "") + speaker + "：" + String(message?.content || "");
+  return (timeLabel ? "[" + timeLabel + "] " : "") + String(message?.content || "");
 }
 
 function sanitizeAssistantReply(value) {
@@ -460,17 +460,6 @@ function sanitizeAssistantReplySegment(value) {
     if (reply === before) break;
   }
   return reply.trim();
-}
-
-// 根据当前小时给出"我此刻在干嘛"，让回复场景跟时间对得上（凌晨不说在跑客户）
-function currentActivityByHour(hour) {
-  if (hour >= 0 && hour < 7) return "现在是深夜，你在家休息，偶尔看下手机";
-  if (hour >= 7 && hour < 9) return "你早上在家，刚收拾好，手机放旁边";
-  if (hour >= 9 && hour < 12) return "你在忙自己的事，间隙会看下手机";
-  if (hour >= 12 && hour < 14) return "你中午刚吃完饭，在休息";
-  if (hour >= 14 && hour < 18) return "你下午在忙，不一定随时看手机";
-  if (hour >= 18 && hour < 21) return "你晚上回到家，吃完饭在休息";
-  return "你在家休息，准备洗漱";
 }
 
 // 统计这个联系人最近7天主动找过你几次、几天都来了，以及总对话轮数
@@ -1715,6 +1704,22 @@ export const onRequest = async (context) => {
       timing.persona_ms = Date.now() - personaStartedAt;
       const personaPrompt = activePersona?.system_prompt || "\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684\u804a\u5929\u52a9\u624b\u3002";
 
+      const localAge = localAgeReply(messages, personaPrompt);
+      if (localAge) {
+        const pending = await loadOrCreatePendingReply(env.DB, {
+          token: tokenRow.token,
+          requestId,
+          platform,
+          contactId: contact_id,
+          contactName: contact_name,
+          content: localAge,
+          createdAt: Math.floor(Date.now() / 1000),
+        });
+        await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
+          .bind(Math.floor(Date.now() / 1000), tokenRow.token).run();
+        return json({ action: "send", reply: pending.content, reply_id: pending.id, status: "pending", local: true });
+      }
+
       // history
       const contextStartedAt = Date.now();
       const MAX_MSGS = 10;
@@ -1768,7 +1773,6 @@ export const onRequest = async (context) => {
       const chinaTime = getChinaTimeContext(now2);
       const currentDatetime = chinaTime.currentDatetime;
       const weekday = chinaTime.weekday;
-      const currentHour = parseInt((currentDatetime.split(" ")[1] || "12:00:00").split(":")[0], 10) || 12;
       const nowSec2 = Math.floor(Date.now() / 1000);
       const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
       const stage = relationStage(activity.totalExchanges, activity.userMsgs7d);
@@ -1777,7 +1781,6 @@ export const onRequest = async (context) => {
         : stage === 3
           ? "你们聊得挺熟了，但只有对方主动聊手机、换机或回收时才自然接，不要主动盘问型号。"
           : "你们聊过几次了，可以自然一点，延续之前的话题。";
-      const activityNow = currentActivityByHour(currentHour);
       const profileContext = customerProfilePrompt(customerProfile.profile);
       const messageDelay = deviceSettings.time_enabled
         ? resolveIncomingDelayPolicy(messages, historyMessages, nowSec2)
@@ -1812,33 +1815,32 @@ export const onRequest = async (context) => {
         profileContext,
         currentDatetime,
         weekday,
-        activityNow,
         homeLocation: { city: location?.home?.city || "重庆", district: location?.home?.district || "两江新区" },
         workLocation: { city: location?.work?.city || "重庆", district: location?.work?.district || "两江新区" },
         weather,
         weatherEnabled: deviceSettings.weather_enabled,
         timeEnabled: deviceSettings.time_enabled,
-        activity,
         stageText,
         relationStageLevel: stage,
         messageDelay,
-        contactPolicy,
         messages,
         historyMessages,
         conversationTimeline,
+        memorySummary: summary,
       });
       timing.context_ms = Date.now() - contextStartedAt;
 
       const llmMessages = [{ role: "system", content: systemPrompt }];
-      if (summary) llmMessages.push({ role: "user", content: "\u4e4b\u524d\u7684\u804a\u5929\u5927\u6982\u662f\u8fd9\u6837\uff1a" + summary });
       for (const msg of historyMessages) {
         const timeStr = formatChinaMessageTime(msg.created_at);
-        const roleLabel = msg.role === "user" ? "\u5bf9\u65b9\u8bf4" : "\u4f60\u8bf4";
         const platformLabel = SUPPORTED_PLATFORMS.includes(msg.platform) ? msg.platform : "未知平台";
-        llmMessages.push({ role: "user", content: "[" + platformLabel + " " + timeStr + "] " + roleLabel + "\uff1a" + msg.content });
+        llmMessages.push({
+          role: msg.role === "assistant" ? "assistant" : "user",
+          content: "[" + platformLabel + " " + timeStr + "] " + msg.content,
+        });
       }
       for (const msg of messages) {
-        llmMessages.push({ role: msg.role, content: formatCurrentChatMessage(msg) });
+        llmMessages.push({ role: msg.role === "assistant" ? "assistant" : "user", content: formatCurrentChatMessage(msg) });
       }
 
       // call DeepSeek
