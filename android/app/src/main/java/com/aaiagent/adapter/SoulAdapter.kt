@@ -203,6 +203,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     override suspend fun prepareChatForAutomation(
         root: AccessibilityNodeInfo
     ): PlatformAdapter.ChatPreparation {
+        cachedSignature = null
+        cachedMessages = emptyList()
         val stableRoot = waitForTransientOverlayToClear(
             initialRoot = root,
             chatUsable = isInChat(root),
@@ -254,11 +256,22 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val candidates = root.findAccessibilityNodeInfosByViewId(prefix + "tv_title")
             .mapNotNull { node ->
                 val text = node.text?.toString()?.trim().orEmpty()
-                if (text.isEmpty() || !node.isVisibleToUser) return@mapNotNull null
-
                 val bounds = Rect()
                 node.getBoundsInScreen(bounds)
-                if (bounds.width() <= 0 || bounds.height() <= 0) return@mapNotNull null
+                if (text.isEmpty() || bounds.width() <= 0 || bounds.height() <= 0) return@mapNotNull null
+                if (!node.isVisibleToUser &&
+                    !Rect.intersects(
+                        bounds,
+                        Rect(
+                            0,
+                            0,
+                            service.resources.displayMetrics.widthPixels,
+                            service.resources.displayMetrics.heightPixels,
+                        ),
+                    )
+                ) {
+                    return@mapNotNull null
+                }
 
                 SoulChatTitleCandidate(
                     text = text,
@@ -547,15 +560,27 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     ): List<ChatMessage> {
         val screenWidth = service.resources.displayMetrics.widthPixels
         val messageItems = selectMessageItems(root, expectedPreview)
+        val strictContentCount = messageItems.count(::hasMessageContent)
+        val useRelaxedFallback = SoulConversationScanPolicy.shouldUseFallbackBubbles(
+            itemCount = messageItems.size,
+            strictContentCount = strictContentCount,
+            minItemsForStrictCheck = MIN_ITEMS_FOR_STRICT_CHECK,
+        )
+        val effectiveItems = if (useRelaxedFallback) {
+            fallbackBubbles(messageItems)
+        } else {
+            messageItems
+        }
         // 条目很少（新会话通常 1-3 条）时不做内容形态校验：这些基本就是对方的真消息，
         // 再按严格规则筛会把真消息滤掉（真机：野兽 items=1 bubbles=0）。条目多时才严格筛（防主页垃圾）。
-        val relaxContentCheck = messageItems.size <= MIN_ITEMS_FOR_STRICT_CHECK
+        val relaxContentCheck = effectiveItems.size <= MIN_ITEMS_FOR_STRICT_CHECK ||
+            useRelaxedFallback
         // 2026-10-05 真机（⚽️）：新联系人页面的关系卡片动画还没结束时，整条消息的 isVisibleToUser
         // 仍然是 false，逐个跳过会让 bubbles=0，于是判“没有未回消息”就不回复（也不打任何 reject 日志）。
         // 整页都不可见时按可见处理；只要有一条可见，就维持原来的严格行为。
-        val forceVisible = messageItems.isNotEmpty() && messageItems.none { it.isVisibleToUser }
+        val forceVisible = effectiveItems.isNotEmpty() && effectiveItems.none { it.isVisibleToUser }
         if (forceVisible) {
-            android.util.Log.w("AIA", "read forceVisible items=${messageItems.size}")
+            android.util.Log.w("AIA", "read forceVisible items=${effectiveItems.size}")
         }
         val timestampTracker = SoulMessageTime.ContextTracker()
         val locatedMessages = mutableListOf<LocatedMessage>()
@@ -565,7 +590,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         rejectedItemLogCount = 0
         pendingQuickMenuItems = readQuickMenuItems(root)
 
-        for (item in messageItems) {
+        for (item in effectiveItems) {
             if (!forceVisible && !item.isVisibleToUser) continue
             if (isInsideTransientOverlay(item)) continue
             // 2026-10-05 真机：音乐/视频/表情选择面板里的条目 id 也是 item_root，
@@ -2267,6 +2292,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 topChatTabSelected = topChatTab?.selected == true,
                 hasSecondaryBack = secondaryBack != null,
                 isPublishPage = isPublishPage(fresh),
+                isProfilePage = pageObservation.isProfile,
                 unknownPageWaitCount = unknownPageWaitCount,
                 isMainTabPage = mainTabVisible,
             )

@@ -27,6 +27,7 @@ object SoulNavigationPolicy {
         topChatTabSelected: Boolean = true,
         hasSecondaryBack: Boolean = false,
         isPublishPage: Boolean = false,
+        isProfilePage: Boolean = false,
         unknownPageWaitCount: Int = 0,
         maxUnknownPageWaitsBeforeBack: Int = MAX_UNKNOWN_PAGE_WAITS_BEFORE_BACK,
         isMainTabPage: Boolean = false,
@@ -35,6 +36,7 @@ object SoulNavigationPolicy {
         hasSplashSkip -> SoulNavigationAction.TAP_SPLASH_SKIP
         isPublishPage -> SoulNavigationAction.BACK
         isInChat -> SoulNavigationAction.BACK
+        isProfilePage -> SoulNavigationAction.TAP_SECONDARY_BACK
         hasSecondaryBack -> SoulNavigationAction.TAP_SECONDARY_BACK
         hasTopChatTab && !topChatTabSelected -> SoulNavigationAction.TAP_TOP_CHAT_TAB
         hasMessageTab -> SoulNavigationAction.TAP_MESSAGE_TAB
@@ -65,6 +67,14 @@ object SoulNavigationPolicy {
 }
 
 object SoulConversationScanPolicy {
+    fun shouldUseFallbackBubbles(
+        itemCount: Int,
+        strictContentCount: Int,
+        minItemsForStrictCheck: Int,
+    ): Boolean {
+        return itemCount > minItemsForStrictCheck && strictContentCount == 0
+    }
+
     fun isMessageList(
         conversationListVisible: Boolean,
         searchVisible: Boolean,

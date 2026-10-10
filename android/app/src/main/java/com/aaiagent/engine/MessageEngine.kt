@@ -6,6 +6,7 @@ import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.aaiagent.adapter.AdapterRegistry
+import com.aaiagent.adapter.ChatPageStabilityPolicy
 import com.aaiagent.adapter.PlatformAdapter
 import com.aaiagent.adapter.SoulAdapter
 import com.aaiagent.adapter.SoulInteractionMessage
@@ -194,6 +195,7 @@ class MessageEngine(
     private var lastContentChangeWakeAtMs: Long = 0L
     private var contentChangeJob: Job? = null
     private var profileRecoveryJob: Job? = null
+    @Volatile
     private var lastProfileRecoveryAtMs = 0L
     private var lastSoulShadowProbeAtMs = 0L
     private var soulShadowObserver: ConversationShadowObserver? = null
@@ -425,6 +427,11 @@ class MessageEngine(
                     android.util.Log.e("AIA", "hosting loop crashed", error)
                     RuntimeJournal.recovery("托管循环异常: ${error.message}")
                     state = EngineState.Error
+                } finally {
+                    // 这个集合只用于防止同一次扫描里重复处理。处理成功时下面会
+                    // continue，若只清在循环尾部，联系人会被永久记成“已处理”，
+                    // 运行数小时后所有老联系人都会漏掉。
+                    handledConversationIds.clear()
                 }
 
                 if (processedConversation) continue
@@ -433,7 +440,6 @@ class MessageEngine(
             val wokeEarly = withTimeoutOrNull(POLL_INTERVAL_MS) {
                 wakeSignal.receive()
             } != null
-            handledConversationIds.clear()
             val nextScanInMs = (nextConversationScanAtMs - System.currentTimeMillis()).coerceAtLeast(0L)
             android.util.Log.d(
                 "AIA",
@@ -628,12 +634,22 @@ class MessageEngine(
         }
         if (activeRoot?.packageName?.toString() == adapter.packageName &&
             !adapter.isInChat(activeRoot) &&
-            !adapter.isInMessageList(activeRoot) &&
-            adapter.observePage(activeRoot).kind == AutomationPageKind.UNKNOWN
+            !adapter.isInMessageList(activeRoot)
         ) {
-            if (recoverUnknownPageWithVision(adapter, leaseToken)) {
-                state = EngineState.Idle
-                return true
+            when (adapter.observePage(activeRoot).kind) {
+                AutomationPageKind.PROFILE_PAGE -> {
+                    RuntimeJournal.recovery("扫描前发现资料页，主动退回消息列表")
+                    returnToMessageList(adapter, leaseToken, "profile page on scan entry")
+                    state = EngineState.Idle
+                    return true
+                }
+                AutomationPageKind.UNKNOWN -> {
+                    if (recoverUnknownPageWithVision(adapter, leaseToken)) {
+                        state = EngineState.Idle
+                        return true
+                    }
+                }
+                else -> Unit
             }
         }
 
@@ -1890,7 +1906,9 @@ class MessageEngine(
             val svc = service ?: return emptyList()
             val root = svc.rootInActiveWindow ?: return emptyList()
             if (!adapter.isInChat(root)) {
-                if (!adapter.isInMessageList(root)) {
+                if (!adapter.isInMessageList(root) &&
+                    ChatPageStabilityPolicy.shouldRecoverWrongPageOnAttempt(attempt)
+                ) {
                     val back = adapter.navigateToMessageList(
                         svc,
                         root,
@@ -3504,6 +3522,11 @@ class MessageEngine(
             ) {
                 returnToMessageList(adapter, activeLeaseToken, reason)
                 true
+            }
+            if (result == null) {
+                // 没抢到动作许可时不能保留冷却时间，否则后续资料页恢复
+                // 会被冷却挡住，页面就会一直停在资料页。
+                lastProfileRecoveryAtMs = 0L
             }
             captureIncidentScreenshot("unexpected_profile_after_recovery")
             AutomationTrace.recordUiAction(

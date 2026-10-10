@@ -313,6 +313,20 @@ class SoulNavigationPolicyTest {
     }
 
     @Test
+    fun `profile page uses back control even when the bottom tab is visible`() {
+        assertEquals(
+            SoulNavigationAction.TAP_SECONDARY_BACK,
+            SoulNavigationPolicy.decide(
+                isInMessageList = false,
+                hasMessageTab = true,
+                hasSplashSkip = false,
+                isInChat = false,
+                isProfilePage = true,
+            )
+        )
+    }
+
+    @Test
     fun `publish page backs out immediately`() {
         assertEquals(
             SoulNavigationAction.BACK,
