@@ -1,0 +1,490 @@
+package com.aaiagent.engine
+
+import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Rect
+import android.os.Build
+import android.util.Log
+import androidx.annotation.RequiresApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.math.roundToInt
+
+/**
+ * Soul 互动表情本地识别：截图 + 白底裁边后的像素模板比对，不调视觉大模型。
+ *
+ * 参考图打包在 assets/sticker_ref/ 下，文件名 = type 字段，如 poke_it.png。
+ * 14 种互动表情。
+ */
+object StickerMatcher {
+    data class QuickMenuItem(
+        val label: String,
+        val iconBounds: Rect
+    )
+
+    data class MatchResult(
+        val names: List<String?>,
+        val quickMenuLabels: List<String?> = List(names.size) { null },
+        val captureSucceeded: Boolean
+    )
+
+
+    data class Sticker(val type: String, val displayName: String, val meaning: String)
+
+    private data class ReferenceTemplate(val normal: IntArray, val mirrored: IntArray)
+
+    private val STICKERS = listOf(
+        Sticker("poke_it", "戳一下", "对方戳了你一下，通常是在打招呼、逗你或提醒你回消息"),
+        Sticker("clapping_head", "拍一下", "对方拍了拍你，通常是打招呼、催你回消息或表达亲昵互动"),
+        Sticker("bounce_it", "弹一下", "对方弹了你一下，通常是想引起你的注意、逗你或催你回复"),
+        Sticker("water_gun", "皮一下", "对方和你开玩笑，气氛轻松调皮"),
+        Sticker("cat_paw", "挠一下", "对方挠你一下，通常是调侃、逗趣或轻柔催促"),
+        Sticker("pat_it", "摸一下", "对方摸摸你，通常表达安慰、关心或亲昵互动"),
+        Sticker("zaiganma", "在干嘛", "对方问你在干嘛，想开启聊天或确认你有没有空"),
+        Sticker("yyds", "YYDS", "对方夸你永远的神，表示强烈认可、夸赞或佩服"),
+        Sticker("jyy", "加油鸭", "对方给你加油鼓励，表达支持"),
+        Sticker("nice", "奈斯奈斯", "对方表示很好、很棒、赞同或满意"),
+        Sticker("ylbz", "用力抱住", "对方想给你一个用力的拥抱，表达安慰、亲近或想念"),
+        Sticker("jsdd", "举手dd", "对方举手报到，表示自己在线、愿意参与或主动打招呼"),
+        Sticker("wndcall", "为你打Call", "对方给你应援打Call，表示支持、鼓励或赞赏"),
+        Sticker("hahaha", "哈哈哈", "对方被逗笑或表示开心，气氛轻松"),
+        Sticker("lvlvlv", "略略略", "对方在调皮吐槽、撒娇式挑衅或开玩笑"),
+    )
+
+    private var referenceTemplates: Map<String, ReferenceTemplate>? = null
+
+    /** 识别结果给大模型时使用的自然语言描述。 */
+    fun modelTextFor(displayName: String): String? {
+        val sticker = STICKERS.firstOrNull {
+            it.displayName.equals(displayName.trim(), ignoreCase = true)
+        } ?: return null
+        return "对方发来 Soul 互动表情「${sticker.displayName}」：${sticker.meaning}"
+    }
+
+    /** 启动时调用一次，加载 assets 参考图并生成归一化模板。 */
+    fun warmup(service: AccessibilityService) {
+        if (referenceTemplates != null) return
+        val map = mutableMapOf<String, ReferenceTemplate>()
+        try {
+            for (sticker in STICKERS) {
+                val fileName = "${sticker.type}.png"
+                val exists = service.assets.list("sticker_ref")?.contains(fileName) == true
+                if (!exists) continue
+                service.assets.open("sticker_ref/$fileName").use { stream ->
+                    val bitmap = BitmapFactory.decodeStream(stream) ?: return@use
+                    map[sticker.type] = ReferenceTemplate(
+                        normal = normalizedPixels(bitmap, mirror = false),
+                        mirrored = normalizedPixels(bitmap, mirror = true)
+                    )
+                    bitmap.recycle()
+                }
+            }
+        } catch (error: Exception) {
+            Log.w("AIA", "Sticker warmup failed", error)
+        }
+        referenceTemplates = map
+        Log.d("AIA", "StickerMatcher warmed up: ${map.size} references")
+    }
+
+    /** 单张兼容入口。 */
+    suspend fun match(service: AccessibilityService, bounds: Rect): String? {
+        return matchAll(service, listOf(bounds)).firstOrNull()
+    }
+
+    /**
+     * 一次全屏截图后批量裁剪识别。
+     * Android 对连续 takeScreenshot 有频率限制，不能一个表情截一次。
+     */
+    suspend fun matchAll(
+        service: AccessibilityService,
+        boundsList: List<Rect>
+    ): List<String?> {
+        return matchAllDetailed(service, boundsList).names
+    }
+
+    suspend fun matchAllDetailed(
+        service: AccessibilityService,
+        boundsList: List<Rect>,
+        quickMenuItems: List<QuickMenuItem> = emptyList()
+    ): MatchResult {
+        if (boundsList.isEmpty()) return MatchResult(emptyList(), captureSucceeded = true)
+        warmup(service)
+        val refs = referenceTemplates.orEmpty()
+        if (refs.isEmpty() && quickMenuItems.isEmpty()) {
+            return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
+        }
+
+        val screen = takeFullScreenshotBitmap(service)
+            ?: return MatchResult(List(boundsList.size) { null }, captureSucceeded = false)
+        return try {
+            val quickRefs = quickMenuItems.mapNotNull { item ->
+                quickFeature(screen, item.iconBounds)?.let { feature ->
+                    QuickReference(item.label, feature)
+                }
+            }
+            val names = ArrayList<String?>(boundsList.size)
+            val labels = ArrayList<String?>(boundsList.size)
+            for (bounds in boundsList) {
+                val staticName = matchCropped(screen, bounds, refs)
+                names += staticName
+                labels += if (staticName == null) {
+                    matchQuickMenu(screen, bounds, quickRefs)
+                } else {
+                    null
+                }
+            }
+            MatchResult(
+                names = names,
+                quickMenuLabels = labels,
+                captureSucceeded = true
+            )
+        } finally {
+            screen.recycle()
+        }
+    }
+
+    private fun matchCropped(
+        source: Bitmap,
+        bounds: Rect,
+        refs: Map<String, ReferenceTemplate>
+    ): String? {
+        val cropped = cropBitmap(source, bounds) ?: return null
+        return try {
+            recognize(cropped, refs)
+        } finally {
+            cropped.recycle()
+        }
+    }
+
+    private data class QuickFeature(val hash: Long, val average: IntArray)
+
+    private data class QuickReference(val label: String, val feature: QuickFeature)
+
+    private data class QuickScore(val hashDistance: Int, val colorDistance: Double)
+
+    private fun matchQuickMenu(
+        source: Bitmap,
+        bounds: Rect,
+        refs: List<QuickReference>
+    ): String? {
+        if (refs.isEmpty()) return null
+        val target = quickFeature(source, bounds) ?: return null
+        var best: QuickReference? = null
+        var second: QuickScore? = null
+        var bestScore: QuickScore? = null
+        for (ref in refs) {
+            val score = quickScore(target, ref.feature)
+            if (bestScore == null || score.hashDistance < bestScore.hashDistance) {
+                second = bestScore
+                bestScore = score
+                best = ref
+            } else if (second == null || score.hashDistance < second.hashDistance) {
+                second = score
+            }
+        }
+        val winner = best ?: return null
+        val winnerScore = bestScore ?: return null
+        if (!isConfidentQuickMatch(
+                bestHash = winnerScore.hashDistance,
+                bestColor = winnerScore.colorDistance,
+                secondHash = second?.hashDistance,
+                secondColor = second?.colorDistance
+            )
+        ) {
+            Log.d(
+                "AIA",
+                "Quick game icon no match, best=${winner.label} hash=${winnerScore.hashDistance} color=%.2f".format(winnerScore.colorDistance)
+            )
+            return null
+        }
+        Log.d(
+            "AIA",
+            "Quick game icon match: ${winner.label} hash=${winnerScore.hashDistance} color=%.2f".format(winnerScore.colorDistance)
+        )
+        return winner.label
+    }
+
+    internal fun isConfidentQuickMatch(
+        bestHash: Int,
+        bestColor: Double,
+        secondHash: Int?,
+        secondColor: Double?
+    ): Boolean {
+        if (bestHash > MAX_QUICK_HASH_DISTANCE || bestColor > MAX_QUICK_COLOR_DISTANCE) return false
+        if (secondHash == null || secondColor == null) return true
+        return secondHash - bestHash >= MIN_QUICK_HASH_GAP ||
+            secondColor - bestColor >= MIN_QUICK_COLOR_GAP
+    }
+
+    private fun quickFeature(source: Bitmap, bounds: Rect): QuickFeature? {
+        val cropped = cropBitmap(source, bounds) ?: return null
+        val normalized = normalizeForTemplate(cropped)
+        val scaled = Bitmap.createScaledBitmap(normalized, QUICK_FEATURE_SIZE, QUICK_FEATURE_SIZE, true)
+        return try {
+            val pixels = IntArray(QUICK_FEATURE_SIZE * QUICK_FEATURE_SIZE)
+            scaled.getPixels(pixels, 0, QUICK_FEATURE_SIZE, 0, 0, QUICK_FEATURE_SIZE, QUICK_FEATURE_SIZE)
+            var hash = 0L
+            var bit = 0
+            for (y in 0 until QUICK_HASH_SIZE) {
+                for (x in 0 until QUICK_HASH_SIZE) {
+                    val left = luminance(pixels[y * QUICK_FEATURE_SIZE + x])
+                    val right = luminance(pixels[y * QUICK_FEATURE_SIZE + x + 1])
+                    if (left > right) hash = hash or (1L shl bit)
+                    bit++
+                }
+            }
+            val average = IntArray(3)
+            for (pixel in pixels) {
+                average[0] += Color.red(pixel)
+                average[1] += Color.green(pixel)
+                average[2] += Color.blue(pixel)
+            }
+            for (index in average.indices) average[index] /= pixels.size
+            QuickFeature(hash, average)
+        } finally {
+            if (scaled !== normalized) scaled.recycle()
+            normalized.recycle()
+            cropped.recycle()
+        }
+    }
+
+    private fun quickScore(first: QuickFeature, second: QuickFeature): QuickScore {
+        val hashDistance = java.lang.Long.bitCount(first.hash xor second.hash)
+        var colorDistance = 0
+        for (index in 0 until 3) {
+            colorDistance += kotlin.math.abs(first.average[index] - second.average[index])
+        }
+        return QuickScore(hashDistance, colorDistance.toDouble())
+    }
+
+    private fun luminance(color: Int): Int {
+        return (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000
+    }
+
+    private fun recognize(
+        bitmap: Bitmap,
+        refs: Map<String, ReferenceTemplate>
+    ): String? {
+        val target = normalizedPixels(bitmap, mirror = false)
+        var bestType: String? = null
+        var bestDist = Double.MAX_VALUE
+        var secondBestDist = Double.MAX_VALUE
+        for ((type, template) in refs) {
+            val distance = minOf(
+                differenceScore(target, template.normal),
+                differenceScore(target, template.mirrored)
+            )
+            if (distance < bestDist) {
+                secondBestDist = bestDist
+                bestDist = distance
+                bestType = type
+            } else if (distance < secondBestDist) {
+                secondBestDist = distance
+            }
+        }
+
+        val gap = secondBestDist - bestDist
+        val accepted = bestDist <= MAX_TEMPLATE_DISTANCE &&
+            (gap >= MIN_BEST_GAP || bestDist <= STRONG_MATCH_DISTANCE)
+        if (!accepted) {
+            Log.d(
+                "AIA",
+                "Sticker no match, best=$bestType dist=%.2f gap=%.2f".format(bestDist, gap)
+            )
+            return null
+        }
+
+        val name = STICKERS.find { it.type == bestType }?.displayName ?: bestType
+        Log.d(
+            "AIA",
+            "Sticker match: $bestType ($name) distance=%.2f gap=%.2f".format(bestDist, gap)
+        )
+        return name
+    }
+
+    private suspend fun takeFullScreenshotBitmap(service: AccessibilityService): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        repeat(SCREENSHOT_ATTEMPTS) { attempt ->
+            val bitmap = takeFullScreenshotBitmapOnce(service)
+            if (bitmap != null) return bitmap
+            if (attempt < SCREENSHOT_ATTEMPTS - 1) delay(SCREENSHOT_RETRY_DELAYS_MS[attempt])
+        }
+        return null
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private suspend fun takeFullScreenshotBitmapOnce(service: AccessibilityService): Bitmap? {
+        val result = suspendCancellableCoroutine<AccessibilityService.ScreenshotResult?> { continuation ->
+            try {
+                service.takeScreenshot(
+                    android.view.Display.DEFAULT_DISPLAY,
+                    service.mainExecutor,
+                    object : AccessibilityService.TakeScreenshotCallback {
+                        override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                            if (continuation.isActive) {
+                                continuation.resumeWith(Result.success(screenshot))
+                            }
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            Log.w("AIA", "Sticker screenshot failed code=$errorCode")
+                            if (continuation.isActive) {
+                                continuation.resumeWith(Result.success(null))
+                            }
+                        }
+                    }
+                )
+            } catch (error: Exception) {
+                if (continuation.isActive) {
+                    continuation.resumeWith(Result.success(null))
+                }
+            }
+        } ?: return null
+
+        return try {
+            val hardwareBuffer = result.hardwareBuffer
+            val wrapped = Bitmap.wrapHardwareBuffer(hardwareBuffer, result.colorSpace)
+            hardwareBuffer.close()
+            val software = wrapped?.copy(Bitmap.Config.ARGB_8888, false)
+            if (wrapped != null && wrapped !== software) wrapped.recycle()
+            software
+        } catch (error: Exception) {
+            Log.w("AIA", "Sticker bitmap process failed", error)
+            null
+        }
+    }
+
+    private fun cropBitmap(source: Bitmap, bounds: Rect): Bitmap? {
+        return try {
+            val pad = 10
+            val left = (bounds.left - pad).coerceIn(0, source.width - 1)
+            val top = (bounds.top - pad).coerceIn(0, source.height - 1)
+            val right = (bounds.right + pad).coerceIn(left + 1, source.width)
+            val bottom = (bounds.bottom + pad).coerceIn(top + 1, source.height)
+            Bitmap.createBitmap(source, left, top, right - left, bottom - top)
+        } catch (error: Exception) {
+            Log.w("AIA", "Sticker bitmap crop failed", error)
+            null
+        }
+    }
+
+    /** 去掉透明背景和空白边，缩放并居中，避免拉伸改变图案比例。 */
+    private fun normalizedPixels(bitmap: Bitmap, mirror: Boolean): IntArray {
+        val normalized = normalizeForTemplate(bitmap)
+        val maxContentSize = TEMPLATE_SIZE - 4
+        val scale = minOf(
+            maxContentSize.toFloat() / normalized.width,
+            maxContentSize.toFloat() / normalized.height
+        )
+        val targetWidth = (normalized.width * scale).roundToInt().coerceAtLeast(1)
+        val targetHeight = (normalized.height * scale).roundToInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(normalized, targetWidth, targetHeight, true)
+        val canvasBitmap = Bitmap.createBitmap(
+            TEMPLATE_SIZE,
+            TEMPLATE_SIZE,
+            Bitmap.Config.ARGB_8888
+        )
+        Canvas(canvasBitmap).apply {
+            drawColor(Color.WHITE)
+            drawBitmap(
+                scaled,
+                (TEMPLATE_SIZE - targetWidth) / 2f,
+                (TEMPLATE_SIZE - targetHeight) / 2f,
+                null
+            )
+        }
+
+        try {
+            val pixels = IntArray(TEMPLATE_SIZE * TEMPLATE_SIZE)
+            canvasBitmap.getPixels(pixels, 0, TEMPLATE_SIZE, 0, 0, TEMPLATE_SIZE, TEMPLATE_SIZE)
+            if (!mirror) return pixels
+
+            val mirrored = IntArray(pixels.size)
+            for (y in 0 until TEMPLATE_SIZE) {
+                val row = y * TEMPLATE_SIZE
+                for (x in 0 until TEMPLATE_SIZE) {
+                    mirrored[row + x] = pixels[row + TEMPLATE_SIZE - 1 - x]
+                }
+            }
+            return mirrored
+        } finally {
+            if (scaled !== normalized) scaled.recycle()
+            canvasBitmap.recycle()
+            normalized.recycle()
+        }
+    }
+
+    private fun differenceScore(first: IntArray, second: IntArray): Double {
+        if (first.size != second.size) return Double.MAX_VALUE
+        var total = 0L
+        for (index in first.indices) {
+            val a = first[index]
+            val b = second[index]
+            total += kotlin.math.abs(Color.red(a) - Color.red(b))
+            total += kotlin.math.abs(Color.green(a) - Color.green(b))
+            total += kotlin.math.abs(Color.blue(a) - Color.blue(b))
+        }
+        return total.toDouble() / (first.size * 3)
+    }
+
+    /**
+     * Android 解码透明 PNG 后，透明像素的 RGB 可能是黑色；聊天截图背景则是白色。
+     * 先合成到白底并裁掉空白边，避免同一表情因背景差异导致模板失真。
+     */
+    private fun normalizeForTemplate(source: Bitmap): Bitmap {
+        val width = source.width
+        val height = source.height
+        val original = IntArray(width * height)
+        val flattened = IntArray(width * height)
+        source.getPixels(original, 0, width, 0, 0, width, height)
+
+        var left = width
+        var top = height
+        var right = -1
+        var bottom = -1
+        for (y in 0 until height) {
+            val row = y * width
+            for (x in 0 until width) {
+                val color = original[row + x]
+                val alpha = Color.alpha(color)
+                val red = (Color.red(color) * alpha + 255 * (255 - alpha) + 127) / 255
+                val green = (Color.green(color) * alpha + 255 * (255 - alpha) + 127) / 255
+                val blue = (Color.blue(color) * alpha + 255 * (255 - alpha) + 127) / 255
+                flattened[row + x] = Color.rgb(red, green, blue)
+                if (minOf(red, green, blue) < 245) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+
+        val full = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        full.setPixels(flattened, 0, width, 0, 0, width, height)
+        if (right < left || bottom < top) return full
+
+        val cropped = Bitmap.createBitmap(full, left, top, right - left + 1, bottom - top + 1)
+        if (cropped !== full) full.recycle()
+        return cropped
+    }
+
+    private const val TEMPLATE_SIZE = 64
+    private const val MAX_TEMPLATE_DISTANCE = 22.0
+    private const val STRONG_MATCH_DISTANCE = 12.0
+    private const val MIN_BEST_GAP = 1.0
+
+    private const val SCREENSHOT_ATTEMPTS = 3
+
+    private const val QUICK_FEATURE_SIZE = 16
+    private const val QUICK_HASH_SIZE = 8
+    private const val MAX_QUICK_HASH_DISTANCE = 18
+    private const val MAX_QUICK_COLOR_DISTANCE = 70.0
+    private const val MIN_QUICK_HASH_GAP = 8
+    private const val MIN_QUICK_COLOR_GAP = 25.0
+
+    private val SCREENSHOT_RETRY_DELAYS_MS = longArrayOf(1_100L, 1_500L)
+}

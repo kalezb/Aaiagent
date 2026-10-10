@@ -1,0 +1,23 @@
+{
+  "name": "aaiagent-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev src",
+    "test": "vitest run",
+    "test:replay": "node replay/run-incident-cases.mjs",
+    "check:persona": "node scripts/check-persona-isolation.mjs",
+    "audit:persona": "node scripts/audit-persona-prompts.mjs",
+    "test:watch": "vitest",
+    "deploy": "wrangler pages deploy src --branch main",
+    "deploy:checked": "node replay/run-incident-cases.mjs && wrangler pages deploy src --branch main"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240903.0",
+    "vitest": "^1.6.0",
+    "wrangler": "^3.78.0"
+  }
+}

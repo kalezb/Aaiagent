@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <queries>
+        <package android:name="cn.soulapp.android" />
+        <package android:name="com.tencent.mobileqq" />
+        <package android:name="com.immomo.momo" />
+        <package android:name="com.lianxin.app" />
+        <package android:name="com.lianxin.lxchat" />
+    </queries>
+
+    <application
+        android:name=".AaiagentApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="AI托管助手"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Aaiagent"
+        android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- LSPosed 模块声明：让 AiaAgent 能把配音注入 Soul 的录音流。
+             没 root / 没装 LSPosed 的手机上这几行不生效，App 照常当普通应用跑。 -->
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="把 Fish Audio 配音注入 Soul 的录音流（AiaAgent 语音回复用）" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="82" />
+
+        <!-- 跨进程把"待注入的配音 PCM"交给跑在 Soul 进程里的注入模块。
+             只允许 Soul 进程读（见 InjectPcmProvider 里的调用方校验）。 -->
+        <provider
+            android:name=".xposed.InjectPcmProvider"
+            android:authorities="com.aaiagent.inject"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".service.AssistantAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <service
+            android:name=".service.NotificationListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".service.ForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

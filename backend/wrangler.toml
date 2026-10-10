@@ -1,0 +1,37 @@
+# wrangler.toml - Cloudflare Pages configuration
+name = "ai-agent-api"
+compatibility_date = "2026-09-22"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "src"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ai-agent-db"
+database_id = "c82b5c63-5c99-4867-a11c-937f308afeee"
+migrations_dir = "db/migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "c73bee5142eb4eeda27ad8b4f4a89956"
+
+[vars]
+DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_INPUT_COST_PER_MILLION = "0.75"
+GEMINI_OUTPUT_COST_PER_MILLION = "3.75"
+VISION_API_BASE = "https://api.deepseek.com/v1"
+VISION_MODEL = "deepseek-flash"
+FISH_AUDIO_API_BASE = "https://api.fish.audio"
+FISH_TTS_MODEL = "s2.1-pro"
+FISH_ASR_MODEL = "transcribe-1"
+FISH_VOICE_DESIGN_MODEL = "voice-design-1"
+CONTACT_CHANNEL = "wechat"
+
+# Secrets are configured with `wrangler secret put`:
+#   wrangler secret put DEEPSEEK_API_KEY
+#   wrangler secret put FISH_AUDIO_API_KEY
+#   wrangler secret put WEATHER_API_KEY
+#   wrangler secret put DASHBOARD_PASSWORD
+#   wrangler secret put CONTACT_WECHAT
+#   wrangler secret put CONTACT_QQ

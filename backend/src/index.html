@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aaiagent 客户看板</title>
+<style>
+/* ===== Aaiagent 看板 — 天空蓝设计系统（参考 xiniuzi 风格） ===== */
+:root {
+  color-scheme: light;
+  --bg: #f7f9fc;
+  --panel: #ffffff;
+  --panel-soft: #f5f7fa;
+  --line: #ebedf0;
+  --line-soft: #f0f2f5;
+  --text: #1d2129;
+  --muted: #4e5969;
+  --muted-soft: #86909c;
+  --blue: #0ea5e9;
+  --blue-dark: #0369a1;
+  --blue-text: #075985;
+  --blue-soft: #e8f4fd;
+  --blue-light: #7dd3fc;
+  --warning: #f59e0b;
+  --warning-soft: #fffbeb;
+  --danger: #ef4444;
+  --danger-text: #b91c1c;
+  --danger-soft: #fef2f2;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  --shadow: 0 2px 8px rgba(0,0,0,.06);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.1);
+  --transition: all .15s ease;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; }
+body {
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.6 v-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+[hidden] { display: none !important; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ===== 输入 ===== */
+input, select, textarea {
+  width: 100%; min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  background: var(--panel);
+  color: var(--text);
+  transition: var(--transition);
+  font-size: 14px;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(14,165,233,.1); }
+input::placeholder, textarea::placeholder { color: var(--muted-soft); }
+textarea { resize: vertical; line-height: 1.6; }
+
+/* ===== 按钮 ===== */
+.button, .primary-button, .ghost-button, .danger-button, .icon-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 500; font-size: 14px; white-space: nowrap;
+  transition: var(--transition);
+}
+.primary-button {
+  background: var(--blue); color: #fff;
+  box-shadow: 0 1px 3px rgba(14,165,233,.25);
+}
+.primary-button:hover { background: #0284c7; box-shadow: 0 3px 8px rgba(14,165,233,.3); }
+.ghost-button {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line);
+}
+.ghost-button:hover { border-color: var(--blue-light); background: var(--blue-soft); color: var(--blue-text); }
+.danger-button { background: var(--danger-soft); color: var(--danger-text); border: 1px solid #fecdd3; }
+.danger-button:hover { background: #fee2e2; }
+.icon-button { width: 36px; padding: 0; font-size: 16px; }
+.small-button { min-height: 30px; padding: 4px 12px; font-size: 13px; }
+.text-button { padding: 2px 0; color: var(--blue-text); font-weight: 500; }
+
+/* ===== 登录 ===== */
+.login-layer { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+.login-card { width: min(400px,100%); padding: 36px; border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-lg); }
+.login-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+.brand-mark { width: 44px; height: 44px; flex: 0 0 44px; display: grid; place-items: center; border-radius: 10px; background: var(--blue); color: #fff; font-weight: 700; font-size: 15px; }
+.login-card h1 { font-size: 20px; font-weight: 700; }
+.login-card p { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.login-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+.login-error { min-height: 20px; margin-top: 12px; color: var(--danger-text); font-size: 13px; }
+
+/* ===== 布局 ===== */
+.app { width: 100vw; height: 100dvh; display: grid; grid-template-columns: 220px 1fr; overflow: hidden; }
+.app-sidebar { display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line-soft); }
+.app-brand { display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 0 16px; border-bottom: 1px solid var(--line-soft); }
+.app-brand strong { display: block; font-size: 15px; font-weight: 700; }
+.app-brand span { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; }
+
+/* ===== 侧边导航 ===== */
+.page-nav { display: grid; gap: 2px; padding: 12px 10px; }
+.page-nav button {
+  width: 100%; min-height: 38px;
+  display: flex; align-items: center; gap: 10px;
+  border-radius: 6px; padding: 0 12px;
+  color: var(--muted); font-weight: 400; font-size: 14px; text-align: left;
+  transition: var(--transition);
+}
+.nav-icon { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.page-nav button:hover { background: var(--panel-soft); color: var(--text); }
+.page-nav button.on { background: var(--blue-soft); color: var(--blue-text); font-weight: 500; }
+.sidebar-tools { display: grid; gap: 2px; margin-top: auto; padding: 10px; border-top: 1px solid var(--line-soft); }
+.sidebar-tools button { min-height: 36px; border-radius: 6px; padding: 0 12px; color: var(--muted); text-align: left; font-size: 13px; transition: var(--transition); }
+.sidebar-tools button:hover { background: var(--panel-soft); color: var(--text); }
+
+/* ===== 主区域 ===== */
+.app-main { min-width: 0; min-height: 0; overflow: hidden; }
+.page-panel { display: none; width: 100%; height: 100%; }
+.page-panel.on { display: block; }
+.page-shell { height: 100%; overflow: auto; padding: 24px; }
+.page-inner { max-width: 1400px; margin: 0 auto; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.page-head h2 { font-size: 20px; font-weight: 700; }
+.page-head p { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.toolbar select { width: auto; min-width: 120px; }
+.small-muted { color: var(--muted-soft); font-size: 12px; }
+
+/* ===== 会话三栏 ===== */
+.session-layout { height: 100%; display: grid; grid-template-columns: 280px 1fr 280px; gap: 10px; padding: 10px; }
+.panel { min-width: 0; min-height: 0; overflow: hidden; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; }
+.panel-head { padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+.panel-title-row h2 { font-size: 15px; font-weight: 600; }
+.panel-title-row p { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.filters { display: grid; grid-template-columns: 1fr 1fr 36px; gap: 6px; margin-top: 12px; }
+.filters .wide { grid-column: 1 / -1; }
+.summary-row { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.customer-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px; }
+.customer { width: 100%; display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 10px; border-radius: 8px; text-align: left; transition: var(--transition); }
+.customer:hover { background: var(--panel-soft); }
+.customer.active { background: var(--blue-soft); }
+.avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 8px; background: var(--panel-soft); color: var(--muted); font-weight: 600; font-size: 15px; }
+.customer.active .avatar { background: var(--blue-light); color: #fff; }
+.customer-main { min-width: 0; }
+.customer-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-preview { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.customer-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; color: var(--muted-soft); font-size: 11px; }
+.count-pill { padding: 1px 7px; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 11px; }
+.priority-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--warning); }
+.platforms { display: inline-flex; gap: 3px; }
+.pf { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%; background: var(--panel-soft); color: var(--muted); font-size: 8px; font-weight: 700; }
+.pf.on.soul { background: #25b8a2; color: #fff; }
+.pf.on.qq { background: #238be6; color: #fff; }
+.pf.on.immomo { background: #f59e0b; color: #fff; }
+.pf.on.lianxin { background: #10a86a; color: #fff; }
+
+/* ===== 聊天 ===== */
+.chat { display: flex; flex-direction: column; }
+.chat-head { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+.chat-title { font-size: 16px; font-weight: 600; }
+.chat-subtitle { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.alias-strip { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.alias-chip { padding: 2px 9px; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 12px; }
+.alias-chip.active { background: var(--blue-soft); color: var(--blue-text); }
+.chat-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.action-status { color: var(--muted); font-size: 12px; }
+.priority-button.active { background: var(--warning-soft); color: #92400e; }
+.messages { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; background: var(--bg); }
+.empty-state { display: grid; place-items: center; height: 100%; color: var(--muted-soft); font-size: 14px; }
+.date-separator { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted-soft); font-size: 12px; }
+.date-separator::before, .date-separator::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.message-row { display: flex; margin: 10px 0; }
+.message-row.self { justify-content: flex-end; }
+.message-block { max-width: min(640px, 70%); }
+.bubble { padding: 10px 14px; border-radius: 12px 12px 12px 4px; background: var(--panel); box-shadow: var(--shadow-sm); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.self .bubble { background: var(--blue); color: #fff; border-radius: 12px 12px 4px 12px; }
+.message-meta { display: flex; gap: 6px; margin-top: 4px; color: var(--muted-soft); font-size: 10px; }
+.self .message-meta { justify-content: flex-end; }
+.platform-label, .source-label, .kind-label, .content-chip { padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 500; }
+.platform-label { background: var(--blue-soft); color: var(--blue-text); }
+.source-label { background: var(--panel-soft); }
+.kind-label { background: var(--blue-soft); color: var(--blue-text); }
+.kind-label.kind-first_observed { background: var(--warning-soft); color: var(--warning); }
+.kind-label.kind-ai_generated, .kind-label.kind-manual { background: #ede9fe; color: #6d28d9; }
+.kind-label.kind-derived { background: #fce7f3; color: #be185d; }
+.content-bubble { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.content-chip { background: var(--panel-soft); color: var(--muted); font-size: 12px; }
+.content-rest { color: var(--text); }
+
+/* ===== 输入框 ===== */
+.composer { padding: 10px 14px 12px; border-top: 1px solid var(--line-soft); background: var(--panel); }
+.composer-box { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.composer-box:focus-within { border-color: var(--blue); }
+.composer textarea { min-height: 40px; max-height: 100px; padding: 6px 8px; border: 0; background: transparent; box-shadow: none; resize: vertical; }
+.composer-note { margin-top: 5px; color: var(--muted-soft); font-size: 11px; }
+
+/* ===== 右侧资料 ===== */
+.profile-panel { display: flex; flex-direction: column; overflow: auto; }
+.profile-head { padding: 16px; border-bottom: 1px solid var(--line-soft); }
+.profile-head h2 { font-size: 15px; font-weight: 600; }
+.profile-head p { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.profile-hero { padding: 20px 16px; text-align: center; }
+.profile-hero .avatar { width: 52px; height: 52px; margin: 0 auto 8px; font-size: 18px; border-radius: 12px; }
+.profile-hero h3 { font-size: 16px; font-weight: 600; }
+.profile-hero p { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.profile-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
+.stat { padding: 10px; border-radius: 8px; background: var(--panel-soft); text-align: center; }
+.stat strong { display: block; color: var(--blue-text); font-size: 18px; font-weight: 700; }
+.stat span { color: var(--muted); font-size: 11px; }
+.profile-section { padding: 14px 16px; border-top: 1px solid var(--line-soft); }
+.profile-section h4 { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.profile-updated { margin-left: 5px; color: var(--muted-soft); font-size: 10px; font-weight: 400; }
+.profile-info { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+.profile-info:last-child { border-bottom: 0; }
+.profile-info span { color: var(--muted); }
+.profile-info b { max-width: 65%; text-align: right; font-weight: 500; }
+.profile-actions { display: flex; gap: 8px; }
+.profile-actions button { flex: 1; }
+.platform-links { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+.platform-link { padding: 8px 4px; border-radius: 8px; background: var(--panel-soft); color: var(--muted); text-align: center; font-size: 11px; transition: var(--transition); cursor: pointer; }
+.platform-link.on { background: var(--blue-soft); color: var(--blue-text); }
+.platform-link b { display: block; margin-bottom: 2px; font-size: 12px; }
+.contact-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.contact-flag { padding: 3px 10px; border-radius: 999px; background: var(--danger-soft); color: var(--danger-text); font-size: 12px; }
+.contact-flag.warn { background: var(--warning-soft); color: #92400e; }
+.flag-none { color: var(--muted-soft); font-size: 12px; }
+.flag-restore { border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; background: var(--panel); color: var(--blue-text); font-size: 12px; }
+.takeover-list { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow: auto; }
+.takeover-item { padding: 8px 10px; border-radius: 8px; background: var(--panel-soft); }
+.takeover-item b { display: block; color: #b91c1c; font-size: 12px; }
+.takeover-item p { margin: 3px 0 0; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+.takeover-item span { color: var(--muted-soft); font-size: 10px; }
+.waiting-item { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; padding: 8px 10px; border-radius: 8px; background: var(--panel-soft); }
+.waiting-item b { font-size: 12px; }
+.waiting-item span { color: var(--muted); font-size: 12px; }
+.waiting-item button { grid-column: 2; grid-row: 1 / span 2; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--blue-text); font-size: 12px; padding: 4px 10px; }
+
+/* ===== 卡片通用 ===== */
+.settings-card { padding: 20px; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); margin-bottom: 12px; }
+.settings-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+.settings-card > p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
+.settings-save { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 16px 20px; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); }
+.settings-note { color: var(--muted); font-size: 13px; }
+.section-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin: 0 0 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
+.section-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.section-title > div > span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.setting-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.setting-row:last-child { border-bottom: 0; }
+.setting-row span { color: var(--muted); font-size: 13px; }
+.setting-row strong { display: block; margin-bottom: 2px; color: var(--text); font-size: 14px; font-weight: 500; }
+.setting-row input[type="number"], .setting-row select { width: 130px; }
+.time-pair { display: flex; align-items: center; gap: 6px; }
+.time-pair input { width: 70px; }
+.radio-row { display: flex; gap: 16px; }
+.radio-row label { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+
+/* ===== 开关 ===== */
+.switch { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.switch input { position: relative; width: 36px; height: 20px; flex: 0 0 36px; border-radius: 999px; padding: 0; appearance: none; background: #d1d5db; transition: var(--transition); cursor: pointer; }
+.switch input:checked { background: var(--blue); }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); transition: var(--transition); }
+.switch input:checked::after { transform: translateX(16px); }
+
+/* ===== 表单 ===== */
+.form-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.form-grid label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+
+/* ===== 规则中心 ===== */
+.rule-center-shell { display: grid; gap: 14px; }
+.rule-center-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px 20px; border-radius: var(--radius);
+  background: var(--panel); box-shadow: var(--shadow-sm);
+}
+.rule-center-head h2 { font-size: 20px; font-weight: 700; }
+.rule-center-head p { margin-top: 3px; color: var(--muted); font-size: 13px; }
+.rule-search { flex: 0 0 280px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.rule-search:focus-within { border-color: var(--blue); background: var(--panel); }
+.rule-search svg { width: 15px; height: 15px; flex: 0 0 15px; fill: none; stroke: var(--muted); stroke-width: 2; }
+.rule-search input { border: 0; padding: 8px 0; background: transparent; box-shadow: none; }
+.rule-center-head-actions { display: flex; align-items: center; gap: 10px; }
+.rule-center-head-actions label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.rule-center-layout { display: grid; grid-template-columns: 180px 1fr; gap: 14px; align-items: start; }
+.rule-center-nav { position: sticky; top: 14px; display: grid; gap: 2px; padding: 6px; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); }
+.rule-nav-button {
+  min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border-radius: 6px; padding: 8px 12px; color: var(--muted); font-weight: 400; font-size: 13px; text-align: left;
+  transition: var(--transition);
+}
+.rule-nav-button:hover { background: var(--panel-soft); color: var(--text); }
+.rule-nav-button.on { background: var(--blue-soft); color: var(--blue-text); font-weight: 500; }
+.rule-nav-count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 11px; text-align: center; }
+.rule-nav-button.on .rule-nav-count { background: var(--panel); color: var(--blue-text); }
+.rule-nav-count.alert { background: var(--danger-soft); color: var(--danger-text); }
+.rule-center-main { min-width: 0; display: grid; gap: 12px; }
+.rule-tab-panel { display: none; }
+.rule-tab-panel.on { display: grid; gap: 12px; }
+.rule-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); border-radius: var(--radius); overflow: hidden; background: var(--panel); box-shadow: var(--shadow-sm); }
+.rule-stat { min-height: 100px; padding: 16px; border-right: 1px solid var(--line-soft); }
+.rule-stat:last-child { border-right: 0; }
+.rule-stat-top { display: flex; align-items: center; gap: 8px; }
+.rule-stat-top > span:last-child { color: var(--muted); font-size: 12px; }
+.rule-stat-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; background: var(--blue-soft); color: var(--blue-text); }
+.rule-stat-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.rule-stat strong { display: block; margin-top: 8px; font-size: 26px; font-weight: 700; line-height: 1; }
+.rule-stat small { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+.rule-stat em { display: block; margin-top: 3px; color: var(--muted-soft); font-size: 11px; font-style: normal; }
+.rule-stat.error { background: var(--danger-soft); }
+.rule-stat.error strong { color: var(--danger-text); }
+.rule-stat.warn { background: var(--warning-soft); }
+.rule-stat.warn strong { color: var(--warning); }
+.rule-stat.ok { background: var(--blue-soft); }
+.rule-stat.ok strong { color: var(--blue-text); }
+.rule-section { padding: 18px 20px; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); }
+.rule-section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 14px; }
+.rule-section-head h3 { font-size: 16px; font-weight: 600; }
+.rule-section-head p { margin-top: 3px; color: var(--muted); font-size: 13px; }
+.rule-filter-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+.rule-filter-bar select { width: auto; min-width: 120px; }
+.rule-help-strip { display: grid; grid-template-columns: repeat(3,1fr); border-radius: var(--radius); overflow: hidden; background: var(--panel); box-shadow: var(--shadow-sm); }
+.rule-help-item { padding: 14px 16px; border-right: 1px solid var(--line-soft); }
+.rule-help-item:last-child { border-right: 0; }
+.rule-help-item b { display: block; font-size: 13px; font-weight: 600; }
+.rule-help-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+/* ===== 规则卡片 ===== */
+.legacy-rule-list { display: grid; gap: 8px; }
+.legacy-rule { padding: 14px 16px; border-radius: 8px; background: var(--panel); box-shadow: var(--shadow-sm); transition: var(--transition); }
+.legacy-rule:hover { box-shadow: var(--shadow); }
+.legacy-rule-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.legacy-rule-head b { font-size: 14px; font-weight: 600; }
+.legacy-rule-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.legacy-tag { padding: 2px 8px; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 11px; }
+.legacy-tag.keep { background: var(--blue-soft); color: var(--blue-text); }
+.legacy-tag.move { background: #ede9fe; color: #6d28d9; }
+.legacy-tag.review { background: var(--warning-soft); color: var(--warning); }
+.legacy-rule p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.legacy-rule small { display: block; margin-top: 6px; color: var(--muted-soft); font-size: 11px; }
+
+/* ===== 规则卡片（JS 动态生成的真实结构） ===== */
+.rule-topic-group { margin-bottom: 20px; }
+.rule-topic-title {
+  display: flex; align-items: center; margin-bottom: 10px;
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.rule-topic-title::after {
+  content: ""; flex: 1; height: 1px; margin-left: 12px; background: var(--line);
+}
+.rule-list-grid { display: grid; gap: 10px; }
+.rule-card {
+  padding: 16px 18px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  transition: var(--transition);
+}
+.rule-card:hover { border-color: var(--blue-light); box-shadow: var(--shadow); }
+.rule-card.off { opacity: .6; }
+.rule-card.conflict-error { border-left: 3px solid var(--danger); }
+.rule-card.conflict-warn { border-left: 3px solid var(--warning); }
+.rule-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.rule-card-head h4 { font-size: 15px; font-weight: 600; line-height: 1.4; }
+.rule-card-head p { margin-top: 4px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.rule-card-head > div { flex: 1; min-width: 0; }
+.rule-details { margin-top: 6px; }
+.rule-details summary {
+  cursor: pointer; color: var(--blue-text); font-size: 12px;
+  user-select: none; list-style: none;
+}
+.rule-details summary::before { content: "▸ "; }
+.rule-details[open] summary::before { content: "▾ "; }
+.rule-details p { margin-top: 6px; padding: 10px 12px; border-radius: 6px; background: var(--panel-soft); color: var(--text); font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+.rule-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 999px;
+  background: var(--panel-soft); color: var(--muted);
+  font-size: 11px; font-weight: 500; white-space: nowrap;
+}
+.rule-badge.on { background: var(--blue-soft); color: var(--blue-text); }
+.rule-badge.off { background: #f3f4f6; color: var(--muted-soft); }
+.rule-badge.error { background: var(--danger-soft); color: var(--danger-text); }
+.rule-badge.warn { background: var(--warning-soft); color: #92400e; }
+.rule-badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.rule-card-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+
+/* ===== 冲突 ===== */
+.rule-conflict-list { display: grid; gap: 8px; }
+.rule-conflict { padding: 12px 14px; border-radius: 8px; background: var(--panel); box-shadow: var(--shadow-sm); }
+.rule-conflict.error { background: var(--danger-soft); }
+.rule-conflict.warn { background: var(--warning-soft); }
+.rule-conflict.info { background: var(--blue-soft); }
+.rule-conflict h4 { font-size: 14px; font-weight: 600; }
+.rule-conflict p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.rule-conflict-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.rule-empty { padding: 28px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); text-align: center; font-size: 13px; }
+.section-empty { padding: 24px; text-align: center; color: var(--muted-soft); font-size: 13px; line-height: 1.6; }
+
+/* ===== 人设卡片（规则中心-人设与资料） ===== */
+.persona-card {
+  padding: 18px 20px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  margin-bottom: 12px;
+}
+.persona-card.active { border-color: var(--blue-light); box-shadow: 0 0 0 3px rgba(14,165,233,.08); }
+.persona-card h3 { font-size: 16px; font-weight: 600; }
+.drawer-section { margin-top: 12px; }
+.drawer-item {
+  padding: 10px 12px; border-radius: 8px; background: var(--panel-soft);
+  margin-top: 6px; line-height: 1.5;
+}
+.persona-actions { display: flex; gap: 8px; }
+
+/* ===== 知识卡补充 ===== */
+.drawer-meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0; }
+
+/* ===== 图库列表（参考素材库） ===== */
+.gallery-grid { display: grid; gap: 8px; }
+.lib-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line-soft);
+  cursor: pointer; transition: var(--transition);
+}
+.lib-row:hover { border-color: var(--blue-light); box-shadow: var(--shadow); }
+.lib-row-thumb {
+  width: 52px; height: 52px; flex: 0 0 52px;
+  border-radius: 8px; overflow: hidden; background: var(--panel-soft);
+  display: grid; place-items: center;
+}
+.lib-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.lib-row-thumb-empty { font-size: 11px; color: var(--muted-soft); }
+.lib-row-main { flex: 1; min-width: 0; }
+.lib-row-title { display: flex; align-items: center; gap: 8px; }
+.lib-row-title b { font-size: 15px; font-weight: 600; }
+.lib-row-desc { margin-top: 3px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-row-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* ===== 分组详情页 ===== */
+.lib-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 12px; }
+.lib-detail-item { overflow: hidden; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-soft); transition: var(--transition); }
+.lib-detail-item:hover { box-shadow: var(--shadow); border-color: var(--blue-light); }
+.lib-detail-img { aspect-ratio: 1; overflow: hidden; background: var(--panel-soft); cursor: pointer; }
+.lib-detail-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .2s; }
+.lib-detail-img:hover img { transform: scale(1.04); }
+.lib-detail-info { padding: 10px 12px; }
+.lib-detail-name { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 8px; }
+.lib-detail-actions { display: flex; gap: 6px; }
+.lib-detail-actions button { flex: 1; min-height: 28px; padding: 3px 6px; font-size: 11px; }
+.lib-detail-copy { margin-top: 6px; }
+.lib-copy-select { width: 100%; padding: 4px 8px; font-size: 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+
+/* ===== 知识卡 ===== */
+.drawer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 12px; }
+.drawer-card { display: grid; gap: 8px; padding: 14px; border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); }
+.drawer-card.off { opacity: .6; }
+.drawer-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.drawer-card-head input { font-weight: 600; }
+.drawer-field { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.drawer-card textarea { min-height: 80px; font-size: 13px; }
+.drawer-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* ===== 弹窗 ===== */
+.modal-layer { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.35); backdrop-filter: blur(4px); }
+.modal { width: min(560px, 100%); max-height: 85vh; display: flex; flex-direction: column; border-radius: 14px; background: var(--panel); box-shadow: 0 20px 60px rgba(0,0,0,.15); overflow: hidden; }
+.modal.small { width: min(440px, 100%); }
+.modal.image-modal { width: min(860px, 95vw); }
+.modal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line-soft); }
+.modal-head h2 { font-size: 17px; font-weight: 600; }
+.modal-body { padding: 20px; overflow: auto; }
+.modal-body.image-view { display: grid; place-items: center; padding: 0; }
+.modal-body.image-view img { max-width: 100%; max-height: 70vh; object-fit: contain; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--line-soft); }
+
+/* ===== Toast ===== */
+.toast-stack { position: fixed; top: 20px; right: 20px; z-index: 300; display: grid; gap: 8px; }
+.toast { padding: 10px 16px; border-radius: 8px; color: #fff; font-size: 13px; box-shadow: var(--shadow-lg); }
+
+/* ===== 其他 ===== */
+.danger-text { color: var(--danger-text); }
+.status-good { color: var(--blue-text); }
+.empty-panel { min-height: 180px; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--panel); color: var(--muted); text-align: center; }
+.dashboard-feedback-button { position: fixed; right: 20px; bottom: 20px; z-index: 180; min-height: 40px; border-radius: 999px; padding: 8px 16px; background: var(--panel); color: var(--blue-text); border: 1px solid var(--line); box-shadow: var(--shadow); font-weight: 500; font-size: 13px; }
+.dashboard-feedback-button:hover { background: var(--blue-soft); }
+.dashboard-incident-list { display: grid; gap: 8px; }
+.dashboard-incident-item { padding: 10px; border-radius: 8px; background: var(--panel-soft); }
+.dashboard-incident-item b { font-size: 13px; }
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { border-radius: 999px; background: #d1d5db; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 1240px) {
+  .app { grid-template-columns: 180px 1fr; }
+  .session-layout { grid-template-columns: 260px 1fr; }
+  .profile-panel { position: fixed; top: 10px; right: 10px; bottom: 10px; z-index: 60; width: min(320px, calc(100vw - 20px)); border-radius: var(--radius); box-shadow: var(--shadow-lg); transform: translateX(calc(100% + 20px)); transition: transform .2s ease; }
+  .profile-panel.mobile-open { transform: translateX(0); }
+  .mobile-profile-button { display: inline-flex; }
+}
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .app-sidebar { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+  .app-brand { min-height: 52px; padding: 0 14px; }
+  .page-nav { display: flex; gap: 4px; padding: 8px 10px; overflow-x: auto; }
+  .page-nav button { width: auto; min-height: 36px; padding: 0 12px; white-space: nowrap; }
+  .sidebar-tools { display: flex; position: absolute; top: 8px; right: 10px; padding: 0; border: 0; }
+  .session-layout { grid-template-columns: 1fr; padding: 8px; }
+  .customer-panel { position: fixed; inset: 0 12% 0 0; z-index: 70; transform: translateX(-105%); transition: transform .2s ease; }
+  .customer-panel.mobile-open { transform: translateX(0); }
+  .mobile-menu-button { display: inline-flex; }
+  .message-block { max-width: 88%; }
+  .page-shell { padding: 14px; }
+  .page-head { flex-direction: column; }
+  .settings-grid { grid-template-columns: 1fr; }
+  .rule-center-head { flex-direction: column; align-items: stretch; }
+  .rule-search { flex: none; width: 100%; }
+  .rule-center-layout { grid-template-columns: 1fr; }
+  .rule-center-nav { position: static; display: flex; overflow-x: auto; }
+  .rule-nav-button { min-width: max-content; }
+  .rule-summary-grid { grid-template-columns: repeat(2,1fr); }
+  .rule-help-strip { grid-template-columns: 1fr; }
+  .rule-help-item { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+}
+
+</style>
+</head>
+<body>
+
+<div class="login-layer" id="loginView">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="brand-mark">AI</div>
+      <div>
+        <h1>Aaiagent 客户看板</h1>
+        <p>会话、图库、抽屉和设备设置都放在一个工作台里</p>
+      </div>
+    </div>
+    <div class="login-row">
+      <input id="passwordInput" type="password" placeholder="管理密码" autocomplete="current-password" autofocus>
+      <button class="primary-button" id="loginButton">进入</button>
+    </div>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<main class="app" id="appView" hidden>
+  <aside class="app-sidebar">
+    <div class="app-brand">
+      <div class="brand-mark">AI</div>
+      <div><strong>托管工作台</strong><span>统一客户与会话</span></div>
+    </div>
+    <nav class="page-nav" id="pageNav">
+      <button data-page="session" class="on" onclick="showPage('session')"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>会话</button>
+      <button data-page="library" onclick="showPage('library')"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>图库</button>
+      <button data-page="drawers" onclick="showPage('drawers')"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="10" cy="18" r="1.5"/></svg>规则中心</button>
+      <button data-page="kb" onclick="showPage('kb')"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>知识库</button>
+      <button data-page="settings" onclick="showPage('settings')"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.42 1.42-.06-.06A1.7 1.7 0 0 0 16.44 18a1.7 1.7 0 0 0-1 .56 1.7 1.7 0 0 0-.4 1.1V20h-2v-.34A1.7 1.7 0 0 0 12 18a1.7 1.7 0 0 0-1.54 1.66V20h-2v-.34A1.7 1.7 0 0 0 7.56 18a1.7 1.7 0 0 0-1.88.34l-.06.06-1.42-1.42.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.56-1 1.7 1.7 0 0 0-1.1-.4H2.6v-2h.34A1.7 1.7 0 0 0 4.6 10a1.7 1.7 0 0 0-.34-1.88l-.06-.06 1.42-1.42.06.06A1.7 1.7 0 0 0 7.56 7a1.7 1.7 0 0 0 1-.56 1.7 1.7 0 0 0 .4-1.1V5h2v.34A1.7 1.7 0 0 0 12 7a1.7 1.7 0 0 0 1.54-1.66V5h2v.34A1.7 1.7 0 0 0 16.44 7a1.7 1.7 0 0 0 1.88-.34l.06-.06 1.42 1.42-.06.06A1.7 1.7 0 0 0 19.4 10a1.7 1.7 0 0 0 .56 1 1.7 1.7 0 0 0 1.1.4h.34v2h-.34A1.7 1.7 0 0 0 19.4 15Z"/></svg>设置</button>
+    </nav>
+    <div class="sidebar-tools">
+      <button id="personaButton">人设管理</button>
+      <button id="tokenButton">设备密钥</button>
+      <button id="logoutButton">退出登录</button>
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <section class="page-panel on" id="page-session">
+      <div class="session-layout">
+        <aside class="panel customer-panel" id="sidebar">
+          <div class="panel-head">
+            <div class="panel-title-row">
+              <div><h2>客户会话</h2><p>不同平台的同一个人会合在一起</p></div>
+            </div>
+            <div class="filters">
+              <label class="wide"><input id="searchInput" type="search" placeholder="搜索昵称或聊天内容"></label>
+              <label><select id="deviceSelect"><option value="">全部设备</option></select></label>
+              <label><select id="platformSelect">
+                <option value="">全部平台</option>
+                <option value="soul">Soul</option>
+                <option value="qq">QQ</option>
+                <option value="immomo">陌陌</option>
+                <option value="lianxin">连信</option>
+              </select></label>
+              <button class="icon-button" id="refreshButton" title="刷新数据">↻</button>
+            </div>
+            <div class="summary-row"><span id="customerSummary">0 位客户</span><span id="lastRefresh"></span></div>
+          </div>
+          <div class="customer-list" id="customerList"></div>
+        </aside>
+
+        <section class="panel chat">
+          <header class="chat-head">
+            <div class="chat-title-wrap">
+              <div class="toolbar">
+                <button class="ghost-button mobile-menu-button" id="mobileSidebarButton">客户列表</button>
+                <button class="ghost-button mobile-profile-button" id="mobileProfileButton">客户资料</button>
+              </div>
+              <div class="chat-title-row">
+                <div class="chat-title" id="chatTitle">请选择客户</div>
+                <div class="platforms" id="chatPlatforms"></div>
+              </div>
+              <div class="chat-subtitle" id="chatSubtitle">从左侧选择客户查看完整对话</div>
+              <div class="alias-strip" id="aliasStrip"></div>
+            </div>
+            <div class="chat-actions">
+              <span class="action-status" id="actionStatus"></span>
+              <button class="ghost-button" id="bindButton" disabled>关联账号</button>
+              <button class="ghost-button priority-button" id="priorityButton" disabled>优先回复</button>
+            </div>
+          </header>
+          <div class="messages" id="messages"><div class="empty-state">选择客户后查看跨平台完整对话</div></div>
+          <div class="composer">
+            <div class="composer-box">
+              <textarea id="manualInput" placeholder="输入要原样发送的消息" disabled></textarea>
+              <button class="primary-button" id="manualSendButton" disabled>优先发送</button>
+            </div>
+            <div class="composer-note" id="composerNote">人工消息会进入最高优先队列，手机端托管开启后优先发送。</div>
+          </div>
+        </section>
+
+        <aside class="panel profile-panel" id="profilePanel">
+          <div class="profile-head"><h2>客户资料</h2><p>统一身份、状态与接管记录</p></div>
+          <div class="profile-hero">
+            <div class="avatar" id="profileAvatar">客</div>
+            <h3 id="profileName">请选择客户</h3>
+            <p id="profileSubtitle">选择后查看客户资料</p>
+          </div>
+          <div class="profile-stats">
+            <div class="stat"><strong id="profileMessageCount">0</strong><span>消息总数</span></div>
+            <div class="stat"><strong id="profilePlatformCount">0</strong><span>平台账号</span></div>
+          </div>
+          <div class="profile-section">
+            <h4>平台账号</h4>
+            <div class="platform-links" id="profilePlatformLinks"></div>
+          </div>
+          <div class="profile-section">
+            <h4>回复状态</h4>
+            <div class="contact-flags" id="profileFlags"><span class="flag-none">正常回复中</span></div>
+          </div>
+          <div class="profile-section">
+            <h4>人工接管</h4>
+            <div class="profile-actions">
+              <button class="ghost-button" id="takeoverBtn" onclick="setTakeover('manual')">人工接管</button>
+              <button class="ghost-button" id="releaseBtn" onclick="setTakeover('ai')">放回 AI</button>
+            </div>
+          </div>
+          <div class="profile-section">
+            <h4>待人工 <span class="profile-updated" id="waitingCount"></span></h4>
+            <div class="takeover-list" id="waitingList"><div class="flag-none">暂无等待</div></div>
+          </div>
+          <div class="profile-section">
+            <h4>接管记录 <span class="profile-updated" id="takeoverCount"></span></h4>
+            <div class="takeover-list" id="takeoverList"><div class="flag-none">暂无</div></div>
+          </div>
+          <div class="profile-section">
+            <h4>身份档案 <span class="profile-updated" id="profileUpdated"></span></h4>
+            <div class="profile-info"><span>姓名 / 称呼</span><b id="profileBasicName">未收集</b></div>
+            <div class="profile-info"><span>所在城市</span><b id="profileLocationCity">未收集</b></div>
+            <div class="profile-info"><span>家乡</span><b id="profileLocationHometown">未收集</b></div>
+            <div class="profile-info"><span>学校 / 专业</span><b id="profileEducation">未收集</b></div>
+            <div class="profile-info"><span>工作</span><b id="profileWork">未收集</b></div>
+            <div class="profile-info"><span>家庭</span><b id="profileFamily">未收集</b></div>
+            <div class="profile-info"><span>感情状态</span><b id="profileRelationship">未收集</b></div>
+            <div class="profile-info"><span>喜欢</span><b id="profileLikes">未收集</b></div>
+            <div class="profile-info"><span>不喜欢</span><b id="profileDislikes">未收集</b></div>
+            <div class="profile-info"><span>近期动态</span><b id="profileRecent">未收集</b></div>
+            <div class="profile-info"><span>备注</span><b id="profileNotes">未收集</b></div>
+          </div>
+          <div class="profile-section">
+            <h4>当前状态</h4>
+            <div class="profile-info"><span>回复优先</span><b id="profilePriority">普通</b></div>
+            <div class="profile-info"><span>共享记忆</span><b class="status-good">正常</b></div>
+            <div class="profile-info"><span>最后消息</span><b id="profileLastMessage">--</b></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="page-panel" id="page-library">
+      <div class="page-shell">
+        <div class="page-inner">
+          <!-- 分组列表视图 -->
+          <div id="libGroupsView">
+            <header class="page-head">
+              <div><h2>图库</h2><p>点击分组查看里面的所有图片</p></div>
+              <button class="primary-button" id="createLibGroupButton">新建分组</button>
+            </header>
+            <div class="gallery-grid" id="libGrid"></div>
+          </div>
+          <!-- 分组详情视图 -->
+          <div id="libDetailView" hidden>
+            <header class="page-head">
+              <div>
+                <button class="text-button" id="libBackButton" style="margin-bottom:6px;">← 返回分组列表</button>
+                <h2 id="libDetailName"></h2>
+                <p id="libDetailMeta"></p>
+              </div>
+              <button class="primary-button" id="libDetailUploadButton">上传图片到此分组</button>
+            </header>
+            <div class="lib-detail-grid" id="libDetailGrid"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-panel" id="page-drawers">
+      <div class="page-shell">
+        <div class="page-inner">
+          <div class="rule-center-shell">
+            <header class="rule-center-head">
+              <div>
+                <h2>规则中心</h2>
+                <p>先看总览，再按分类管理；每条规则都标明管什么、谁使用、什么时候生效，有冲突会直接提醒。</p>
+              </div>
+              <label class="rule-search">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="ruleCenterSearch" type="search" placeholder="搜索规则、人设或关键词">
+              </label>
+              <div class="rule-center-head-actions">
+                <label>当前人设
+                  <select id="drawerPersona">
+                    <option value="female_sutang">苏棠</option>
+                    <option value="female">星暮</option>
+                    <option value="male">阿杰</option>
+                    <option value="male_chenyu">陈屿</option>
+                  </select>
+                </label>
+                <span class="small-muted" id="personaPublishStatus"></span>
+              </div>
+            </header>
+            <div class="rule-center-layout">
+              <aside class="rule-center-nav" id="ruleCenterNav">
+                <button class="rule-nav-button on" data-rule-tab="overview">规则总览 <span class="rule-nav-count" id="ruleNavOverviewCount"></span></button>
+                <button class="rule-nav-button" data-rule-tab="rules">全部规则 <span class="rule-nav-count" id="ruleNavRulesCount"></span></button>
+                <button class="rule-nav-button" data-rule-tab="conflicts">冲突提醒 <span class="rule-nav-count alert" id="ruleNavConflictCount"></span></button>
+                <button class="rule-nav-button" data-rule-tab="persona">人设与资料 <span class="rule-nav-count" id="ruleNavPersonaCount"></span></button>
+                <button class="rule-nav-button" data-rule-tab="execution">手机执行规则 <span class="rule-nav-count" id="ruleNavExecutionCount"></span></button>
+              </aside>
+              <main class="rule-center-main">
+                <section class="rule-tab-panel on" id="rulePanelOverview">
+                  <div class="rule-summary-grid">
+                    <div class="rule-stat ok"><div class="rule-stat-top"><span class="rule-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></span><span>正在生效</span></div><strong id="ruleSummaryActive">0</strong><small>会进入下一轮聊天</small><em>运行正常</em></div>
+                    <div class="rule-stat"><div class="rule-stat-top"><span class="rule-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h8M8 12h8M8 18h5"/></svg></span><span>已停用</span></div><strong id="ruleSummaryDisabled">0</strong><small>保留但不执行</small><em>可随时恢复</em></div>
+                    <div class="rule-stat error"><div class="rule-stat-top"><span class="rule-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v5m0 3h.01"/></svg></span><span>严重冲突</span></div><strong id="ruleSummaryErrors">0</strong><small>可能互相打架</small><em>优先处理</em></div>
+                    <div class="rule-stat warn"><div class="rule-stat-top"><span class="rule-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3h.01M4 4l16 16"/></svg></span><span>需要确认</span></div><strong id="ruleSummaryWarnings">0</strong><small>范围或内容重叠</small><em>建议检查</em></div>
+                  </div>
+                  <div class="rule-help-strip">
+                    <div class="rule-help-item"><b>先看冲突</b><span>红色和黄色提醒会告诉你哪两条规则可能打架。</span></div>
+                    <div class="rule-help-item"><b>再改规则</b><span>点编辑、停用或删除，保存后下一条聊天立即生效。</span></div>
+                    <div class="rule-help-item"><b>最后试聊</b><span>用同一个问题同时看 A、B 两个模型怎么回答。</span></div>
+                  </div>
+                </section>
+          <section class="settings-card rule-tab-panel" id="ruleSharedFactsCard">
+            <div class="section-title">
+              <div>
+                <h3>共享人物资料 <span class="profile-updated" id="sharedPersonaVersion"></span></h3>
+                <span>4 套人设所有设备共用；这里保存后，所有使用这套人设的手机都会更新</span>
+              </div>
+              <button class="primary-button" id="saveSharedFactsButton">保存共享资料</button>
+            </div>
+            <div class="form-grid">
+              <label>年龄方式
+                <select id="sharedFactsAgeMode">
+                  <option value="fixed_age">固定年龄</option>
+                  <option value="birth_year">出生年份</option>
+                </select>
+              </label>
+              <label>固定年龄<input id="sharedFactsFixedAge" type="number" min="18" max="80" placeholder="例如：29"></label>
+              <label>出生年份<input id="sharedFactsBirthYear" type="number" min="1900" max="2099" placeholder="例如：1997"></label>
+              <label>婚姻状态
+                <select id="sharedFactsMarital">
+                  <option value="single">未婚</option>
+                  <option value="married">已婚</option>
+                  <option value="divorced">离异</option>
+                </select>
+              </label>
+              <label>是否有孩子
+                <select id="sharedFactsHasChildren">
+                  <option value="false">没有孩子</option>
+                  <option value="true">有孩子</option>
+                </select>
+              </label>
+              <label>孩子年龄<input id="sharedFactsChildrenAge" type="number" min="0" max="80" placeholder="例如：3"></label>
+              <label>QQ号<input id="sharedFactsQq" inputmode="numeric" placeholder="5 到 12 位数字，可留空"></label>
+              <label>老家/籍贯<input id="sharedFactsHometown" placeholder="例如：重庆"></label>
+              <label>现居城市<input id="sharedFactsCurrentCity" placeholder="例如：重庆"></label>
+              <label>现居区县<input id="sharedFactsCurrentDistrict" placeholder="例如：两江新区"></label>
+              <label>常用区域或地标<input id="sharedFactsCommonArea" placeholder="可选，例如：观音桥附近"></label>
+              <label>工作城市<input id="sharedFactsWorkCity" placeholder="例如：重庆"></label>
+              <label>工作区域<input id="sharedFactsWorkDistrict" placeholder="例如：江北区"></label>
+              <label>位置公开精度
+                <select id="sharedFactsLocationPrecision">
+                  <option value="city">只说城市</option>
+                  <option value="district">只说到区县</option>
+                  <option value="landmark">可说到地标</option>
+                </select>
+              </label>
+              <label>主动提位置
+                <select id="sharedFactsProactiveLocation">
+                  <option value="false">不允许主动提</option>
+                  <option value="true">允许主动提</option>
+                </select>
+              </label>
+            </div>
+            <div class="small-muted" id="sharedFactsStatus">手机端不再单独修改这些资料。</div>
+          </section>
+          <div class="agent-overview-grid rule-tab-panel" id="ruleOverviewGrid">
+            <section class="settings-card">
+              <h3>现在这个 Agent 是谁</h3>
+              <div id="agentIdentitySummary" class="agent-summary"></div>
+            </section>
+            <section class="settings-card">
+              <h3>冲突提醒</h3>
+              <div id="agentConflicts" class="conflict-list"></div>
+            </section>
+          </div>
+          <section class="settings-card rule-tab-panel" id="personaAuditCard">
+            <div class="section-title">
+              <div><h3>4 套人设隔离检查</h3><span>检查正文、资料和卡片有没有混入其他人设的身份、工作或家庭信息</span></div>
+              <button class="ghost-button" id="runPersonaAuditButton">开始检查</button>
+            </div>
+            <div id="personaAuditResult" class="small-muted">还没有检查。</div>
+          </section>
+          <section class="settings-card agent-editor-card rule-tab-panel" id="rulePersonaEditorCard">
+            <div class="section-title">
+              <div><h3>人设正文</h3><span>这里负责她是谁、性格、整体表达方式</span></div>
+              <button class="primary-button" id="savePersonaPromptButton">保存人设正文</button>
+            </div>
+            <label class="drawer-field">人设名字<input id="personaNameEditor" placeholder="例如：苏棠"></label>
+            <textarea id="personaPromptEditor" class="persona-prompt-editor" placeholder="写她是谁、性格、工作、整体怎么说话..."></textarea>
+            <div class="small-muted" id="personaPromptStatus"></div>
+          </section>
+          <section class="settings-card rule-tab-panel" id="rulePromptOrderCard">
+            <div class="section-title"><h3>发送顺序</h3><span>所有模型看到的顺序都一样</span></div>
+            <div id="agentPromptOrder" class="prompt-order"></div>
+          </section>
+          <section class="settings-card agent-test-card rule-tab-panel" id="ruleAgentTestCard">
+            <div class="section-title">
+              <div><h3>双模型试聊</h3><span>同一套人设和卡片，同时看 A、B 两边怎么回答</span></div>
+              <button class="primary-button" id="runAgentTestButton">开始试聊</button>
+            </div>
+            <textarea id="agentTestQuestions" class="persona-prompt-editor" placeholder="每行一个问题，例如：你孩子几岁？">你今年多大？
+你孩子几岁？
+你最讨厌别人做什么？
+你会主动给联系方式吗？</textarea>
+            <div id="agentTestResults" class="agent-test-results"></div>
+          </section>
+          <section class="settings-card program-rules-card rule-tab-panel" id="ruleExecutionCard">
+            <div class="section-title">
+              <div><h3>程序规则 <span class="profile-updated" id="programRulesStatus"></span></h3><span>这里改完保存，下一条聊天按新内容执行；系统固定识别格式仍由程序保护</span></div>
+              <button class="primary-button" id="saveProgramRulesButton">保存程序规则</button>
+            </div>
+            <div class="program-rule-block">
+              <div class="program-rule-title">
+                <div>
+                  <b>我的安全底线</b>
+                  <span>这里是给模型执行的安全要求；可以停用或清空，保存后下一条聊天立即生效</span>
+                </div>
+                <div class="toolbar">
+                  <label class="switch"><input id="programSafetyBoundaryEnabled" type="checkbox">启用</label>
+                  <button class="ghost-button small-button danger-text" id="deleteProgramSafetyBoundaryButton">删除</button>
+                </div>
+              </div>
+              <label class="program-rule-field">
+                安全底线文字
+                <textarea id="programSafetyBoundary" class="program-rule-voice-instruction" placeholder="写清楚所有模型都必须遵守的安全底线"></textarea>
+              </label>
+            </div>
+            <div class="program-rule-block">
+              <div class="program-rule-title">
+                <div>
+                  <b>平台提示和系统通知</b>
+                  <span>一行写一个。出现这些内容时，程序会在送给模型前先丢掉，不当作客户消息。</span>
+                </div>
+                <div class="toolbar">
+                  <label class="switch"><input id="programPlatformNoticeEnabled" type="checkbox">启用</label>
+                  <button class="ghost-button small-button danger-text" id="deleteProgramPlatformNoticeButton">删除</button>
+                </div>
+              </div>
+              <label class="program-rule-field">
+                系统提示文字
+                <textarea id="programPlatformNoticeMarkers" class="program-rule-markers" placeholder="一行一个，例如：&#10;对方正在输入&#10;系统通知&#10;已读回执"></textarea>
+              </label>
+            </div>
+            <div class="program-rule-block">
+              <div class="program-rule-title">
+                <div>
+                  <b>没有转出文字的语音</b>
+                  <span>手机发来语音但拿不到文字时，按你选的方式处理。</span>
+                </div>
+                <div class="toolbar">
+                  <label class="switch"><input id="programVoiceEnabled" type="checkbox">启用</label>
+                  <button class="ghost-button small-button danger-text" id="deleteProgramVoiceButton">删除</button>
+                </div>
+              </div>
+              <div class="program-rule-grid">
+                <label class="program-rule-field">
+                  处理方式
+                  <select id="programVoiceMode">
+                    <option value="redirect">照常聊别的，不提听不清</option>
+                    <option value="ignore">直接跳过，不回</option>
+                    <option value="fixed_reply">固定回一句</option>
+                  </select>
+                </label>
+                <label class="program-rule-field">
+                  固定回复
+                  <input id="programVoiceFixedReply" placeholder="只在“固定回一句”时使用">
+                </label>
+              </div>
+              <label class="program-rule-field">
+                给模型的执行文字
+                <textarea id="programVoiceInstruction" class="program-rule-voice-instruction" placeholder="例如：不许说听不清，也不许假装听到了内容"></textarea>
+              </label>
+            </div>
+            <div class="program-rule-block">
+              <div class="program-rule-title">
+                <div>
+                  <b>互动表情和表情包</b>
+                  <span>程序先把图案翻译成意思，再交给模型。左边写表情名字，右边写它代表什么。</span>
+                </div>
+                <div class="toolbar">
+                  <label class="switch"><input id="programStickerEnabled" type="checkbox">启用</label>
+                  <button class="ghost-button small-button danger-text" id="deleteProgramStickerButton">删除</button>
+                </div>
+              </div>
+              <label class="program-rule-field">
+                给模型的执行文字
+                <textarea id="programStickerInstruction" placeholder="例如：表情只是虚拟表情，不许当成真实动作"></textarea>
+              </label>
+              <div>
+                <div class="program-rule-title" style="margin-bottom:7px">
+                  <div><b>表情含义</b><span class="program-rule-help">最多200个，未填写的表情仍会原样保留名称。</span></div>
+                  <button class="ghost-button small-button" id="addStickerMeaningButton">新增一行</button>
+                </div>
+                <div id="stickerMeaningRows" class="sticker-meaning-list"></div>
+              </div>
+            </div>
+            <div class="program-rule-block">
+              <div class="program-rule-title">
+                <div><b>试一下</b><span>不会真的发消息，只告诉你程序会丢掉、跳过还是怎么改。</span></div>
+              </div>
+              <div class="program-rule-test-row">
+                <input id="programRuleTestInput" placeholder="例如：【平台提示】对方正在输入……">
+                <button class="ghost-button" id="runProgramRuleTestButton">检查</button>
+              </div>
+              <div id="programRuleTestResult" class="program-rule-test-result"></div>
+            </div>
+          </section>
+          <section class="rule-section rule-tab-panel" id="ruleConflictCard">
+            <div class="rule-section-head">
+              <div>
+                <h3>冲突提醒 <span class="profile-updated" id="ruleConflictCount"></span></h3>
+                <p>这里只做提醒，不会阻止你保存或删除。红黄提醒点开后可以直接编辑或停用相关规则。</p>
+              </div>
+              <div class="rule-filter-bar">
+                <select id="ruleConflictLevelFilter">
+                  <option value="">全部冲突</option>
+                  <option value="error">只看会打架</option>
+                  <option value="warn">只看范围重叠</option>
+                  <option value="info">只看重复和相近</option>
+                </select>
+                <button class="ghost-button small-button" id="refreshAgentRulesConflictButton">重新检查</button>
+              </div>
+            </div>
+            <div id="agentRuleConflictList" class="rule-conflict-list"></div>
+          </section>
+          <section class="settings-card legacy-rules-card rule-tab-panel" id="ruleRulesCard">
+            <div class="section-title">
+              <div><h3>全部规则 <span class="profile-updated" id="legacyRuleCount"></span></h3><span>每条规则都能编辑、停用或删除；保存后下一条聊天立即使用新状态</span></div>
+              <div class="toolbar">
+                <input id="legacyRuleSearch" type="search" placeholder="搜索规则">
+                <select id="agentRuleGateFilter">
+                  <option value="">全部时机</option>
+                  <option value="input">收到消息先处理</option>
+                  <option value="prompt">给大模型看的内容</option>
+                  <option value="output">回复发出前检查</option>
+                  <option value="execution">系统直接执行</option>
+                </select>
+                <select id="agentRuleStatusFilter">
+                  <option value="">全部状态</option>
+                  <option value="enabled">只看正在生效</option>
+                  <option value="disabled">只看已停用</option>
+                </select>
+                <select id="agentRuleConflictFilter">
+                  <option value="">全部规则</option>
+                  <option value="error">只看会打架</option>
+                  <option value="warn">只看范围重叠</option>
+                  <option value="info">只看重复或相近</option>
+                </select>
+                <button class="primary-button" id="createAgentRuleButton">新增规则</button>
+              </div>
+            </div>
+            <div id="legacyAgentRules" class="legacy-rule-list"></div>
+          </section>
+              </main>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-panel" id="page-kb">
+      <div class="page-shell">
+        <div class="page-inner">
+          <header class="page-head">
+            <div><h2>人设知识库</h2><p>每个知识库只属于当前人设；命中的知识卡会优先进入本轮回复</p></div>
+            <div class="toolbar">
+              <label>人设
+                <select id="knowledgePersona">
+                  <option value="female_sutang">苏棠</option>
+                  <option value="female">星暮</option>
+                  <option value="male">阿杰</option>
+                  <option value="male_chenyu">陈屿</option>
+                </select>
+              </label>
+              <button class="primary-button" id="createAgentCardButton">新增知识卡</button>
+              <span class="small-muted" id="drawerCount"></span>
+            </div>
+          </header>
+          <div class="drawer-grid" id="drawerCards"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-panel" id="page-settings">
+      <div class="page-shell">
+        <div class="page-inner">
+          <header class="page-head">
+            <div><h2>设置</h2><p>这里改完会同步到对应手机</p></div>
+            <div class="toolbar">
+              <button class="ghost-button" id="settingsPersonaButton">人设管理</button>
+              <label>设备
+                <select id="settingsDeviceSelect"><option value="">请选择设备</option></select>
+              </label>
+            </div>
+          </header>
+          <div class="settings-grid">
+            <section class="settings-card">
+              <h3>托管开关</h3>
+              <p>决定手机会不会自动回复，以及会不会把聊天同步到看板。</p>
+              <div class="setting-row">
+                <span><strong>AI 自动回复</strong>关掉后只同步，不自动回</span>
+                <label class="switch"><input id="hostingEnabled" type="checkbox">启用</label>
+              </div>
+              <div class="setting-row">
+                <span><strong>监控同步</strong>把手机上的聊天记录同步过来</span>
+                <label class="switch"><input id="monitorEnabled" type="checkbox">启用</label>
+              </div>
+              <div class="setting-row">
+                <span><strong>天气信息</strong>允许聊天时参考天气</span>
+                <label class="switch"><input id="weatherEnabled" type="checkbox">启用</label>
+              </div>
+              <div class="setting-row">
+                <span><strong>时间信息</strong>允许聊天时参考当前时间</span>
+                <label class="switch"><input id="timeEnabled" type="checkbox">启用</label>
+              </div>
+            </section>
+            <section class="settings-card">
+              <h3>回复节奏</h3>
+              <p>调回复前的等待时间，0 就是不额外等待。</p>
+              <div class="setting-row">
+                <span><strong>默认平台</strong>手机主要工作的平台</span>
+                <select id="settingsPlatform">
+                  <option value="soul">Soul</option>
+                  <option value="qq">QQ</option>
+                  <option value="immomo">陌陌</option>
+                  <option value="lianxin">连信</option>
+                </select>
+              </div>
+              <div class="setting-row">
+                <span><strong>回复前等待秒数</strong>0 到 300 秒</span>
+                <input id="paceInput" type="number" min="0" max="300" value="0">
+              </div>
+              <div class="setting-row">
+                <span><strong>AI 值班时间</strong>到点睡觉，起床后交回 AI</span>
+                <label class="switch"><input id="aiHoursEnabled" type="checkbox">启用</label>
+              </div>
+              <div class="setting-row">
+                <span><strong>值班时段</strong>开始和结束小时</span>
+                <div class="time-pair">
+                  <input id="aiStartHour" type="number" min="0" max="23" value="8">
+                  <span>到</span>
+                  <input id="aiEndHour" type="number" min="0" max="23" value="23">
+                </div>
+              </div>
+            </section>
+            <section class="settings-card">
+              <h3>线路</h3>
+              <p>只显示线路名字，不需要记模型名。</p>
+              <div class="setting-row">
+                <span><strong>当前线路</strong>聊天遇到问题时可以切换</span>
+                <div class="radio-row">
+                  <label><input id="lineA" type="radio" name="line" onclick="setModelRoute('a')">线路 A</label>
+                  <label><input id="lineB" type="radio" name="line" onclick="setModelRoute('b')">线路 B</label>
+                </div>
+              </div>
+            </section>
+            <section class="settings-card">
+              <div class="section-title">
+                <div><h3>最近网站问题</h3><span>自动记录页面报错和请求失败；也可以用右下角按钮手动反馈</span></div>
+                <div class="toolbar">
+                  <button class="ghost-button" id="runReplayCasesButton">执行回放题库</button>
+                  <button class="ghost-button" id="refreshDashboardIncidentsButton">刷新</button>
+                </div>
+              </div>
+              <div id="dashboardIncidentList" class="dashboard-incident-list">
+                <div class="flag-none">还没有网站故障记录。</div>
+              </div>
+            </section>
+          </div>
+          <div class="settings-save">
+            <span class="settings-note" id="settingsNote">选择设备后可以修改。</span>
+            <button class="primary-button" id="hostingSaveBtn" onclick="saveHostingConfig()">保存设置</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<input id="libraryUploadInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+
+<div class="modal-layer" id="libraryGroupModal" hidden>
+  <div class="modal small">
+    <div class="modal-head"><h2 id="libraryGroupModalTitle">新建分组</h2><button class="ghost-button" data-close="libraryGroupModal">关闭</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label>分组名字<input id="libGroupName" placeholder="例如：周末生活照"></label>
+        <label>对方说到这些词才使用（用逗号分隔）<textarea id="libGroupKeywords" placeholder="想看看周末, 发张生活照"></textarea></label>
+        <label>给人设使用
+          <select id="libGroupPersona">
+            <option value="">所有人设通用</option>
+            <option value="female_sutang">苏棠</option>
+            <option value="female">星暮</option>
+            <option value="male">阿杰</option>
+            <option value="male_chenyu">陈屿</option>
+          </select>
+        </label>
+        <label>给平台使用
+          <select id="libGroupPlatform">
+            <option value="">全部平台</option>
+            <option value="soul">Soul</option>
+            <option value="qq">QQ</option>
+            <option value="immomo">陌陌</option>
+            <option value="lianxin">连信</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost-button" data-close="libraryGroupModal">取消</button>
+        <button class="primary-button" id="saveLibGroupButton">保存分组</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-layer" id="mediaPreviewModal" hidden>
+  <div class="modal image-modal">
+    <div class="modal-head"><h2 id="mediaPreviewTitle">图片预览</h2><button class="ghost-button" data-close="mediaPreviewModal">关闭</button></div>
+    <div class="modal-body image-view"><img id="mediaPreviewImage" alt="图库图片" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="></div>
+  </div>
+</div>
+
+<div class="modal-layer" id="agentCardModal" hidden>
+  <div class="modal small">
+    <div class="modal-head"><h2>新增知识卡</h2><button class="ghost-button" data-close="agentCardModal">关闭</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label>卡片名字<input id="agentCardName" placeholder="例如：孩子年龄"></label>
+        <label>卡片类型
+          <select id="agentCardKind">
+            <option value="identity">身份事实</option>
+            <option value="speech">说话方式</option>
+            <option value="policy">禁止事项</option>
+            <option value="lore">生活素材</option>
+            <option value="scene">场景素材</option>
+            <option value="counter">接话技巧</option>
+          </select>
+        </label>
+        <label>什么时候生效
+          <select id="agentCardActivation">
+            <option value="always">一直生效</option>
+            <option value="keyword">说到关键词才生效</option>
+          </select>
+        </label>
+        <label>说话方式
+          <select id="agentCardReplyMode">
+            <option value="guide">参考表达，允许模型自然改写</option>
+            <option value="exact">优先按原文说，尽量不改写</option>
+          </select>
+        </label>
+        <label>优先级<input id="agentCardPriority" type="number" min="-100" max="100" value="0"></label>
+        <label>触发词（说到才生效时填写，用逗号分隔）<input id="agentCardKeywords" placeholder="冷场, 被夸, 问年龄"></label>
+        <label>卡片内容<textarea id="agentCardContent" placeholder="写清楚模型必须怎么理解、怎么处理"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost-button" data-close="agentCardModal">取消</button>
+        <button class="primary-button" id="saveAgentCardButton">保存卡片</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-layer" id="agentRuleModal" hidden>
+  <div class="modal small">
+    <div class="modal-head"><h2 id="agentRuleModalTitle">新增规则</h2><button class="ghost-button" data-close="agentRuleModal">关闭</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label>规则名字<input id="agentRuleName" placeholder="例如：年龄必须固定"></label>
+        <label>什么时候执行
+          <select id="agentRuleGate">
+            <option value="input">收到消息后先处理</option>
+            <option value="prompt">给大模型看，让它照做</option>
+            <option value="output">回复发出前检查或纠正</option>
+            <option value="execution">系统直接执行</option>
+          </select>
+        </label>
+        <label>优先级<input id="agentRulePriority" type="number" min="1" max="100" value="50"></label>
+        <label>作用范围
+          <select id="agentRulePersona">
+            <option value="">全部人设</option>
+            <option value="female">仅星暮</option>
+            <option value="female_sutang">仅苏棠</option>
+            <option value="male">仅阿杰</option>
+            <option value="male_chenyu">仅陈屿</option>
+          </select>
+        </label>
+        <label>状态
+          <select id="agentRuleEnabled">
+            <option value="true">启用</option>
+            <option value="false">停用</option>
+          </select>
+        </label>
+        <label>规则内容<textarea id="agentRuleDetail" placeholder="写清楚这条规则要解决什么、什么时候生效、不能怎么做"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="ghost-button" data-close="agentRuleModal">取消</button>
+        <button class="primary-button" id="saveAgentRuleButton">保存规则</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-layer" id="bindModal" hidden>
+  <div class="modal">
+    <div class="modal-head"><h2>关联同一客户的平台账号</h2><button class="ghost-button" data-close="bindModal">关闭</button></div>
+    <div class="modal-body">
+      <div class="bind-tools">
+        <input id="bindNameInput" placeholder="统一显示名称，例如：王先生">
+        <button class="primary-button" id="saveBindButton">保存关联</button>
+      </div>
+      <input id="bindSearchInput" type="search" placeholder="筛选平台账号或昵称">
+      <div class="small-muted" id="bindHint" style="margin:10px 0"></div>
+      <div class="bind-list" id="bindList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-layer" id="personaModal" hidden>
+  <div class="modal small">
+    <div class="modal-head"><h2>人设管理</h2><button class="ghost-button" data-close="personaModal">关闭</button></div>
+    <div class="modal-body persona-list" id="personaList"></div>
+  </div>
+</div>
+
+<div class="modal-layer" id="tokenModal" hidden>
+  <div class="modal small">
+    <div class="modal-head"><h2>设备密钥</h2><button class="ghost-button" data-close="tokenModal">关闭</button></div>
+    <div class="modal-body table-wrap" id="tokenList"></div>
+  </div>
+</div>
+
+<div class="modal-layer" id="dashboardIncidentModal" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="dashboardIncidentTitle">网站问题详情</h2>
+      <div class="toolbar">
+        <button class="primary-button small-button" id="createDashboardReplayButton" type="button">生成回放测试</button>
+        <button class="icon-button" type="button" data-close="dashboardIncidentModal">×</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="toolbar" style="margin-bottom:12px">
+        <select id="dashboardIncidentStatus">
+          <option value="new">新问题</option>
+          <option value="processing">处理中</option>
+          <option value="fixed">已修复</option>
+          <option value="verified">已验证</option>
+        </select>
+        <button class="ghost-button" id="saveDashboardIncidentStatusButton">保存状态</button>
+      </div>
+      <div id="dashboardIncidentDetail" class="incident-timeline"></div>
+    </div>
+  </div>
+</div>
+
+<button class="dashboard-feedback-button" id="dashboardFeedbackButton" type="button">记录网站问题</button>
+<div class="toast-stack" id="toastStack"></div>
+<script src="app.js"></script>
+</body>
+</html>

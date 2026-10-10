@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Aaiagent" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#EDF5FC</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowBackground">#EDF5FC</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
