@@ -41,7 +41,7 @@ logs/
 /page-samples-*/
 /docs/
 /backend/db/migrations/
-/backend/db/seed_tokens.sql
+/backend/db/seed_*.sql
 /backend/replay/
 /backend/dist-func/
 
