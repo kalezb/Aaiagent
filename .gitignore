@@ -18,6 +18,28 @@ artifacts/
 coverage/
 logs/
 
+# Local data, captures, and generated workspace files
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.xml
+/*.json
+/*.txt
+/*.log
+/*.db
+/*.db.b64
+/*.sql
+/*.tar.gz
+/backframes/
+/page-samples/
+/page-samples-*/
+/docs/
+/backend/db/migrations/
+/backend/db/seed_tokens.sql
+/backend/replay/
+/backend/dist-func/
+
 # Local device captures and test artifacts
 /ceshibao/
 /android/install-backups/
