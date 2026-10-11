@@ -1,4 +1,4 @@
-# 保留数据的卸载重装流程。
+﻿# 保留数据的卸载重装流程。
 #
 # 2026-10-10：这台手机开启 SELinux 后，root 读不到 /data/data/com.aaiagent，
 # 原来的 su + tar 备份会生成一个 103 字节的空壳，然后照样卸载，风险很高。
@@ -29,9 +29,7 @@ $localBackup = Join-Path $backupDir "$Package-$stamp.tar.gz"
 New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 
 Write-Host "1) 用 App 自己的身份备份数据"
-$backupCommand =
-    "cd /data/data/$Package && rm -f $appCacheBackup && " +
-    "tar -czf $appCacheBackup databases shared_prefs files"
+$backupCommand = "cd /data/data/$Package && rm -f $appCacheBackup && tar -czf $appCacheBackup databases shared_prefs files"
 $backupOutput = (adb shell "run-as $Package sh -c '$backupCommand'" 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) {
     throw "App 数据备份失败：$backupOutput"
@@ -88,13 +86,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "数据还原失败：$restoreOutput"
 }
 
-$fixModeCommand =
-    "find /data/data/$Package/databases /data/data/$Package/shared_prefs /data/data/$Package/files " +
-    "-type d -exec chmod 771 {} +"
+$fixModeCommand = "find /data/data/$Package/databases /data/data/$Package/shared_prefs /data/data/$Package/files -type d -exec chmod 771 {} +"
 $null = (adb shell "run-as $Package sh -c '$fixModeCommand'" 2>&1 | Out-String)
-$fixFileModeCommand =
-    "find /data/data/$Package/databases /data/data/$Package/shared_prefs /data/data/$Package/files " +
-    "-type f -exec chmod 660 {} +"
+$fixFileModeCommand = "find /data/data/$Package/databases /data/data/$Package/shared_prefs /data/data/$Package/files -type f -exec chmod 660 {} +"
 $null = (adb shell "run-as $Package sh -c '$fixFileModeCommand'" 2>&1 | Out-String)
 
 $uid = ((adb shell dumpsys package $Package | Select-String "userId=" | Select-Object -First 1).ToString() -replace ".*userId=", "" -replace "\s.*", "").Trim()
