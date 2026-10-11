@@ -2198,7 +2198,7 @@ function renderAgentSummary(facts) {
     ["老家", factText(facts.hometown)],
     ["现居", factText([facts.current_city, facts.current_district].filter(Boolean))],
     ["工作", factText([facts.work_city, facts.work_district].filter(Boolean))],
-    ["QQ", factText(facts.contact_qq)],
+    ["豆瓣", factText(facts.contact_qq)],
     ["位置主动提", facts.proactive_location_allowed ? "允许" : "不允许"],
   ];
   return rows.map(function (row) {

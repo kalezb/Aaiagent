@@ -340,12 +340,16 @@ export function localAgeReply(
 // 现在分三档：明确渠道词（动词+渠道）／渠道词在后（微信多少）／"加好友"这类必须带加友动词。
 const CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以).{0,6}(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号)|(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号).{0,6}(?:多少|给我|发我|发一下|加一下|留一下|换一下|方便给|可以给|能给我|是多少)|(?:加|添加|互加|加个|留个|要个|互换|交换).{0,4}(?:好友|朋友)|(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号).{0,8}(?:多少|几号|发我|给我|留|加|互换|交换)|(?:加|发|给|留).{0,3}(?:个)?q(?:号)?(?:给|我)?|(?:你|你的).{0,4}(?:qq|q号|联系方式|微信|电话|手机号).{0,6}(?:是|多少|发|给|留|加)|(?:联系方式|微信|电话|手机号).{0,6}(?:给我|发我|留一个|加一下)/iu;
 
-const CONTACT_NEGATION_PATTERN = /(?:不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换|换|要)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号|好友)/iu;
+// 2026-10-11：苏棠的私人通讯改成豆瓣自留地。只认“加/要/给/发/留/换”这类动作，
+// 不把“我在豆瓣看电影”这种普通聊天误判成要联系方式。
+const DOUBAN_CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以|能).{0,6}(?:豆瓣|书影音)(?:号|账号|id)?|(?:豆瓣|书影音)(?:号|账号|id)?(?:多少|给我|发我|发一下|加一下|留一下|互加|互换|交换|是什么|是啥)|(?:你|你的).{0,4}(?:豆瓣|书影音)(?:号|账号|id)?/iu;
+
+const CONTACT_NEGATION_PATTERN = /(?:不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换|换|要)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号|豆瓣|书影音|好友)/iu;
 
 export function isContactRequest(value) {
   const text = String(value || "").replace(/\s+/gu, "");
   if (!text || CONTACT_NEGATION_PATTERN.test(text)) return false;
-  return CONTACT_REQUEST_PATTERN.test(text);
+  return CONTACT_REQUEST_PATTERN.test(text) || DOUBAN_CONTACT_REQUEST_PATTERN.test(text);
 }
 
 export function countContactRequests(...messageGroups) {
@@ -365,7 +369,7 @@ export function countContactRequests(...messageGroups) {
 
 function normalizeContactChannel(value, fallback = "wechat") {
   const channel = String(value || "").trim().toLowerCase();
-  return ["wechat", "qq"].includes(channel) ? channel : fallback;
+  return ["wechat", "qq", "douban"].includes(channel) ? channel : fallback;
 }
 
 function normalizeContactAccount(value, channel = "wechat") {
@@ -373,6 +377,10 @@ function normalizeContactAccount(value, channel = "wechat") {
   if (channel === "qq") {
     const qq = text.replace(/[^0-9]/gu, "");
     return /^\d{5,12}$/u.test(qq) ? qq : "";
+  }
+  if (channel === "douban") {
+    const compact = text.replace(/\s+/gu, "");
+    return /^[A-Za-z0-9._-]{2,40}$/u.test(compact) ? compact : "";
   }
   const compact = text.replace(/\s+/gu, "");
   if (/^1[3-9]\d{9}$/u.test(compact)) return compact;
@@ -398,6 +406,7 @@ function contactAccountDisplay(value, channel = "wechat") {
 /** 他这回问的是哪个渠道（微信/QQ/电话）。2026-10-06：原来不分渠道，他问 QQ 她回“微信不行”。 */
 function requestedContactChannel(incomingText) {
   const text = String(incomingText || "");
+  if (/(?:豆瓣|书影音)/iu.test(text)) return "douban";
   if (/(?:qq|q号|q 号|扣扣|企鹅)/iu.test(text)) return "qq";
   if (/(?:微信|vx|v信|徽信)/iu.test(text)) return "wechat";
   if (/(?:电话|手机号|手机号码|号码)/u.test(text)) return "phone";
@@ -418,11 +427,12 @@ function contactRefusalReply(requestCount, businessIntent, xingmuScope = true, i
   if (requestCount <= 1) {
     // 他问什么渠道就回什么渠道，别答非所问。
     if (askedChannel === "qq") return "QQ先不加哈 就在这儿聊着挺好";
+    if (askedChannel === "douban") return "豆瓣先不急 看你是不是能聊久一点";
     if (askedChannel === "phone") return "电话就算啦 我平时不接陌生电话";
     return "微信不行呀 微信上都是熟人 我老公偶尔会看我手机";
   }
   if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
-  return "我只有个QQ号上面没什么熟人 那个地方安全";
+  return "豆瓣那边最干净 只有聊得久的人才进得去";
 }
 
 export function resolveContactRequestPolicy({
@@ -456,10 +466,10 @@ export function resolveContactRequestPolicy({
   const businessIntent = isExplicitBusinessIntent(incomingText) || combinedMessages.some((message) => isExplicitBusinessIntent(message.content));
   const normalizedChannel = xingmuScope
     ? "wechat"
-    : normalizeContactChannel(contactChannel, "qq");
+    : normalizeContactChannel(contactChannel, "douban");
   const rawAccount = xingmuScope
     ? contactAccount
-    : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
+    : (contactAccount || (normalizedChannel === "douban" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
   const totalExchanges = Number(activity?.totalExchanges || 0);
   const activeDays = Number(activity?.activeDays || 0);
@@ -488,7 +498,7 @@ export function resolveContactRequestPolicy({
   const reply = allowed
     ? (xingmuScope
         ? "行 那我把私人微信号给你：" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
-        : "可以 我QQ是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
+        : "可以 我豆瓣是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
     : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText));
 
   return {
@@ -503,8 +513,8 @@ export function resolveContactRequestPolicy({
   };
 }
 
-const CONTACT_DISCLOSURE_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式).{0,24}\d{5,12}|\d{5,12}.{0,24}(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式)|(?:加|联系).{0,12}\d{5,12}/iu;
-const CONTACT_CHANNEL_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话)/iu;
+const CONTACT_DISCLOSURE_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式).{0,24}\d{5,12}|\d{5,12}.{0,24}(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式)|(?:加|联系).{0,12}\d{5,12}|(?:豆瓣|书影音|豆瓣号|豆瓣id).{0,12}[a-z0-9._-]{2,40}|[a-z0-9._-]{2,40}.{0,12}(?:豆瓣|书影音|豆瓣号|豆瓣id)/iu;
+const CONTACT_CHANNEL_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|豆瓣|书影音)/iu;
 
 function escapeRegExp(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
@@ -519,10 +529,10 @@ export function sanitizeContactDisclosure(value, {
 } = {}) {
   const normalizedChannel = xingmuScope
     ? "wechat"
-    : normalizeContactChannel(contactChannel, "qq");
+    : normalizeContactChannel(contactChannel, "douban");
   const rawAccount = xingmuScope
     ? contactAccount
-    : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
+    : (contactAccount || (normalizedChannel === "douban" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
   const fallback = xingmuScope
     ? "微信先不急 在这聊挺好"
@@ -535,11 +545,14 @@ export function sanitizeContactDisclosure(value, {
     .split(/(\|\|\||\r?\n)/u)
     .map((segment) => {
       if (segment === "|||" || segment === "\n" || segment === "\r\n" || !segment.trim()) return segment;
+      const wrongChannelPattern = normalizedChannel === "wechat"
+        ? /(?:qq|q号|扣扣|企鹅号|手机号|电话|豆瓣|书影音)/iu
+        : normalizedChannel === "douban"
+          ? /(?:微信号?|vx|v信|qq|q号|扣扣|企鹅号|手机号|电话)/iu
+          : /(?:微信号?|vx|v信|手机号|电话|豆瓣|书影音)/iu;
+      if (wrongChannelPattern.test(segment)) return fallback;
       if (!containsDisclosure(segment)) return segment;
-      const hasWrongChannel = normalizedChannel === "wechat"
-        ? /(?:qq|q号|扣扣|企鹅号|手机号|电话)/iu.test(segment)
-        : /(?:微信号?|vx|v信|手机号|电话)/iu.test(segment);
-      if (allowed && normalizedAccount && segment.includes(normalizedAccount) && !hasWrongChannel) return segment;
+      if (allowed && normalizedAccount && segment.includes(normalizedAccount)) return segment;
       return fallback;
     })
     .filter((segment) => segment.length > 0);
@@ -643,10 +656,11 @@ export function replyLengthBudget(incomingText) {
   const text = String(incomingText || "").trim();
   // 2026-10-07 用户定的口径：只看他这条（最后一条）写得长不长，不管他连发了几条；
   // 他写得少就只回一条，写得长才最多两条。回复本身一律短句、且要通顺。
+  // 2026-10-11 苏棠新人设把单段上限从15字放宽到20字，下限按3字收口。
   const pieces = text.split(/\|\|\||\r?\n/u).map((part) => part.trim()).filter(Boolean);
   const latest = pieces.length ? pieces[pieces.length - 1] : text;
   const chars = latest.replace(/\s+/gu, "").length;
-  return { maxSegments: chars <= 10 ? 1 : 2, maxCharsPerSegment: 15, softLimit: 15 };
+  return { maxSegments: chars <= 10 ? 1 : 2, maxCharsPerSegment: 20, softLimit: 20 };
 }
 
 /** 长句里“我/你/他”常常是新一句话的开头（“精神了我这边刚把…”），拆不开时按它断句。 */
@@ -686,7 +700,7 @@ function splitOverlongClause(clause, limit) {
 }
 
 /**
- * 把回复收口成短句：一句说一件事，一条不超过15个字，最多两条，超出的只删不换。
+ * 把回复收口成短句：一句说一件事，一条不超过20个字，最多两条，超出的只删不换。
  * 2026-10-07 查出来的问题：这个函数以前**根本没有被调用**，而且只会整段删，单段超长时什么都不做——
  * 所以真机上出现过 34 个字一条、35/40 条回复根本没拆的情况。
  */
@@ -702,8 +716,8 @@ export function capReplyLength(value, incomingText) {
   // 说话人前缀夹在句子中间时（“你这话说得我心里软软的我：那你呢”），它其实是个断句点，先当分隔标记。
   const normalized = reply.replace(/(?:你说|对方说|我说|我)\s*[：:]\s*/gu, "|||");
   const rawSegments = normalized.split("|||").map((part) => part.trim()).filter(Boolean);
-  // 每条原始消息先各自算成“不超过15字的小句”队列
-  // 只有本来就超宽（超过 softLimit）的那条才拆；15~18 字的整句保留原样。
+  // 每条原始消息先各自算成“不超过20字的小句”队列
+  // 只有本来就超宽（超过 softLimit）的那条才拆；20字以内的整句保留原样。
   // 2026-10-07 真机 bug（联系人 light up）：原来是"按标点切开 → 丢掉标点 → 用空格拼到不超字"，
   // 结果拼出"系统跳的也赖 我头上呀那 你现在信"这种半句话，读不通、手机端还发不出去。
   // 现在改成"整句删"：只留第一句完整的话（带原来的标点），后面的话直接丢掉，绝不从中间截断。
@@ -814,15 +828,19 @@ export function dropPhotoAdmissionClauses(value) {
 export function detectContactTakeover(value) {
   const text = String(value || "").replace(/\s+/gu, "");
   if (!text) return "";
-  const channel = /(?:微信|weixin|wechat|vx|wx|威信|扣扣|qq|q号|企鹅号|电话|手机号|手机|号码|联系方式|加个好友|加好友|加你|加我)/iu;
+  const channel = /(?:微信|weixin|wechat|vx|wx|威信|扣扣|qq|q号|企鹅号|电话|手机号|手机|号码|联系方式|豆瓣|书影音|豆瓣号|豆瓣id|加个好友|加好友|加你|加我)/iu;
   if (!channel.test(text)) return "";
   // 他把自己的联系方式给过来：我的微信/加我/你加我/号是… 后面常跟数字或字母串
-  const gives = /(?:(?:我|俺)(?:的)?(?:微信|扣扣|qq|电话|手机号|号码|vx|wx)|加我|你加我|可以加我|搜我|我的号|号是)[^。！？]{0,20}(?:[a-z0-9_-]{4,}|\d{5,})?/iu;
+  const gives = /(?:(?:我|俺)(?:的)?(?:微信|扣扣|qq|电话|手机号|号码|vx|wx|豆瓣|豆瓣号|书影音)|加我|你加我|可以加我|搜我|我的号|号是|豆瓣是|豆瓣号是)[^。！？]{0,20}(?:[a-z0-9._-]{2,40}|\d{5,})?/iu;
   if (gives.test(text)) return "give";
   // 他要你的联系方式
-  const wants = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以|能|留个|来个).{0,8}(?:微信|weixin|wechat|vx|wx|威信|扣扣|qq|q号|企鹅号|电话|手机号|手机|号码|联系方式|好友)/iu;
+  const wants = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以|能|留个|来个).{0,8}(?:微信|weixin|wechat|vx|wx|威信|扣扣|qq|q号|企鹅号|电话|手机号|手机|号码|联系方式|好友|豆瓣|书影音|豆瓣号|豆瓣id)/iu;
   if (wants.test(text)) return "want";
   return "";
+}
+
+export function isDoubanContactTopic(value) {
+  return /(?:豆瓣|书影音)/u.test(String(value || ""));
 }
 
 /** 他这轮是不是在说要发自己的照片/身材/视频。 */
@@ -998,12 +1016,12 @@ export const HUMAN_FEEL_RULE =
 export const KNOWLEDGE_MATCH_RULE =
   "知识库命中时，本轮必须使用命中的知识卡内容；普通风格、统一说话规则和旧人设规则不得覆盖。除非触发系统底线，不能跳过知识卡。";
 export const OUTPUT_HARD_RULE =
-  "每段不超过15个字，最多两条，必须把意思表达清楚；多条用|||分隔。";
+  "每段3到20个字，最多两条，必须把意思表达清楚；多条用|||分隔。";
 export const ADVANCEMENT_RULE =
   "不要连续两轮只接不推进。对方冷场时，不能只回“嗯、哦、哈哈”把话题停住；必须根据当前人设选择一种自然的推进方式。";
 // persona-guard: ok — 两条只在 xingmuSoulScope / sutangScope 分支里选用。
 export const PROACTIVE_STYLE_SUTANG =
-  "苏棠的推进方式：用生活画面、心理推拉、高位考核、半真半假的专属感或最终奖励的念想往下带；对方冷场时可以主动起一个带画面的暧昧话题，但不露骨。";
+  "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；保持高位审视和边界感，不暧昧、不客服腔、不为了留人硬聊。";
 export const PROACTIVE_STYLE_XINGMU =
   "星暮的推进方式：用日常聊天、轻度调侃或与当前话题有关的具体问题往下带；不主动暧昧。没有业务语境时不要硬推回收业务。";
 export const PROACTIVE_STYLE_GENERIC =
@@ -1011,9 +1029,9 @@ export const PROACTIVE_STYLE_GENERIC =
 export const QUESTION_PACING_RULE =
   "每轮最多一个问号；上一轮已经问过，这一轮就不要再问；不要连续追问。没有自然问题时就接话、说自己的小事或打趣，不硬问。";
 export const SUTANG_MEETING_REWARD_RULE =
-  "苏棠遇到见面、开房、酒店、现实奖励这类话题时，不能一口拒绝，也不能马上答应。只把它当成他表现合格后的最终奖励：先肯定他有这个心思，再把门槛放回线上表现，让他继续追；可以吊念想，例如表现够了再说、指不定哪天给他发定位，但别当场把话说死。命中知识库邀约奖励卡时，以知识卡内容为准。";
+  "苏棠遇到见面、独处、酒店或现实安排时，不拒绝也不空谈。先把话题拉回现实：男方要主动把安全、舒适、体面的环境安排好，双方再一起商量具体细节；对方只会口嗨、拖延或回避担当，就冷淡止损。";
 export const SUTANG_FACT_BOUNDARY_RULE =
-  "【事实与边界】不编造用户没提供过的经历、行程和状态，不主动推销或催单。见面和现实奖励按苏棠自己的最终奖励规则处理。";
+  "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放。";
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
 

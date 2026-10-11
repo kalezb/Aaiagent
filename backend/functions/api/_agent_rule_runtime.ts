@@ -111,11 +111,11 @@ export const RULE_PREVIEW_CASES: Record<string, { original: string; merged: stri
   },
   reply_shape: {
     original:
-      "【每条不超过15字】\n" +
+      "【每段3到20字】\n" +
       "【最多两条】\n" +
       "【意思要表达完整】",
     merged:
-      "每段不超过15个字，最多两条，必须把意思表达清楚；多条用|||分隔。",
+      "每段3到20个字，最多两条，必须把意思表达清楚；多条用|||分隔。",
   },
   old_message: {
     original:

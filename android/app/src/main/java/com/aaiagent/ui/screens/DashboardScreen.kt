@@ -1531,7 +1531,7 @@ private fun SharedPersonaFactsCard(facts: PersonaFactsUiState) {
                     .joinToString(" · ")
                     .ifBlank { "未设置" }
             )
-            SharedFactRow("QQ", facts.contactQq.ifBlank { "未设置" })
+            SharedFactRow("豆瓣号", facts.contactQq.ifBlank { "未设置" })
         }
     }
 }

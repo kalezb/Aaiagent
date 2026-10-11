@@ -83,10 +83,11 @@ export function normalizePersonaFacts(value, fallback = DEFAULT_PERSONA_FACTS) {
     : (LOCATION_PRECISIONS.has(String(base.location_precision || "").trim())
       ? String(base.location_precision).trim()
       : "district");
+  // 2026-10-11：原来的 QQ 资料位改为苏棠的豆瓣自留地账号，兼容老数据但不再限制纯数字。
   const contactQqCandidate = String(source.contact_qq ?? base.contact_qq ?? "")
-    .replace(/\D/gu, "")
-    .slice(0, 12);
-  const contactQq = /^\d{5,12}$/u.test(contactQqCandidate) ? contactQqCandidate : "";
+    .replace(/\s+/gu, "")
+    .slice(0, 40);
+  const contactQq = /^[A-Za-z0-9._-]{2,40}$/u.test(contactQqCandidate) ? contactQqCandidate : "";
 
   return {
     age_mode: ageMode,
@@ -155,7 +156,7 @@ export function validatePersonaFactsInput(value) {
     source.contact_qq !== undefined &&
     String(source.contact_qq).trim() !== "";
   if (contactQqProvided && !normalized.contact_qq) {
-    return { ok: false, error: "QQ号需要填写 5 到 12 位数字" };
+    return { ok: false, error: "豆瓣号需要填写 2 到 40 位字母、数字、下划线、点或横线" };
   }
   return { ok: true, facts: normalized };
 }
@@ -189,8 +190,8 @@ export function buildPersonaFactsPrompt(facts) {
     normalized.vehicle ? `车辆：${normalized.vehicle}。被问车辆时只说这个事实，不能否认或更换车型。` : "",
     normalized.housing ? `住房：${normalized.housing}。被问住房时只说这个事实，不展开价格或地址。` : "",
     normalized.contact_qq
-      ? `QQ号：${normalized.contact_qq}。这是唯一允许使用的QQ号。只有系统明确允许披露联系方式时才能发送；不得使用旧提示词、环境变量或自行编造其他联系方式。`
-      : "QQ号：未设置。不得自行编造、猜测或从旧提示词里补出任何联系方式。",
+      ? `豆瓣号：${normalized.contact_qq}。这是唯一允许使用的豆瓣自留地账号。只有系统明确允许披露联系方式时才能发送；不得使用旧提示词、环境变量或自行编造其他联系方式。`
+      : "豆瓣号：未设置。不得自行编造、猜测或从旧提示词里补出任何联系方式。",
     normalized.hometown ? `老家/籍贯：${normalized.hometown}。` : "",
     normalized.current_city
       ? `现居地：${normalized.current_city}${normalized.current_district || ""}。`

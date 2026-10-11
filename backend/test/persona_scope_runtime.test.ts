@@ -14,7 +14,7 @@ describe("persona scope runtime", () => {
   it("uses the matching contact channel for each persona scope", () => {
     const env = {
       CONTACT_WECHAT: "wechat-main",
-      CONTACT_QQ: "qq-main",
+      CONTACT_DOUBAN: "douban-main",
       CONTACT_ACCOUNT: "fallback",
     };
     expect(resolveContactConfig(env, true)).toEqual({
@@ -22,15 +22,15 @@ describe("persona scope runtime", () => {
       account: "wechat-main",
     });
     expect(resolveContactConfig(env, false)).toEqual({
-      channel: "qq",
-      account: "qq-main",
+      channel: "douban",
+      account: "douban-main",
     });
   });
 
-  it("only lets a device override the QQ account when explicitly flagged", () => {
-    const env = { CONTACT_QQ: "qq-main" };
-    const facts = { contact_qq: "qq-device" };
-    expect(resolveContactConfig(env, false, facts, false).account).toBe("qq-main");
-    expect(resolveContactConfig(env, false, facts, true).account).toBe("qq-device");
+  it("uses the Douban account saved in the shared persona facts", () => {
+    const env = { CONTACT_DOUBAN: "douban-main" };
+    const facts = { contact_qq: "douban-device" };
+    expect(resolveContactConfig(env, false, facts, false).account).toBe("douban-device");
+    expect(resolveContactConfig(env, false, facts, true).account).toBe("douban-device");
   });
 });

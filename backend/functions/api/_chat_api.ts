@@ -39,6 +39,7 @@ import {
   dropBusyReportSegments,
   isPhotoAuthenticityChallenge,
   detectContactTakeover,
+  isDoubanContactTopic,
   capReplyLength,
   detectContactMaritalStatus,
   stripLateReplyExcuse,
@@ -242,7 +243,11 @@ export async function handleChatRequest({ request, env, path, method }) {
       // 2026-10-07 用户要求：对方要联系方式 / 给联系方式时，不再自动回复，人工接管 + 邮件通知。
       // 业务客服人设（id=female）除外：他的客服 QQ/微信是业务漏斗本身，不能停。
       const takeoverIsBusinessPersona = String(tokenRow.active_persona_id || "female") === "female";
-      if (agentRuleState.isEnabled("contact_takeover", true) && !takeoverIsBusinessPersona) {
+      // 2026-10-11：苏棠的豆瓣自留地是她自己的沟通通道，不触发人工接管；
+      // 微信、QQ、电话仍然照旧交给人工处理。
+      const takeoverIsSutangDouban = String(tokenRow.active_persona_id || "female") === "female_sutang" &&
+        isDoubanContactTopic(latestIncomingText(messages));
+      if (agentRuleState.isEnabled("contact_takeover", true) && !takeoverIsBusinessPersona && !takeoverIsSutangDouban) {
         const takeoverKind = detectContactTakeover(latestIncomingText(messages));
         if (takeoverKind) {
           const nowSec = Math.floor(Date.now() / 1000);
@@ -874,7 +879,11 @@ export async function handleChatRequest({ request, env, path, method }) {
             [...historyMessages, ...recentAssistantReplies],
             latestIncomingText(messages),
             nowSec2,
-            contactConfig.channel === "qq" ? "QQ号已经给过你了，往上翻一下哈，加的时候说下你是谁" : "私人微信已经给过你了，往上翻一下哈，加的时候说下你是谁",
+            contactConfig.channel === "douban"
+              ? "豆瓣号已经给过你了，往上翻一下哈，加的时候说下你是谁"
+              : contactConfig.channel === "qq"
+                ? "QQ号已经给过你了，往上翻一下哈，加的时候说下你是谁"
+                : "私人微信已经给过你了，往上翻一下哈，加的时候说下你是谁",
           )
         : "";
       if (contactReply) {
@@ -1627,7 +1636,7 @@ export async function handleChatRequest({ request, env, path, method }) {
         },
         {
           // 2026-10-07：长度收口必须放最后——先让别的清理把该换的换掉（比如微信泄露那句），
-          // 再按“一句说一件事、一条不超过15个字、最多两条”砍短。放前面会先把该保留的内容吃掉。
+          // 再按“一句说一件事、一段3到20个字、最多两条”砍短。放前面会先把该保留的内容吃掉。
           rule: "length_budget",
           reason: "reply_longer_than_his_message",
           apply: (value) => agentRuleState.isEnabled("output_shape_hard", true)

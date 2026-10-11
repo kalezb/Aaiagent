@@ -1008,7 +1008,7 @@ describe("chat logic", () => {
     const payload = JSON.parse(String(init.body));
     expect(payload.max_tokens).toBe(96);
     expect(payload.messages[0].content).toContain("【交流方式】");
-    expect(payload.messages[0].content).toContain("每段不超过15个字，最多两条，必须把意思表达清楚");
+    expect(payload.messages[0].content).toContain("每段3到20个字，最多两条，必须把意思表达清楚");
     expect(payload.messages[0].content).toContain("每轮最多一个问号；上一轮已经问过，这一轮就不要再问");
     expect(payload.messages[0].content).toContain("不要连续两轮只接不推进");
     expect(payload.messages[0].content).toContain("【真人节奏】");
@@ -2264,7 +2264,7 @@ describe("chat logic", () => {
           platform: "soul",
           contact_id: "drawer-contact",
           contact_name: "测试用户",
-          messages: [{ role: "user", content: "今天穿黑丝走了一天 腿都酸了" }],
+          messages: [{ role: "user", content: "今晚下雨 后背酸得厉害" }],
         }),
       }),
       env: {
@@ -2278,12 +2278,15 @@ describe("chat logic", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
     const systemMessage = payload.messages.find((m: { role: string }) => m.role === "system");
-    expect(systemMessage.content).toContain("【黑丝与腿部触感】");
+    expect(systemMessage.content).toContain("【雨夜归家与颈背酸胀】");
   });
 
   it("only gives Sutang's default scene cards to Sutang", () => {
     const sutang = defaultDrawersForPersona("female_sutang");
-    expect(sutang.topics?.map((item) => item.id)).toContain("scene_01_black_stockings");
+    const oldStockings = sutang.topics?.find((item) => item.id === "scene_01_black_stockings");
+    const newRainyNeck = sutang.topics?.find((item) => item.id === "scene_14_rainy_neck");
+    expect(oldStockings?.enabled).toBe(false);
+    expect(newRainyNeck?.enabled).toBe(true);
     for (const personaId of ["female", "male", "male_chenyu"]) {
       const drawers = defaultDrawersForPersona(personaId);
       expect(drawers.topics || []).toEqual([]);
@@ -3686,21 +3689,22 @@ describe("chat logic", () => {
     const allowed = resolveContactRequestPolicy({
       requestCount: 3,
       stage: 2,
-      activity: { totalExchanges: 10, activeDays: 2 },
-      incomingText: "旧手机回收，加个QQ吧",
-      messages: [{ role: "user", content: "旧手机回收，加个QQ吧" }],
-      contactQq: "12345678",
+      activity: { totalExchanges: 30, activeDays: 2 },
+      incomingText: "加个豆瓣吧",
+      messages: [{ role: "user", content: "加个豆瓣吧" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
       xingmuScope: false,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toContain("我QQ是");
+    expect(allowed.reply).toContain("我豆瓣是");
   });
 
-  it("uses structured device QQ facts as the only contact source", () => {
-    const normalized = normalizePersonaFacts({ contact_qq: " 22345678 " });
+  it("uses structured device Douban facts as the only contact source", () => {
+    const normalized = normalizePersonaFacts({ contact_qq: " sutang2026 " });
     const merged = mergePersonaFacts(
-      { contact_qq: "12345678" },
-      { contact_qq: "22345678" },
+      { contact_qq: "old2025" },
+      { contact_qq: "sutang2026" },
     );
     const prompt = buildPersonaFactsPrompt(merged);
     const layered = buildLayeredSystemPrompt({
@@ -3714,15 +3718,15 @@ describe("chat logic", () => {
       historyMessages: [],
     });
 
-    expect(normalized.contact_qq).toBe("22345678");
-    expect(merged.contact_qq).toBe("22345678");
-    expect(prompt).toContain("QQ号：22345678");
-    expect(prompt).toContain("唯一允许使用的QQ号");
+    expect(normalized.contact_qq).toBe("sutang2026");
+    expect(merged.contact_qq).toBe("sutang2026");
+    expect(prompt).toContain("豆瓣号：sutang2026");
+    expect(prompt).toContain("唯一允许使用的豆瓣自留地账号");
     expect(prompt).toContain("不得使用旧提示词、环境变量或自行编造其他联系方式");
     expect(layered).not.toContain("不得冒充真人、编造真人身份或承诺线下真人身份");
-    expect(validatePersonaFactsInput({ contact_qq: "abc" })).toMatchObject({
+    expect(validatePersonaFactsInput({ contact_qq: "a" })).toMatchObject({
       ok: false,
-      error: "QQ号需要填写 5 到 12 位数字",
+      error: "豆瓣号需要填写 2 到 40 位字母、数字、下划线、点或横线",
     });
   });
 
@@ -3797,10 +3801,10 @@ describe("chat logic", () => {
     expect(String(body.reply || "")).toBe("");
   });
 
-  it("seeds the final Su Tang persona in both schema and migration, with no old wording left", () => {
+  it("seeds the final Su Tang persona in schema and the v12 migration, with old wording paused", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = readFileSync(
-      new URL("../db/migrations/20261010_sutang_persona_v10_final_reward.sql", import.meta.url),
+      new URL("../db/migrations/20261011_sutang_persona_v12_douban.sql", import.meta.url),
       "utf8",
     );
     const sutangStart = schema.indexOf("VALUES ('female_sutang'");
@@ -3808,26 +3812,22 @@ describe("chat logic", () => {
     const sutangSchema = schema.slice(sutangStart, sutangEnd);
 
     for (const text of [sutangSchema, migration]) {
-      expect(text).toContain("你是苏棠，29岁女性，重庆人，做电商运营");
-      expect(text).toContain("每次最多两段，每段不超过15个字");
-      expect(text).toContain("面对见面或开房");
-      expect(text).toContain("最终奖励");
-      expect(text).toContain("面对邀约与最终奖励");
-      expect(text).toContain("结构化人物事实");
-      expect(text).not.toContain("气温20度");
-      expect(text).not.toContain("另一面的我");
-      expect(text).not.toContain("不主动提见面");
-      expect(text).not.toContain("不承诺时间地点");
-      expect(text).not.toContain("不答应去家里或酒店");
-      expect(text).not.toContain("拿什么换");
-      expect(text).not.toContain("瘫沙发上不想动呢");
+      expect(text).toContain("沉浸式都市情感剧中的女主角“苏棠”");
+      expect(text).toContain("3 到 20 个字");
+      expect(text).toContain("书影音软件");
+      expect(text).toContain("精神自留地");
+      expect(text).toContain("男方主动承担所有成本与统筹责任");
+      expect(text).toContain("言语轻浮却行动退缩");
+      expect(text).not.toContain("黑丝");
+      expect(text).not.toContain("出浴真空");
+      expect(text).not.toContain("最终奖励");
+      expect(text).not.toContain("服从训练");
     }
-    const latestMeetingRule = readFileSync(
-      new URL("../db/migrations/20261010_sutang_persona_v11_remove_old_meeting_lock.sql", import.meta.url),
-      "utf8",
-    );
-    expect(latestMeetingRule).toContain("可以吊念想");
-    expect(latestMeetingRule).not.toContain("不给准确日期");
+    expect(migration).toContain("active_flirting");
+    expect(migration).toContain("sutang_meeting_reward_rule");
+    expect(migration).toContain("deleted_at");
+    expect(migration).toContain("output_shape_hard");
+    expect(migration).toContain("豆瓣自留地");
     expect(schema).toContain('"has_children":true,"children_age":3');
   });
 
@@ -3851,7 +3851,9 @@ describe("chat logic", () => {
       xingmuSoulScope: false,
       matchedDrawerTips: ["【知识库命中｜参考表达】【id:scene_10_insomnia】【深夜失眠与空间失重】睡不着"],
     });
-    expect(prompt).toContain("见面和现实奖励按苏棠自己的最终奖励规则处理");
+    expect(prompt).toContain("苏棠遇到见面、独处、酒店或现实安排时");
+    expect(prompt).toContain("私人通讯只在建立足够信任后走豆瓣自留地");
+    expect(prompt).not.toContain("最终奖励");
     expect(prompt).not.toContain("不主动提见面、不主动推销或催单");
     expect(prompt).not.toContain("【别拿睡觉当话题】");
     expect(prompt).toContain("【知识库命中｜本轮必须使用】");
@@ -5751,10 +5753,8 @@ describe("chat logic", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 他这句只有 7 个字：按“他说得少就只回一条”只保留第一条（18 字没超宽限，不切碎）。
-      // 他这句只有 7 个字，本来只回一条；但她原来那条 18 个字超了 15 字上限，所以拆成两条短句（两条都在15字内，意思也都留着）。
-      // 他这句只有 7 个字：按“他写得少只回一条”只保留第一句完整的话。
-      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86",
+      // 新人设把单段上限放宽到20字；这条19字，整句完整保留，不再被15字旧上限切掉。
+      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86",
     });
   });
 
@@ -6963,8 +6963,8 @@ describe("monitoring sync and customer profile batching", () => {
     expect(listBody.persona_id).toBe("female_sutang");
     expect(listBody.topics.length).toBeGreaterThan(0);
     expect(listBody.counters).toEqual([]);
-    const firstId = listBody.topics[0].id;
-    expect(listBody.topics[0].enabled).toBe(true);
+    const firstId = "scene_14_rainy_neck";
+    expect(listBody.topics.find((item) => item.id === firstId)?.enabled).toBe(true);
 
     const toggle = await onRequest({
       request: new Request("https://example.com/api/drawers", {
@@ -8615,20 +8615,26 @@ describe("monitoring sync and customer profile batching", () => {
   it("uses only the new Su Tang knowledge cards", () => {
     const drawers = defaultDrawersForPersona("female_sutang");
     const ids = (drawers.topics || []).map((item) => item.id);
-    expect(ids).toHaveLength(13);
+    expect(ids).toHaveLength(22);
     expect(ids).toContain("scene_01_black_stockings");
     expect(ids).toContain("scene_13_invitation_reward");
+    expect(ids).toContain("scene_14_rainy_neck");
+    expect(ids).toContain("scene_16_douban_tree_hole");
     expect(ids).not.toContain("sofa_tired");
     expect(ids).not.toContain("food_hungry");
 
     const stockings = matchActiveDrawers(drawers, "你今天穿黑丝了吗").join("\n");
-    expect(stockings).toContain("黑丝与腿部触感");
-    expect(stockings).toContain("刚把黑丝脱了");
+    expect(stockings).not.toContain("黑丝与腿部触感");
+    expect(stockings).not.toContain("刚把黑丝脱了");
 
     const invite = matchActiveDrawers(drawers, "想约你开房").join("\n");
-    expect(invite).toContain("面对邀约与最终奖励");
-    expect(invite).toContain("房间都随你挑");
+    expect(invite).toContain("打压轻浮与纠正姿态");
+    expect(invite).toContain("真站我跟前");
     expect(invite).not.toContain("一句硬话回掉");
+
+    const rainyNeck = matchActiveDrawers(drawers, "今晚下雨 后背酸得厉害").join("\n");
+    expect(rainyNeck).toContain("雨夜归家与颈背酸胀");
+    expect(rainyNeck).toContain("后背酸得直不起来");
 
     expect(matchActiveDrawers(drawers, "今天吃什么了")).toEqual([]);
   });

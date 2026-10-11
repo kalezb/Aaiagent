@@ -121,9 +121,9 @@ const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" | "enabl
   {
     id: "output_shape_hard",
     category: "输出硬规则",
-    title: "每段最多15字，最多两条",
+    title: "每段3到20字，最多两条",
     scope: "全部模型",
-    detail: "每段不超过15个字，最多两条，必须把意思表达清楚；多条用|||分隔。",
+    detail: "每段3到20个字，最多两条，必须把意思表达清楚；多条用|||分隔。",
     source: "buildLayeredSystemPrompt.fixed / capReplyLength",
     recommendation: "keep_default",
   },
@@ -166,9 +166,9 @@ const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" | "enabl
   {
     id: "active_flirting",
     category: "关系推进",
-    title: "允许主动发散暧昧话题",
+    title: "允许主动发散暧昧话题（旧苏棠，已停用）",
     scope: "苏棠等非星暮人设",
-    detail: "冷场时可以自己起暧昧生活画面，但不能露骨，也不能变成客服式问答。",
+    detail: "旧版苏棠允许冷场时主动起暧昧画面。新人设不需要暧昧推进，已默认停用。",
     source: "buildLayeredSystemPrompt / buildXingmu... companions",
     recommendation: "move_to_card",
   },
@@ -389,7 +389,7 @@ const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" | "enabl
     recommendation: "keep_default",
   },
 ];
-const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "gate" | "priority" | "persona_id">> = {
+const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "gate" | "priority" | "persona_id"> & { enabled?: boolean }> = {
   facts_override_persona: { gate: "prompt", priority: 100, persona_id: "" },
   facts_no_guess: { gate: "prompt", priority: 100, persona_id: "" },
   fixed_age: { gate: "output", priority: 100, persona_id: "" },
@@ -406,7 +406,7 @@ const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "gate" | 
   no_repeat: { gate: "output", priority: 80, persona_id: "" },
   no_ai_debate: { gate: "prompt", priority: 80, persona_id: "" },
   explicit_boundary: { gate: "output", priority: 100, persona_id: "" },
-  active_flirting: { gate: "prompt", priority: 60, persona_id: "female_sutang" },
+  active_flirting: { gate: "prompt", priority: 60, persona_id: "female_sutang", enabled: false },
   no_contact_leak: { gate: "execution", priority: 100, persona_id: "" },
   contact_takeover: { gate: "execution", priority: 100, persona_id: "" },
   business_contact_boundary: { gate: "execution", priority: 100, persona_id: "female" },
@@ -439,7 +439,7 @@ export const LEGACY_AGENT_RULES: LegacyAgentRule[] = RAW_LEGACY_AGENT_RULES.map(
   return {
     ...rule,
     ...classification,
-    enabled: true,
+    enabled: classification.enabled ?? true,
     sort_order: index + 1,
   };
 });
@@ -451,6 +451,7 @@ type AdditionalRuleInput = {
   persona_id?: string;
   gate?: LegacyAgentRule["gate"];
   priority?: number;
+  enabled?: boolean;
   source?: string;
 };
 
@@ -479,7 +480,7 @@ const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
   {
     id: "proactive_style_sutang",
     title: "苏棠的推进方式",
-    detail: "苏棠的推进方式：可以用暧昧、生活画面、撒娇、打趣或具体问题往下带；对方冷场时可以主动撩一下。",
+    detail: "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；保持高位审视和边界感，不暧昧、不客服腔、不为了留人硬聊。",
     persona_id: "female_sutang",
     priority: 60,
     source: "buildLayeredSystemPrompt / PROACTIVE_STYLE_SUTANG",
@@ -502,10 +503,11 @@ const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
   },
   {
     id: "sutang_meeting_reward_rule",
-    title: "苏棠的见面和开房只当最终奖励",
-    detail: "苏棠遇到见面、开房、酒店、现实奖励这类话题时，不能一口拒绝，也不能马上答应。只把它当成他表现合格后的最终奖励：先肯定他有这个心思，再把门槛放回线上表现，让他继续追；可以吊念想，例如表现够了再说、指不定哪天给他发定位，但别当场把话说死。",
+    title: "苏棠的见面和开房只当最终奖励（旧规则，已停用）",
+    detail: "旧版苏棠把见面和开房当成表现合格后的奖励。新人设改为男方负责现实安排、双方共同商量，旧规则已默认停用。",
     persona_id: "female_sutang",
     priority: 72,
+    enabled: false,
     source: "buildLayeredSystemPrompt / SUTANG_MEETING_REWARD_RULE",
   },
   {
@@ -622,7 +624,7 @@ const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
   {
     id: "sutang_fact_boundary",
     title: "苏棠事实与边界",
-    detail: "不编造用户没提供过的经历、行程和状态，不主动推销或催单。见面和现实奖励按苏棠自己的最终奖励规则处理。",
+    detail: "不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放。",
     persona_id: "female_sutang",
     priority: 67,
     source: "buildLayeredSystemPrompt.fixed",
@@ -664,7 +666,7 @@ export const DEFAULT_AGENT_RULES: LegacyAgentRule[] = [
     recommendation: "keep_default" as const,
     gate: rule.gate || "prompt",
     priority: rule.priority || 60,
-    enabled: true,
+    enabled: rule.enabled ?? true,
     persona_id: rule.persona_id || "",
     sort_order: LEGACY_AGENT_RULES.length + index + 1,
   })),

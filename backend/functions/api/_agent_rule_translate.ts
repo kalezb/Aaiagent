@@ -28,6 +28,7 @@ function compact(value: unknown) {
   return String(value || "").replace(/\s+/gu, "").trim();
 }
 
+// persona-guard: ok — 这里只是把看板大白话翻译成对应人设范围，不是拼给模型的正文。
 function personaScope(text: string) {
   const ids: string[] = [];
   if (text.includes("苏棠")) ids.push("female_sutang");
