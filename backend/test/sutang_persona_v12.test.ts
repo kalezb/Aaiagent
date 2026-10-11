@@ -134,4 +134,34 @@ describe("Su Tang v13 persona", () => {
     expect(genericPrompt).toContain("QQ号：22345678");
     expect(genericPrompt).not.toContain("豆瓣号");
   });
+
+  it("refuses WeChat and QQ in-chat instead of stopping for human takeover", () => {
+    const qqAsked = resolveContactRequestPolicy({
+      requestCount: 1,
+      stage: 1,
+      activity: { totalExchanges: 10, activeDays: 2 },
+      incomingText: "加个QQ吧",
+      messages: [{ role: "user", content: "加个QQ吧" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+    });
+    expect(qqAsked.allowed).toBe(false);
+    expect(qqAsked.reply).toContain("QQ先不加");
+
+    const wechatAsked = resolveContactRequestPolicy({
+      requestCount: 1,
+      stage: 1,
+      activity: { totalExchanges: 10, activeDays: 2 },
+      incomingText: "加个微信吧",
+      messages: [{ role: "user", content: "加个微信吧" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+    });
+    expect(wechatAsked.allowed).toBe(false);
+    expect(wechatAsked.reply).toContain("微信不行");
+  });
 });

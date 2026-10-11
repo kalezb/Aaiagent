@@ -1,37 +1,3 @@
-export async function sendTakeoverEmail(env, info) {
-  try {
-    const key = String(env.RESEND_API_KEY || "").trim();
-    const to = String(env.NOTIFY_EMAIL || "").trim();
-    if (!key || !to) return false;
-    const from = String(env.RESEND_FROM || "onboarding@resend.dev").trim();
-    const kindText = info.kind === "want"
-      ? "对方在要你的联系方式"
-      : "对方把自己的联系方式发过来了";
-    const text = [
-      "联系人：" + info.contactName,
-      "平台：" + info.platform,
-      "情况：" + kindText,
-      "对方最新消息：" + info.content,
-      "时间：" + new Date(info.at * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
-      "",
-      "系统已停止自动回复，请你人工处理。",
-    ].join("\n");
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject: "[AI托管] 需要你接管：" + info.contactName,
-        text,
-      }),
-    });
-    return res.ok;
-  } catch (_) {
-    return false;
-  }
-}
-
 export async function cleanupOldAutomationIncidents(env, nowSec = Math.floor(Date.now() / 1000)) {
   try {
     const lastCleanup = Number(await env.KV.get("automation_incidents:last_cleanup") || 0);

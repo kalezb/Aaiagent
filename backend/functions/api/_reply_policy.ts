@@ -847,25 +847,6 @@ export function dropPhotoAdmissionClauses(value) {
   return kept.join("|||");
 }
 
-/**
- * 2026-10-07 用户要求：对方要联系方式、或主动把自己的联系方式给过来时，
- * 系统不再自动回复，改由人工接管，并发邮件通知。
- * 返回 "want"（他要你的联系方式）/ "give"（他把自己的联系方式发过来）/ ""（无关）。
- */
-export function detectContactTakeover(value) {
-  const text = String(value || "").replace(/\s+/gu, "");
-  if (!text) return "";
-  const channel = /(?:微信|weixin|wechat|vx|wx|威信|扣扣|qq|q号|企鹅号|电话|手机号|手机|号码|联系方式|豆瓣|书影音|豆瓣号|豆瓣id|加个好友|加好友|加你|加我)/iu;
-  if (!channel.test(text)) return "";
-  // 他把自己的联系方式给过来：我的微信/加我/你加我/号是… 后面常跟数字或字母串
-  const gives = /(?:(?:我|俺)(?:的)?(?:微信|扣扣|qq|电话|手机号|号码|vx|wx|豆瓣|豆瓣号|书影音)|加我|你加我|可以加我|搜我|我的号|号是|豆瓣是|豆瓣号是)[^。！？]{0,20}(?:[a-z0-9._-]{2,40}|\d{5,})?/iu;
-  if (gives.test(text)) return "give";
-  // 他要你的联系方式
-  const wants = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以|能|留个|来个).{0,8}(?:微信|weixin|wechat|vx|wx|威信|扣扣|qq|q号|企鹅号|电话|手机号|手机|号码|联系方式|好友|豆瓣|书影音|豆瓣号|豆瓣id)/iu;
-  if (wants.test(text)) return "want";
-  return "";
-}
-
 export function isDoubanContactRequest(value) {
   const text = String(value || "").replace(/\s+/gu, "");
   if (!isContactRequest(text) || !/(?:豆瓣|书影音)/u.test(text)) return false;

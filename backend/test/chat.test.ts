@@ -27,7 +27,6 @@ import {
   detectLateReplyToOldQuestion,
   dropBusyReportSegments,
   isPhotoAuthenticityChallenge,
-  detectContactTakeover,
   detectContactMaritalStatus,
   detectContactMaritalStatus,
   voiceStickerPressure,
@@ -3743,7 +3742,7 @@ describe("chat logic", () => {
     expect(buildPersonaFactsPrompt(facts)).toContain("孩子3岁");
   });
 
-  it("stops auto-replying when the contact asks for contact info (human takeover)", async () => {
+  it("lets Su Tang refuse or redirect contact info without human takeover", async () => {
     const now = Math.floor(Date.now() / 1000);
     const history = Array.from({ length: 30 }, (_, index) => ({
       id: index + 1,
@@ -3795,11 +3794,12 @@ describe("chat logic", () => {
       },
     } as never);
 
-    // 2026-10-07 用户要求：对方要联系方式时系统不再自动回复，改人工接管并邮件通知
+    // 2026-10-12 用户要求：苏棠不再人工接管，微信、QQ、电话由她自己回绝，聊天继续。
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toMatchObject({ action: "skip", human_takeover: true });
-    expect(String(body.reply || "")).toBe("");
+    expect(body.action).toBe("send");
+    expect(body.human_takeover).toBeUndefined();
+    expect(String(body.reply || "")).toMatch(/豆瓣|QQ/);
   });
 
   it("seeds the final Su Tang persona in schema and the v13 action-ladder migration", () => {
@@ -7258,7 +7258,7 @@ describe("monitoring sync and customer profile batching", () => {
   });
 
   it("seeds and edits the unified Agent rule catalog used by chat", async () => {
-    expect(LEGACY_AGENT_RULES).toHaveLength(41);
+    expect(LEGACY_AGENT_RULES).toHaveLength(40);
     expect(DEFAULT_AGENT_RULES.length).toBeGreaterThan(LEGACY_AGENT_RULES.length);
     expect(new Set(LEGACY_AGENT_RULES.map((rule) => rule.gate))).toEqual(
       new Set(["input", "prompt", "output", "execution"]),
@@ -8827,17 +8827,6 @@ describe("monitoring sync and customer profile batching", () => {
     expect(detectContactMaritalStatus([{ role: "user", content: "结婚了还来这个上面哇" }])).toBe("");
     // 她自己说自己已婚不算他的婚况
     expect(detectContactMaritalStatus([{ role: "assistant", content: "我结婚了我有老公" }])).toBe("");
-  });
-
-  it("detects when the contact wants or gives contact info (human takeover)", () => {
-    // 2026-10-07 用户要求：这两种情况系统不再自动回复，人工接管 + 邮件通知
-    expect(detectContactTakeover("加个微信吧 方便聊")).toBe("want");
-    expect(detectContactTakeover("给我个QQ")).toBe("want");
-    expect(detectContactTakeover("留个电话行吗")).toBe("want");
-    expect(detectContactTakeover("我的微信是 abc12345 你加我")).toBe("give");
-    expect(detectContactTakeover("我扣扣号 778899001")).toBe("give");
-    expect(detectContactTakeover("今天天气不错")).toBe("");
-    expect(detectContactTakeover("你多大了")).toBe("");
   });
 
   it("drops the segment where she accepts his photos", () => {

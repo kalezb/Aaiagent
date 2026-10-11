@@ -38,8 +38,6 @@ import {
   owesReplyFromHistory,
   dropBusyReportSegments,
   isPhotoAuthenticityChallenge,
-  detectContactTakeover,
-  isDoubanContactRequest,
   capReplyLength,
   detectContactMaritalStatus,
   stripLateReplyExcuse,
@@ -165,9 +163,6 @@ import {
   resolveProfileGroup,
 } from "./_profile_runtime";
 import { validateToken } from "./_access_runtime";
-import {
-  sendTakeoverEmail,
-} from "./_incident_runtime";
 import { resolveIncomingDelayPolicy } from "./_message_delay";
 import {
   formatCurrentChatMessage,
@@ -238,49 +233,6 @@ export async function handleChatRequest({ request, env, path, method }) {
       const activePersonaId = String(tokenRow.active_persona_id || "female");
       const agentRuleState = await loadAgentRuleState(env.DB, activePersonaId);
 
-      // 2026-10-07 用户要求：对方要联系方式、或把他自己的联系方式给过来时，
-      // 系统不要自动回复（人工接管），并记录一条事件 + 发邮件通知。
-      // 2026-10-07 用户要求：对方要联系方式 / 给联系方式时，不再自动回复，人工接管 + 邮件通知。
-      // 业务客服人设（id=female）除外：他的客服 QQ/微信是业务漏斗本身，不能停。
-      const takeoverIsBusinessPersona = String(tokenRow.active_persona_id || "female") === "female";
-      // 2026-10-11：苏棠的豆瓣自留地是她自己的沟通通道，不触发人工接管；
-      // 微信、QQ、电话仍然照旧交给人工处理。
-      const takeoverIsSutangDouban = String(tokenRow.active_persona_id || "female") === "female_sutang" &&
-        isDoubanContactRequest(latestIncomingText(messages));
-      if (agentRuleState.isEnabled("contact_takeover", true) && !takeoverIsBusinessPersona && !takeoverIsSutangDouban) {
-        const takeoverKind = detectContactTakeover(latestIncomingText(messages));
-        if (takeoverKind) {
-          const nowSec = Math.floor(Date.now() / 1000);
-          const recent = await env.DB.prepare(
-            "SELECT id FROM takeover_alerts WHERE token = ? AND platform = ? AND contact_id = ? AND created_at > ? LIMIT 1"
-          ).bind(tokenRow.token, platform, contact_id, nowSec - 6 * 3600).first();
-          if (!recent) {
-            const inserted = await env.DB.prepare(
-              "INSERT INTO takeover_alerts (token, platform, contact_id, contact_name, kind, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-            ).bind(tokenRow.token, platform, contact_id, contact_name, takeoverKind, latestIncomingText(messages).slice(0, 500), nowSec).run();
-            const mailSent = await sendTakeoverEmail(env, {
-              contactName: contact_name,
-              platform,
-              kind: takeoverKind,
-              content: latestIncomingText(messages),
-              at: nowSec,
-            });
-            // 发信成功就写进 notified_at：这样能直接从库里验证“通知真的发出去了”。
-            if (mailSent && inserted?.meta?.last_row_id) {
-              await env.DB.prepare("UPDATE takeover_alerts SET notified_at = ? WHERE id = ?")
-                .bind(nowSec, inserted.meta.last_row_id).run();
-            }
-            console.log("takeover_alert", JSON.stringify({ contact: contact_name, kind: takeoverKind }));
-          }
-          return json({
-            action: "skip",
-            human_takeover: true,
-            takeover_kind: takeoverKind,
-            request_id: requestId,
-            reason: "contact_info_human_takeover",
-          });
-        }
-      }
       const rate = await enforceChatRateLimit(
         env.DB,
         tokenRow.token,

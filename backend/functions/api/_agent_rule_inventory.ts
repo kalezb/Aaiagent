@@ -182,15 +182,6 @@ const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" | "enabl
     recommendation: "keep_default",
   },
   {
-    id: "contact_takeover",
-    category: "联系方式",
-    title: "要联系方式或给联系方式时人工接管",
-    scope: "非业务客服人设",
-    detail: "触发后停止自动回复，记录事件并发提醒，等人处理。",
-    source: "route.chat takeover",
-    recommendation: "keep_default",
-  },
-  {
     id: "business_contact_boundary",
     category: "业务边界",
     title: "业务客服不能乱发私人联系方式",
@@ -408,7 +399,6 @@ const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "gate" | 
   explicit_boundary: { gate: "output", priority: 100, persona_id: "" },
   active_flirting: { gate: "prompt", priority: 60, persona_id: "female_sutang", enabled: false },
   no_contact_leak: { gate: "execution", priority: 100, persona_id: "" },
-  contact_takeover: { gate: "execution", priority: 100, persona_id: "" },
   business_contact_boundary: { gate: "execution", priority: 100, persona_id: "female" },
   married_excluded: { gate: "input", priority: 100, persona_id: "" },
   photo_only_explicit: { gate: "prompt", priority: 80, persona_id: "" },

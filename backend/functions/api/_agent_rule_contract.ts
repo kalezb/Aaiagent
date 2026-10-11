@@ -78,7 +78,6 @@ const SYSTEM_ACTION_RULE_IDS = new Set([
   "married_excluded",
   "no_contact_leak",
   "business_contact_boundary",
-  "contact_takeover",
   "media_group_selection",
   "voice_call_boundary",
   "his_photo_memory",
