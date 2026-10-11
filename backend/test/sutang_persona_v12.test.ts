@@ -48,11 +48,12 @@ describe("Su Tang v13 persona", () => {
     expect(prompt).toContain("冷淡止损");
   });
 
-  it("keeps the action ladder: test once, then move to a concrete next step", () => {
+  it("keeps the state transition: test once, then one recognition plus one concrete next step", () => {
     const prompt = buildSutangPrompt();
-    expect(prompt).toContain("第一次可以试探，第二次必须给具体下一步");
-    expect(prompt).toContain("同一诚意最多考一次");
-    expect(prompt).toContain("两个人一起商量环境和隐私安全");
+    expect(prompt).toContain("1次认可 + 1次具体推进");
+    expect(prompt).toContain("同一个诚意最多考一次");
+    expect(prompt).toContain("推进状态禁止怀疑式反问");
+    expect(prompt).toContain("问号只用于二选一、时间确认或轻偏好确认");
     expect(prompt).toContain("连续两轮反问后，第三轮必须给信息或确认");
   });
 
@@ -88,7 +89,7 @@ describe("Su Tang v13 persona", () => {
     expect(state.isEnabled("proactive_style_sutang", true)).toBe(true);
     expect(state.isEnabled("sutang_action_ladder", true)).toBe(true);
     expect(state.textFor("proactive_style_sutang", "")).toContain("主动挑一个具体话题");
-    expect(state.textFor("sutang_action_ladder", "")).toContain("同一诚意最多考一次");
+    expect(state.textFor("sutang_action_ladder", "")).toContain("1次认可 + 1次具体推进");
     expect(state.textFor("sutang_fact_boundary", "")).toContain("豆瓣自留地");
   });
 

@@ -3808,6 +3808,10 @@ describe("chat logic", () => {
       new URL("../db/migrations/20261012_sutang_persona_v13_action_ladder.sql", import.meta.url),
       "utf8",
     );
+    const stateMigration = readFileSync(
+      new URL("../db/migrations/20261012_sutang_persona_v15_state_transition.sql", import.meta.url),
+      "utf8",
+    );
     const sutangStart = schema.indexOf("VALUES ('female_sutang'");
     const sutangEnd = schema.indexOf("ON CONFLICT(id) DO UPDATE", sutangStart);
     const sutangSchema = schema.slice(sutangStart, sutangEnd);
@@ -3819,6 +3823,8 @@ describe("chat logic", () => {
     expect(sutangSchema).toContain("偷拍或隐私风险");
     expect(sutangSchema).toContain("两个人一起挑、一起确认");
     expect(sutangSchema).toContain("言语轻浮却行动退缩");
+    expect(sutangSchema).toContain("State Transition & Progression");
+    expect(sutangSchema).toContain("1次认可 + 1次具体推进");
     expect(sutangSchema).not.toContain("黑丝");
     expect(sutangSchema).not.toContain("出浴真空");
     expect(sutangSchema).not.toContain("最终奖励");
@@ -3828,6 +3834,9 @@ describe("chat logic", () => {
     expect(migration).toContain("第一次可以试探，第二次必须给具体下一步");
     expect(migration).toContain("同一诚意最多考一次");
     expect(migration).toContain("隐私安全");
+    expect(stateMigration).toContain("State Transition & Progression");
+    expect(stateMigration).toContain("1次认可 + 1次具体推进");
+    expect(stateMigration).toContain("问号只用于二选一、时间确认、轻偏好确认");
     expect(sutangSchema).not.toContain("男方主动承担所有成本与统筹责任");
     expect(schema).toContain('"has_children":true,"children_age":3');
   });
@@ -3854,8 +3863,8 @@ describe("chat logic", () => {
     });
     expect(prompt).toContain("苏棠遇到见面、独处、酒店或现实安排时");
     expect(prompt).toContain("私人通讯只在建立足够信任后走豆瓣自留地");
-    expect(prompt).toContain("第一次可以试探，第二次必须给具体下一步");
-    expect(prompt).toContain("两个人一起商量环境和隐私安全");
+    expect(prompt).toContain("1次认可 + 1次具体推进");
+    expect(prompt).toContain("一起定环境和隐私安全");
     expect(prompt).not.toContain("最终奖励");
     expect(prompt).not.toContain("不主动提见面、不主动推销或催单");
     expect(prompt).not.toContain("【别拿睡觉当话题】");
