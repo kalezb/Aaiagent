@@ -214,7 +214,7 @@ export async function handleAdminCrudRequest({
     }
     const name = String(body.name || "").trim().slice(0, 80);
     const monthlyLimit = Number(body.monthly_limit ?? 30);
-    if (!Number.isFinite(monthlyLimit) || monthlyLimit < 0 || monthlyLimit > 1_000_000) {
+    if (!Number.isFinite(monthlyLimit) || (monthlyLimit < 0 && monthlyLimit !== -1) || monthlyLimit > 1_000_000) {
       return json({ error: "月度上限无效" }, 400);
     }
     const now = Math.floor(Date.now() / 1000);
@@ -247,11 +247,20 @@ export async function handleAdminCrudRequest({
     }
     if (body.monthly_limit !== undefined) {
       const monthlyLimit = Number(body.monthly_limit);
-      if (!Number.isFinite(monthlyLimit) || monthlyLimit < 0 || monthlyLimit > 1_000_000) {
+      if (!Number.isFinite(monthlyLimit) || (monthlyLimit < 0 && monthlyLimit !== -1) || monthlyLimit > 1_000_000) {
         return json({ error: "月度上限无效" }, 400);
       }
       updates.push("monthly_limit = ?");
       params.push(monthlyLimit);
+    }
+    if (body.reset_spent === true) {
+      updates.push("spent = 0");
+    } else if (body.spent !== undefined) {
+      const spent = Number(body.spent);
+      if (Number.isFinite(spent) && spent >= 0) {
+        updates.push("spent = ?");
+        params.push(spent);
+      }
     }
     if (body.name !== undefined) {
       updates.push("name = ?");

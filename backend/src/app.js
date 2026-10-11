@@ -856,11 +856,58 @@ async function openTokenModal() {
   $("tokenList").innerHTML = '<div class="section-empty">读取中...</div>';
   try {
     await loadTokens();
-    $("tokenList").innerHTML = `<table><thead><tr><th>设备名称</th><th>设备密钥</th><th>月上限</th><th>已使用</th><th>状态</th><th>最后使用</th></tr></thead><tbody>` +
+    $("tokenList").innerHTML = `<table><thead><tr><th>设备名称</th><th>设备密钥</th><th>月上限</th><th>已使用</th><th>状态</th><th>最后使用</th><th>额度操作</th></tr></thead><tbody>` +
       state.tokens.map((token) => {
         const lastUsed = token.last_used_at ? new Date(token.last_used_at * 1000).toLocaleString("zh-CN") : "从未";
-        return `<tr><td>${esc(token.name || "未命名")}</td><td>${esc(token.token)}</td><td>¥${Number(token.monthly_limit || 0)}</td><td>¥${Number(token.spent || 0).toFixed(2)}</td><td>${token.is_active ? "启用" : "停用"}</td><td>${esc(lastUsed)}</td></tr>`;
+        const isUnlimited = Number(token.monthly_limit) < 0;
+        const limitDisplay = isUnlimited
+          ? `<span style="color:var(--brand,#2563eb);font-weight:600;">无限</span>`
+          : `¥${Number(token.monthly_limit || 0)}`;
+        return `<tr>
+          <td>${esc(token.name || "未命名")}</td>
+          <td style="font-family:monospace;font-size:12px;">${esc(token.token)}</td>
+          <td>${limitDisplay}</td>
+          <td>¥${Number(token.spent || 0).toFixed(2)}</td>
+          <td>${token.is_active ? "启用" : "停用"}</td>
+          <td style="font-size:12px;color:var(--muted);">${esc(lastUsed)}</td>
+          <td>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button class="ghost-button small-button" data-token-reset="${esc(token.token)}" title="清零本月已用费用">清零已用</button>
+              ${isUnlimited
+                ? `<button class="ghost-button small-button" data-token-limit="${esc(token.token)}" data-value="30">设为30元</button>`
+                : `<button class="primary-button small-button" data-token-limit="${esc(token.token)}" data-value="-1">设为无限</button>`
+              }
+            </div>
+          </td>
+        </tr>`;
       }).join("") + `</tbody></table>`;
+
+    $("tokenList").querySelectorAll("[data-token-reset]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const token = btn.dataset.tokenReset;
+        try {
+          await api("PUT", "/token", { token, reset_spent: true });
+          showToast("已清零已使用额度");
+          openTokenModal();
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      });
+    });
+
+    $("tokenList").querySelectorAll("[data-token-limit]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const token = btn.dataset.tokenLimit;
+        const targetLimit = Number(btn.dataset.value);
+        try {
+          await api("PUT", "/token", { token, monthly_limit: targetLimit });
+          showToast(targetLimit < 0 ? "已设为无限额度" : `已设为上限 ¥${targetLimit}`);
+          openTokenModal();
+        } catch (error) {
+          showToast(error.message, "error");
+        }
+      });
+    });
   } catch (error) {
     $("tokenList").innerHTML = `<div class="section-empty">${esc(error.message)}</div>`;
   }
