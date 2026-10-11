@@ -7,6 +7,7 @@ import { defaultDrawersForPersona } from "../functions/api/_persona_drawers";
 import {
   buildLayeredSystemPrompt,
   isContactRequest,
+  isDoubanContactRequest,
   OUTPUT_HARD_RULE,
   resolveContactRequestPolicy,
   sanitizeContactDisclosure,
@@ -82,6 +83,9 @@ describe("Su Tang v12 persona", () => {
     expect(isContactRequest("加个豆瓣吧")).toBe(true);
     expect(isContactRequest("加个微信吧")).toBe(true);
     expect(isContactRequest("我在豆瓣看电影")).toBe(false);
+    expect(isDoubanContactRequest("加个豆瓣吧")).toBe(true);
+    expect(isDoubanContactRequest("我在豆瓣看电影")).toBe(false);
+    expect(isDoubanContactRequest("加我微信 我在豆瓣看到你了")).toBe(false);
 
     const allowed = resolveContactRequestPolicy({
       requestCount: 3,

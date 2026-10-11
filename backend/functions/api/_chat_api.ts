@@ -39,7 +39,7 @@ import {
   dropBusyReportSegments,
   isPhotoAuthenticityChallenge,
   detectContactTakeover,
-  isDoubanContactTopic,
+  isDoubanContactRequest,
   capReplyLength,
   detectContactMaritalStatus,
   stripLateReplyExcuse,
@@ -246,7 +246,7 @@ export async function handleChatRequest({ request, env, path, method }) {
       // 2026-10-11：苏棠的豆瓣自留地是她自己的沟通通道，不触发人工接管；
       // 微信、QQ、电话仍然照旧交给人工处理。
       const takeoverIsSutangDouban = String(tokenRow.active_persona_id || "female") === "female_sutang" &&
-        isDoubanContactTopic(latestIncomingText(messages));
+        isDoubanContactRequest(latestIncomingText(messages));
       if (agentRuleState.isEnabled("contact_takeover", true) && !takeoverIsBusinessPersona && !takeoverIsSutangDouban) {
         const takeoverKind = detectContactTakeover(latestIncomingText(messages));
         if (takeoverKind) {

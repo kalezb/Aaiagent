@@ -866,8 +866,11 @@ export function detectContactTakeover(value) {
   return "";
 }
 
-export function isDoubanContactTopic(value) {
-  return /(?:豆瓣|书影音)/u.test(String(value || ""));
+export function isDoubanContactRequest(value) {
+  const text = String(value || "").replace(/\s+/gu, "");
+  if (!isContactRequest(text) || !/(?:豆瓣|书影音)/u.test(text)) return false;
+  // 同一句里如果还在要微信、QQ、电话，那这条优先按老通道交给人工，不走豆瓣。
+  return !CONTACT_REQUEST_PATTERN.test(text);
 }
 
 /** 他这轮是不是在说要发自己的照片/身材/视频。 */
