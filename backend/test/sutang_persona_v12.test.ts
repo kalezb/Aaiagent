@@ -92,6 +92,7 @@ describe("Su Tang v12 persona", () => {
       contactChannel: "douban",
       contactQq: "sutang2026",
       xingmuScope: false,
+      sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
     expect(allowed.reply).toContain("我豆瓣是");
@@ -100,11 +101,13 @@ describe("Su Tang v12 persona", () => {
       allowed: true,
       contactChannel: "douban",
       contactAccount: "sutang2026",
+      sutangScope: true,
     })).toBe("可以 我豆瓣是sutang2026");
     expect(sanitizeContactDisclosure("可以 我微信是private_xh", {
       allowed: true,
       contactChannel: "douban",
       contactAccount: "sutang2026",
+      sutangScope: true,
     })).toBe("联系方式先不发了 在这儿聊就行");
     expect(normalizePersonaFacts({ contact_qq: " sutang2026 " }).contact_qq).toBe("sutang2026");
   });

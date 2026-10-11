@@ -14,6 +14,7 @@ describe("persona scope runtime", () => {
   it("uses the matching contact channel for each persona scope", () => {
     const env = {
       CONTACT_WECHAT: "wechat-main",
+      CONTACT_QQ: "qq-main",
       CONTACT_DOUBAN: "douban-main",
       CONTACT_ACCOUNT: "fallback",
     };
@@ -22,6 +23,10 @@ describe("persona scope runtime", () => {
       account: "wechat-main",
     });
     expect(resolveContactConfig(env, false)).toEqual({
+      channel: "qq",
+      account: "qq-main",
+    });
+    expect(resolveContactConfig(env, false, null, false, true)).toEqual({
       channel: "douban",
       account: "douban-main",
     });
@@ -30,7 +35,7 @@ describe("persona scope runtime", () => {
   it("uses the Douban account saved in the shared persona facts", () => {
     const env = { CONTACT_DOUBAN: "douban-main" };
     const facts = { contact_qq: "douban-device" };
-    expect(resolveContactConfig(env, false, facts, false).account).toBe("douban-device");
-    expect(resolveContactConfig(env, false, facts, true).account).toBe("douban-device");
+    expect(resolveContactConfig(env, false, facts, false, true).account).toBe("douban-device");
+    expect(resolveContactConfig(env, false, facts, true, true).account).toBe("douban-device");
   });
 });

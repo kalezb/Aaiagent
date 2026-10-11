@@ -8,11 +8,19 @@ export function resolveContactConfig(
   xingmuScope,
   personaFacts = null,
   hasDeviceOverride = false,
+  sutangScope = false,
 ) {
-  const channel = xingmuScope ? "wechat" : "douban";
+  const channel = xingmuScope ? "wechat" : sutangScope ? "douban" : "qq";
   const overrideQq = String(personaFacts?.contact_qq || "").trim();
-  const account = xingmuScope
-    ? String(env?.CONTACT_WECHAT || env?.CONTACT_ACCOUNT || "").trim()
-    : (overrideQq || String(env?.CONTACT_DOUBAN || env?.CONTACT_ACCOUNT || "").trim());
+  let account = "";
+  if (xingmuScope) {
+    account = String(env?.CONTACT_WECHAT || env?.CONTACT_ACCOUNT || "").trim();
+  } else if (sutangScope) {
+    account = overrideQq || String(env?.CONTACT_DOUBAN || env?.CONTACT_ACCOUNT || "").trim();
+  } else {
+    account = hasDeviceOverride
+      ? overrideQq
+      : String(env?.CONTACT_QQ || env?.CONTACT_ACCOUNT || "").trim();
+  }
   return { channel, account };
 }

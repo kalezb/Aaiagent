@@ -853,6 +853,7 @@ export async function handleChatRequest({ request, env, path, method }) {
         starSoulScope,
         effectivePersonaFacts,
         effectivePersona.hasOverride,
+        activePersonaScope === "sutang",
       );
       const contactPolicy = resolveContactRequestPolicy({
         requestCount: countContactRequests(historyMessages, messages),
@@ -864,6 +865,7 @@ export async function handleChatRequest({ request, env, path, method }) {
         contactChannel: contactConfig.channel,
         contactAccount: contactConfig.account,
         xingmuScope: starSoulScope,
+        sutangScope: activePersonaScope === "sutang",
         dealCompleted: funnelState.evidence.dealCompleted === true,
         acceptedBusinessTopic: funnelState.evidence.acceptedBusinessTopic === true,
         willingToRecycle: funnelState.evidence.willingToRecycle === true,
@@ -1597,6 +1599,7 @@ export async function handleChatRequest({ request, env, path, method }) {
               contactChannel: contactPolicy.contactChannel,
               contactAccount: contactPolicy.contactAccount,
               xingmuScope: starSoulScope,
+              sutangScope: activePersonaScope === "sutang",
             })
             : value,
         },

@@ -413,7 +413,13 @@ function requestedContactChannel(incomingText) {
   return "";
 }
 
-function contactRefusalReply(requestCount, businessIntent, xingmuScope = true, incomingText = "") {
+function contactRefusalReply(
+  requestCount,
+  businessIntent,
+  xingmuScope = true,
+  incomingText = "",
+  sutangScope = false,
+) {
   if (xingmuScope) {
     if (requestCount <= 1) {
       return businessIntent
@@ -424,15 +430,24 @@ function contactRefusalReply(requestCount, businessIntent, xingmuScope = true, i
     return "微信先留着 等旧机的事说清再给";
   }
   const askedChannel = requestedContactChannel(incomingText);
+  if (sutangScope) {
+    if (requestCount <= 1) {
+      if (askedChannel === "qq") return "QQ先不加哈 就在这儿聊着挺好";
+      if (askedChannel === "douban") return "豆瓣先不急 看你是不是能聊久一点";
+      if (askedChannel === "phone") return "电话就算啦 我平时不接陌生电话";
+      return "微信不行呀 微信上都是熟人 我老公偶尔会看我手机";
+    }
+    if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
+    return "豆瓣那边最干净 只有聊得久的人才进得去";
+  }
   if (requestCount <= 1) {
     // 他问什么渠道就回什么渠道，别答非所问。
     if (askedChannel === "qq") return "QQ先不加哈 就在这儿聊着挺好";
-    if (askedChannel === "douban") return "豆瓣先不急 看你是不是能聊久一点";
     if (askedChannel === "phone") return "电话就算啦 我平时不接陌生电话";
     return "微信不行呀 微信上都是熟人 我老公偶尔会看我手机";
   }
   if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
-  return "豆瓣那边最干净 只有聊得久的人才进得去";
+  return "我只有个QQ号上面没什么熟人 那个地方安全";
 }
 
 export function resolveContactRequestPolicy({
@@ -446,6 +461,7 @@ export function resolveContactRequestPolicy({
   contactAccount = "",
   contactQq = "",
   xingmuScope = true,
+  sutangScope = false,
   dealCompleted: providedDealCompleted,
   acceptedBusinessTopic: providedAcceptedBusinessTopic,
   willingToRecycle: providedWillingToRecycle,
@@ -466,10 +482,14 @@ export function resolveContactRequestPolicy({
   const businessIntent = isExplicitBusinessIntent(incomingText) || combinedMessages.some((message) => isExplicitBusinessIntent(message.content));
   const normalizedChannel = xingmuScope
     ? "wechat"
-    : normalizeContactChannel(contactChannel, "douban");
+    : sutangScope
+      ? "douban"
+      : normalizeContactChannel(contactChannel, "qq");
   const rawAccount = xingmuScope
     ? contactAccount
-    : (contactAccount || (normalizedChannel === "douban" ? contactQq : ""));
+    : sutangScope
+      ? (contactAccount || contactQq)
+      : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
   const totalExchanges = Number(activity?.totalExchanges || 0);
   const activeDays = Number(activity?.activeDays || 0);
@@ -498,8 +518,10 @@ export function resolveContactRequestPolicy({
   const reply = allowed
     ? (xingmuScope
         ? "行 那我把私人微信号给你：" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
-        : "可以 我豆瓣是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
-    : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText));
+        : sutangScope
+          ? "可以 我豆瓣是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
+          : "可以 我QQ是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
+    : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope));
 
   return {
     isRequest: true,
@@ -526,13 +548,18 @@ export function sanitizeContactDisclosure(value, {
   contactAccount = "",
   contactQq = "",
   xingmuScope = false,
+  sutangScope = false,
 } = {}) {
   const normalizedChannel = xingmuScope
     ? "wechat"
-    : normalizeContactChannel(contactChannel, "douban");
+    : sutangScope
+      ? "douban"
+      : normalizeContactChannel(contactChannel, "qq");
   const rawAccount = xingmuScope
     ? contactAccount
-    : (contactAccount || (normalizedChannel === "douban" ? contactQq : ""));
+    : sutangScope
+      ? (contactAccount || contactQq)
+      : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
   const fallback = xingmuScope
     ? "微信先不急 在这聊挺好"

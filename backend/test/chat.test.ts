@@ -3695,6 +3695,7 @@ describe("chat logic", () => {
       contactChannel: "douban",
       contactQq: "sutang2026",
       xingmuScope: false,
+      sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
     expect(allowed.reply).toContain("我豆瓣是");
