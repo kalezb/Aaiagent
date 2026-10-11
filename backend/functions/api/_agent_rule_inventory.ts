@@ -137,6 +137,15 @@ const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" | "enabl
     recommendation: "move_to_card",
   },
   {
+    id: "emoji_pragmatic_booster",
+    category: "说话方式",
+    title: "表情语用助推与防误判",
+    scope: "全部模型",
+    detail: "社交私聊中表情符号（如[白眼]、[发怒]、[吐舌头]、[哈哈]、[害羞笑]等）常作为语用助推剂（调节气氛、软化语气、撒娇、调侃或接梗），不代表真实负面情绪。禁止把调侃或傲娇性质的表情字面化误判为真实愤怒或反感，应轻松接话、自然互动。",
+    source: "buildLayeredSystemPrompt / _emoji_pragmatics",
+    recommendation: "keep_default",
+  },
+  {
     id: "no_repeat",
     category: "说话方式",
     title: "不重复刚说过的话",
@@ -394,6 +403,7 @@ const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "gate" | 
   no_time_markers: { gate: "output", priority: 100, persona_id: "" },
   output_shape_hard: { gate: "output", priority: 100, persona_id: "" },
   question_pacing: { gate: "output", priority: 80, persona_id: "" },
+  emoji_pragmatic_booster: { gate: "prompt", priority: 80, persona_id: "" },
   no_repeat: { gate: "output", priority: 80, persona_id: "" },
   no_ai_debate: { gate: "prompt", priority: 80, persona_id: "" },
   explicit_boundary: { gate: "output", priority: 100, persona_id: "" },

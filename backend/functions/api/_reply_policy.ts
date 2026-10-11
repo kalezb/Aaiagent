@@ -22,6 +22,7 @@ import {
   buildCustomAgentRulesPrompt,
   type AgentRuleState,
 } from "./_agent_rule_contract";
+import { buildEmojiPragmaticPrompt } from "./_emoji_pragmatics";
 
 export function latestIncomingText(messages) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -3473,6 +3474,13 @@ export function buildLayeredSystemPrompt({
     timeEnabled ? buildDaypartRule(currentDatetime) : "",
     "【历史口径】历史记录里如果出现跟你当前身份或工作对不上的旧话术，那是以前口误或被人误记的，绝对不许再提、也不要顺着它往下聊；对方拿它来问，就按你现在的身份自然纠正一句。",
     editableRule(agentRuleState, "history_consistency", "【事实一致】你在这个对话里已经说过的生活类细节（住哪、多大、做什么工作、家里情况、养不养宠物、平时几点睡这类），后面必须一直保持一致。这些细节没人规定，你可以自己编，但**编了就守住**：说过住江北，后面就不能改口说渝中；说过 28 岁，就不能再冒出别的岁数。【历史口径】那条只用来处理身份/工作跟人设冲突的情况，**不能拿它给生活细节改口**。对方回头问同一个细节，就按你先前说过的答，别另起一个说法；实在记不清之前怎么说的，就避开具体地名和数字，用含糊的话带过去，也绝不换一个新的。"),
+    agentRuleState.isEnabled("emoji_pragmatic_booster", true)
+      ? buildEmojiPragmaticPrompt({
+          incomingText: incoming,
+          ruleEnabled: true,
+          customInstruction: agentRuleState.textFor("emoji_pragmatic_booster", ""),
+        })
+      : "",
     normalizedFacts ? "" : "【地址】" + locationContext,
     weatherEnabled && weather && weatherRelevant
       ? "【当前天气】今天" + weather.condition + weather.temp + "度。"

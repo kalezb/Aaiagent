@@ -71,6 +71,18 @@ class DoubanAdapter(private val service: AccessibilityService) : PlatformAdapter
         return nameNodes.firstOrNull()?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
     }
 
+    override fun visibleUnreadCount(root: AccessibilityNodeInfo): Int {
+        val countNodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/unread_count")
+        var sum = 0
+        for (node in countNodes) {
+            val count = node.text?.toString()?.toIntOrNull() ?: 1
+            sum += count
+        }
+        val tabUnread = root.findAccessibilityNodeInfosByViewId("$packageName:id/unread_chat_count")
+            .firstOrNull()?.text?.toString()?.toIntOrNull() ?: 0
+        return maxOf(sum, tabUnread)
+    }
+
     // ── 读消息 ──
 
     override fun readMessages(root: AccessibilityNodeInfo): List<ChatMessage> {
@@ -366,6 +378,25 @@ class DoubanAdapter(private val service: AccessibilityService) : PlatformAdapter
             if (current != null && isInMessageList(current)) {
                 ensurePrivateMessageTabSelected(current)
                 return true
+            }
+        }
+
+        // 如果在豆瓣首页，点击右上角消息通知铃铛（menu_notification / ic_notification）
+        val notifBtn = root.findAccessibilityNodeInfosByViewId("$packageName:id/menu_notification").firstOrNull()
+            ?: root.findAccessibilityNodeInfosByViewId("$packageName:id/ic_notification").firstOrNull()
+        if (notifBtn != null) {
+            val clicked = if (notifBtn.isClickable) {
+                notifBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            } else {
+                notifBtn.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            }
+            if (clicked) {
+                delay(800)
+                val current = service.rootInActiveWindow
+                if (current != null && isInMessageList(current)) {
+                    ensurePrivateMessageTabSelected(current)
+                    return true
+                }
             }
         }
 

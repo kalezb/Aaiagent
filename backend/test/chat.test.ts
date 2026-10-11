@@ -7267,7 +7267,7 @@ describe("monitoring sync and customer profile batching", () => {
   });
 
   it("seeds and edits the unified Agent rule catalog used by chat", async () => {
-    expect(LEGACY_AGENT_RULES).toHaveLength(40);
+    expect(LEGACY_AGENT_RULES).toHaveLength(41);
     expect(DEFAULT_AGENT_RULES.length).toBeGreaterThan(LEGACY_AGENT_RULES.length);
     expect(new Set(LEGACY_AGENT_RULES.map((rule) => rule.gate))).toEqual(
       new Set(["input", "prompt", "output", "execution"]),
