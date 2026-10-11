@@ -132,6 +132,30 @@ class ConversationEntryCoordinatorTest {
     }
 
     @Test
+    fun `single active contact can be reselected after short settle gap without 60s freeze`() = runBlocking {
+        // 单人热聊场景：回完后短结算（4秒）即可再次进入，不需要等满60秒
+        val ui = FakeMultiContactUi()
+        val clock = FakeClock(1000L)
+        val coordinator = ConversationEntryCoordinator(ui = ui, clock = clock)
+
+        ui.nextIdentities = listOf(ui.identityWang)
+        val first = coordinator.openVisibleNext()
+        assertTrue(first is ConversationEntryOutcome.Opened)
+        coordinator.markComplete((first as ConversationEntryOutcome.Opened).identity.key)
+
+        // 仅过去 1 秒（仍在 3 秒界面结算中）：不重新打开
+        clock.advance(1000)
+        val immediate = coordinator.openVisibleNext()
+        assertEquals(ConversationEntryOutcome.NoWork, immediate)
+
+        // 过去 4 秒（超过 3 秒结算）：单人热聊允许进入，不需要等 60 秒
+        clock.advance(3000)
+        val second = coordinator.openVisibleNext()
+        assertTrue(second is ConversationEntryOutcome.Opened)
+        assertEquals("小王", (second as ConversationEntryOutcome.Opened).identity.displayName)
+    }
+
+    @Test
     fun `no list position bias when all contacts have same lastServedAtMs`() = runBlocking {
         // 所有人都没被回过，随机哪个被选中都行，但不能只死盯着列表第一个
         val ui = FakeMultiContactUi()

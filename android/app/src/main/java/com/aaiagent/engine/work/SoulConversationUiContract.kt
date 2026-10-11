@@ -78,6 +78,7 @@ class SoulConversationUiContract(
             shouldClick = true,
             pageIndex = identity.pageIndex,
             requireUnread = true,
+            expectedPreview = identity.preview,
         ) ?: return ConversationOpenResult(false, reason = "列表里没找到联系人")
         return ConversationOpenResult(
             opened = true,

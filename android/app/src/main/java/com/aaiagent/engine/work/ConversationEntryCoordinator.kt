@@ -91,7 +91,8 @@ class ConversationEntryCoordinator(
         if (allowed.isEmpty()) {
             return ConversationEntryOutcome.NoWork
         }
-        val candidates = allowed.filter { candidate -> shouldTry(candidate, nowMs) }
+        val hasOtherCandidates = allowed.size > 1
+        val candidates = allowed.filter { candidate -> shouldTry(candidate, nowMs, hasOtherCandidates) }
         if (candidates.isEmpty()) {
             return ConversationEntryOutcome.NoWork
         }
@@ -179,11 +180,16 @@ class ConversationEntryCoordinator(
 
     fun taskSnapshot(): List<ConversationEntryTask> = tasks.values.toList()
 
-    private fun shouldTry(identity: ConversationIdentity, nowMs: Long): Boolean {
+    private fun shouldTry(
+        identity: ConversationIdentity,
+        nowMs: Long,
+        hasOtherCandidates: Boolean = false,
+    ): Boolean {
+        val gap = if (hasOtherCandidates) MULTI_CONTACT_COOLDOWN_MS else SINGLE_CONTACT_SETTLE_MS
         val task = tasks[identity.key] ?: run {
             // 没被 task 追踪过，但可能刚被回复过（上一次生命周期里记的 lastServedAtMs）
             val servedAt = lastServedAtMs[identity.key] ?: return true
-            return nowMs - servedAt >= MIN_RESERVE_GAP_MS
+            return nowMs - servedAt >= gap
         }
         return when (task.state) {
             ConversationEntryState.COMPLETE,
@@ -191,7 +197,7 @@ class ConversationEntryCoordinator(
             -> {
                 // 已完成/已阻止：如果冷却期过了，允许重新进入
                 val servedAt = lastServedAtMs[identity.key] ?: return false
-                nowMs - servedAt >= MIN_RESERVE_GAP_MS
+                nowMs - servedAt >= gap
             }
             ConversationEntryState.RETRY_LATER ->
                 nowMs >= task.nextAttemptAtMs
@@ -223,8 +229,9 @@ class ConversationEntryCoordinator(
     private companion object {
         const val RETRY_DELAY_MS = 15_000L
         const val VERIFIED_RETRY_COOLDOWN_MS = 60_000L
-        /** 回复完一个人后至少等这么久才能再回他，防止活跃联系人霸占列表。 */
-        const val MIN_RESERVE_GAP_MS = 60_000L
+        /** 多人排队时，刚回完的人冷却 30 秒优先回其他人；单人热聊时仅需 3 秒界面结算，不再硬卡 1 分钟。 */
+        const val MULTI_CONTACT_COOLDOWN_MS = 30_000L
+        const val SINGLE_CONTACT_SETTLE_MS = 3_000L
     }
 
 }

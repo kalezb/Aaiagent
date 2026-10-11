@@ -122,6 +122,7 @@ interface PlatformAdapter {
         shouldClick: Boolean = true,
         pageIndex: Int? = null,
         requireUnread: Boolean = false,
+        expectedPreview: String = "",
     ): ConversationInfo? = null
 
     suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo): Boolean

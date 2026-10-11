@@ -24,7 +24,7 @@ class SoulConversationPoliciesTest {
     }
 
     @Test
-    fun `duplicate names get separate ids but can never be opened automatically`() {
+    fun `duplicate names get separate ids and can open safely when previews distinguish them`() {
         val first = SoulContactIdentityPolicy.identity(
             conversation = conversation(name = "苏棠", preview = "第一页的预览"),
             duplicateNameCount = 2,
@@ -37,8 +37,17 @@ class SoulConversationPoliciesTest {
         assertNotEquals(first.key, second.key)
         assertTrue(first.stableId.startsWith("soul-ambiguous:苏棠:0:"))
         assertTrue(second.stableId.startsWith("soul-ambiguous:苏棠:1:"))
-        assertFalse(SoulContactIdentityPolicy.canOpenWithoutRisk(first))
-        assertFalse(SoulContactIdentityPolicy.canOpenWithoutRisk(second))
+        assertTrue(SoulContactIdentityPolicy.canOpenWithoutRisk(first))
+        assertTrue(SoulContactIdentityPolicy.canOpenWithoutRisk(second))
+    }
+
+    @Test
+    fun `duplicate names without previews are blocked to avoid misclicking`() {
+        val emptyPreview = SoulContactIdentityPolicy.identity(
+            conversation = conversation(name = "苏棠", preview = ""),
+            duplicateNameCount = 2,
+        )
+        assertFalse(SoulContactIdentityPolicy.canOpenWithoutRisk(emptyPreview))
     }
 
     @Test

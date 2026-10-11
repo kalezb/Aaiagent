@@ -2069,14 +2069,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         contactName: String,
         shouldClick: Boolean,
         pageIndex: Int?,
-        requireUnread: Boolean
+        requireUnread: Boolean,
+        expectedPreview: String
     ): ConversationInfo? {
         val messageRoot = activeMessageListRootOrNull() ?: return null
         return tryFindNamedConversation(
-            messageRoot,
-            contactName,
-            shouldClick,
-            requireUnread,
+            root = messageRoot,
+            expectedName = contactName,
+            shouldClick = shouldClick,
+            requireUnread = requireUnread,
+            expectedPreview = expectedPreview,
         )
     }
 
@@ -2153,7 +2155,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         root: AccessibilityNodeInfo,
         expectedName: String,
         shouldClick: Boolean,
-        requireUnread: Boolean
+        requireUnread: Boolean,
+        expectedPreview: String = "",
     ): ConversationInfo? {
         if (!isInMessageList(root)) return null
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
@@ -2162,6 +2165,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val name = readChildText(item, "name") ?: continue
             if (!ConversationIdentity.matches(expectedName, name)) continue
             val preview = readChildText(item, "message") ?: ""
+            if (expectedPreview.isNotBlank() && preview.isNotBlank()) {
+                val cleanExpected = expectedPreview.trim()
+                val cleanActual = preview.trim()
+                if (cleanExpected != cleanActual &&
+                    !cleanActual.contains(cleanExpected.take(8)) &&
+                    !cleanExpected.contains(cleanActual.take(8))
+                ) {
+                    continue
+                }
+            }
             val hasUnread = item.findAccessibilityNodeInfosByViewId(prefix + "unread_msg_number")
                 .any(::badgeHasUnread)
             if (!SoulConversationScanPolicy.canOpenConversation(hasUnread, requireUnread)) continue
@@ -2250,6 +2263,56 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return false
     }
 
+
+    fun hasTabUnread(root: AccessibilityNodeInfo): Boolean {
+        if (root.packageName?.toString() != packageName) return false
+        val badge = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg_red_dot").firstOrNull()
+        if (badge != null) {
+            val count = badge.text?.toString()?.trim()?.toIntOrNull() ?: 0
+            if (count > 0) return true
+        }
+        val tab = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg").firstOrNull()
+        val desc = tab?.contentDescription?.toString().orEmpty()
+        return desc.contains("未读")
+    }
+
+    fun scrollMessageListDown(root: AccessibilityNodeInfo): Boolean {
+        if (!isInMessageList(root)) return false
+        val recycler = root.findAccessibilityNodeInfosByViewId(prefix + "recycler_view").firstOrNull()
+        if (recycler != null && recycler.isScrollable) {
+            return recycler.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        }
+        return swipeListVertical(scrollDown = true)
+    }
+
+    fun scrollMessageListToTop(root: AccessibilityNodeInfo): Boolean {
+        if (!isInMessageList(root)) return false
+        val recycler = root.findAccessibilityNodeInfosByViewId(prefix + "recycler_view").firstOrNull()
+        if (recycler != null && recycler.isScrollable) {
+            return recycler.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+        }
+        return swipeListVertical(scrollDown = false)
+    }
+
+    private fun swipeListVertical(scrollDown: Boolean): Boolean {
+        val width = service.resources.displayMetrics.widthPixels
+        val height = service.resources.displayMetrics.heightPixels
+        if (width <= 0 || height <= 0) return false
+        val x = width / 2f
+        val startY = if (scrollDown) height * 0.75f else height * 0.35f
+        val endY = if (scrollDown) height * 0.35f else height * 0.75f
+        val path = Path().apply {
+            moveTo(x, startY)
+            lineTo(x, endY)
+        }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, 200L))
+            .build()
+        GestureMonitor.onAutomationActionStarted()
+        val ok = service.dispatchGesture(gesture, null, null)
+        GestureMonitor.onAutomationActionFinished()
+        return ok
+    }
 
     private fun activeMessageListRootOrNull(): AccessibilityNodeInfo? {
         val activeRoot = service.rootInActiveWindow ?: return null

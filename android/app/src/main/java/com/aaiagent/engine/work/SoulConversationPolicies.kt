@@ -12,6 +12,7 @@ object SoulContactIdentityPolicy {
     ): ConversationIdentity {
         val name = normalizeName(conversation.contactName)
         val ambiguous = duplicateNameCount > 1
+        val hasPreview = conversation.preview.trim().isNotEmpty()
         return ConversationIdentity(
             platform = "soul",
             stableId = if (ambiguous) {
@@ -24,8 +25,8 @@ object SoulContactIdentityPolicy {
             preview = conversation.preview.trim(),
             pageIndex = conversation.pageIndex.coerceAtLeast(0),
             unreadCount = if (conversation.hasUnread) 1 else 0,
-            confidence = if (ambiguous) AMBIGUOUS_CONFIDENCE else NAME_ONLY_CONFIDENCE,
-            note = if (ambiguous) "Soul 列表出现同名联系人，必须进聊天页重新确认" else "",
+            confidence = if (ambiguous && !hasPreview) AMBIGUOUS_CONFIDENCE else NAME_ONLY_CONFIDENCE,
+            note = if (ambiguous && !hasPreview) "Soul 列表出现同名且无预览内容的联系人，无法安全区分" else "",
             lastMessageTime = conversation.lastMessageTime,
             origin = conversation.relationshipOrigin.name.lowercase(),
         )
@@ -38,7 +39,10 @@ object SoulContactIdentityPolicy {
     }
 
     fun canOpenWithoutRisk(identity: ConversationIdentity): Boolean {
-        return identity.confidence > AMBIGUOUS_CONFIDENCE && identity.note.isBlank()
+        if (identity.displayName.isBlank()) return false
+        if (identity.confidence > AMBIGUOUS_CONFIDENCE && identity.note.isBlank()) return true
+        // 带有非空预览内容的联系人可以通过“名字+内容预览”精确定位，允许安全打开
+        return identity.preview.isNotBlank()
     }
 
     private fun previewHash(preview: String): String {

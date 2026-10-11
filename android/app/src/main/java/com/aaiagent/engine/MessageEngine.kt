@@ -679,6 +679,21 @@ class MessageEngine(
                 leaseToken = leaseToken,
             )
             if (!handled) {
+                val liveRoot = svc.rootInActiveWindow
+                if (liveRoot != null && adapter.hasTabUnread(liveRoot)) {
+                    val scrolled = adapter.scrollMessageListDown(liveRoot)
+                    if (scrolled) {
+                        delay(600)
+                        val scrolledRoot = svc.rootInActiveWindow
+                        if (scrolledRoot != null && adapter.visibleUnreadCount(scrolledRoot) > 0) {
+                            nextConversationScanAtMs = 0L
+                            state = EngineState.Idle
+                            return true
+                        }
+                    }
+                } else if (liveRoot != null && !adapter.hasTabUnread(liveRoot)) {
+                    adapter.scrollMessageListToTop(liveRoot)
+                }
                 nextConversationScanAtMs = System.currentTimeMillis() + SOUL_LIST_IDLE_RESCAN_MS
             }
             state = EngineState.Idle
