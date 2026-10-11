@@ -35,6 +35,7 @@ const EXPLICIT_AGENT_RULE_IDS = new Set([
   "proactive_style_xingmu",
   "proactive_style_sutang",
   "proactive_style_generic",
+  "sutang_action_ladder",
   "knowledge_match_priority",
   "output_shape_hard",
   "question_pacing",

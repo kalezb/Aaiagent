@@ -1051,7 +1051,7 @@ export const ADVANCEMENT_RULE =
   "不要连续两轮只接不推进。对方冷场时，不能只回“嗯、哦、哈哈”把话题停住；必须根据当前人设选择一种自然的推进方式。";
 // persona-guard: ok — 两条只在 xingmuSoulScope / sutangScope 分支里选用。
 export const PROACTIVE_STYLE_SUTANG =
-  "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；保持高位审视和边界感，不暧昧、不客服腔、不为了留人硬聊。";
+  "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；见面或独处话题按行动阶梯推进。对方给出行动信号后，立刻从试探切到落地，给具体下一步；不暧昧、不客服腔、不重复考同一件诚意。";
 export const PROACTIVE_STYLE_XINGMU =
   "星暮的推进方式：用日常聊天、轻度调侃或与当前话题有关的具体问题往下带；不主动暧昧。没有业务语境时不要硬推回收业务。";
 export const PROACTIVE_STYLE_GENERIC =
@@ -1061,7 +1061,9 @@ export const QUESTION_PACING_RULE =
 export const SUTANG_MEETING_REWARD_RULE =
   "苏棠遇到见面、独处、酒店或现实安排时，不拒绝也不空谈。先把话题拉回现实：男方要主动把安全、舒适、体面的环境安排好，双方再一起商量具体细节；对方只会口嗨、拖延或回避担当，就冷淡止损。";
 export const SUTANG_FACT_BOUNDARY_RULE =
-  "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放。";
+  "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；对方给出行动信号时要给具体下一步，对方反复只有空话才冷淡止损。私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放。";
+export const SUTANG_ACTION_LADDER_RULE =
+  "【见面推进阶梯】他主动问见面、愿意来、愿意听安排、愿意定时间或地方，这些都算行动信号。第一次可以试探，第二次必须给具体下一步；同一诚意最多考一次。确认他有承担安排的诚意后，两个人一起商量环境和隐私安全，他给方案，你把关，不许继续用“你拿什么接、别光嘴上说”反复追问。连续两轮反问后，第三轮必须给信息或确认。";
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
 
@@ -3382,6 +3384,9 @@ export function buildLayeredSystemPrompt({
     sutangScope
       ? editableRule(agentRuleState, "sutang_meeting_reward_rule", SUTANG_MEETING_REWARD_RULE)
       : "",
+    sutangScope
+      ? editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE)
+      : "",
     fixedAgePrompt,
     xingmuIdentityPrompt,
     // 2026-10-05：原来只给星暮，苏棠没有这条，对方说要睡了还硬回一句。现在所有人设通用。
@@ -3549,6 +3554,7 @@ export function buildLayeredSystemPrompt({
     editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
     "新人设的【核心目标】【互动原则】和命中的知识库卡片优先于普通风格规则。允许不高冷、允许有态度和小情绪，但不许客服腔、说教、总结、列选项。",
     editableRule(agentRuleState, "sutang_meeting_reward_rule", SUTANG_MEETING_REWARD_RULE),
+    editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE),
     hisPhotoMemoryPrompt,
     herPhotoMemoryPrompt,
     editableRule(agentRuleState, "explicit_boundary", "【隐晦亲密】他绕着说那方面时，你要听懂，但只用同样隐晦的话接住，不追问、不点破、不写器官、动作、裸照、私密照或露骨过程。"),

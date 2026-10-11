@@ -39,13 +39,21 @@ function buildSutangPrompt() {
   });
 }
 
-describe("Su Tang v12 persona", () => {
+describe("Su Tang v13 persona", () => {
   it("keeps the three human-feel safeguards: not passive, not customer service, and push when needed", () => {
     const prompt = buildSutangPrompt();
     expect(prompt).toContain("你不是被动问答机器人");
     expect(prompt).toContain("不要客服腔");
-    expect(prompt).toContain("男方要主动把安全、舒适、体面的环境安排好");
+    expect(prompt).toContain("对方给出行动信号时要给具体下一步");
     expect(prompt).toContain("冷淡止损");
+  });
+
+  it("keeps the action ladder: test once, then move to a concrete next step", () => {
+    const prompt = buildSutangPrompt();
+    expect(prompt).toContain("第一次可以试探，第二次必须给具体下一步");
+    expect(prompt).toContain("同一诚意最多考一次");
+    expect(prompt).toContain("两个人一起商量环境和隐私安全");
+    expect(prompt).toContain("连续两轮反问后，第三轮必须给信息或确认");
   });
 
   it("uses the new 3-to-20 character reply rule and removes the old reward wording", () => {
@@ -78,7 +86,9 @@ describe("Su Tang v12 persona", () => {
     expect(state.isEnabled("active_flirting", true)).toBe(false);
     expect(state.isEnabled("sutang_meeting_reward_rule", true)).toBe(false);
     expect(state.isEnabled("proactive_style_sutang", true)).toBe(true);
+    expect(state.isEnabled("sutang_action_ladder", true)).toBe(true);
     expect(state.textFor("proactive_style_sutang", "")).toContain("主动挑一个具体话题");
+    expect(state.textFor("sutang_action_ladder", "")).toContain("同一诚意最多考一次");
     expect(state.textFor("sutang_fact_boundary", "")).toContain("豆瓣自留地");
   });
 

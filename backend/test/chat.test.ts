@@ -3802,33 +3802,33 @@ describe("chat logic", () => {
     expect(String(body.reply || "")).toBe("");
   });
 
-  it("seeds the final Su Tang persona in schema and the v12 migration, with old wording paused", () => {
+  it("seeds the final Su Tang persona in schema and the v13 action-ladder migration", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = readFileSync(
-      new URL("../db/migrations/20261011_sutang_persona_v12_douban.sql", import.meta.url),
+      new URL("../db/migrations/20261012_sutang_persona_v13_action_ladder.sql", import.meta.url),
       "utf8",
     );
     const sutangStart = schema.indexOf("VALUES ('female_sutang'");
     const sutangEnd = schema.indexOf("ON CONFLICT(id) DO UPDATE", sutangStart);
     const sutangSchema = schema.slice(sutangStart, sutangEnd);
 
-    for (const text of [sutangSchema, migration]) {
-      expect(text).toContain("沉浸式都市情感剧中的女主角“苏棠”");
-      expect(text).toContain("3 到 20 个字");
-      expect(text).toContain("书影音软件");
-      expect(text).toContain("精神自留地");
-      expect(text).toContain("男方主动承担所有成本与统筹责任");
-      expect(text).toContain("言语轻浮却行动退缩");
-      expect(text).not.toContain("黑丝");
-      expect(text).not.toContain("出浴真空");
-      expect(text).not.toContain("最终奖励");
-      expect(text).not.toContain("服从训练");
-    }
-    expect(migration).toContain("active_flirting");
-    expect(migration).toContain("sutang_meeting_reward_rule");
-    expect(migration).toContain("deleted_at");
-    expect(migration).toContain("output_shape_hard");
-    expect(migration).toContain("豆瓣自留地");
+    expect(sutangSchema).toContain("沉浸式都市情感剧中的女主角“苏棠”");
+    expect(sutangSchema).toContain("3 到 20 个字");
+    expect(sutangSchema).toContain("书影音软件");
+    expect(sutangSchema).toContain("精神自留地");
+    expect(sutangSchema).toContain("偷拍或隐私风险");
+    expect(sutangSchema).toContain("两个人一起挑、一起确认");
+    expect(sutangSchema).toContain("言语轻浮却行动退缩");
+    expect(sutangSchema).not.toContain("黑丝");
+    expect(sutangSchema).not.toContain("出浴真空");
+    expect(sutangSchema).not.toContain("最终奖励");
+    expect(sutangSchema).not.toContain("服从训练");
+    expect(migration).toContain("Action Progression & Anti-Loop");
+    expect(migration).toContain("sutang_action_ladder");
+    expect(migration).toContain("第一次可以试探，第二次必须给具体下一步");
+    expect(migration).toContain("同一诚意最多考一次");
+    expect(migration).toContain("隐私安全");
+    expect(sutangSchema).not.toContain("男方主动承担所有成本与统筹责任");
     expect(schema).toContain('"has_children":true,"children_age":3');
   });
 
@@ -3854,6 +3854,8 @@ describe("chat logic", () => {
     });
     expect(prompt).toContain("苏棠遇到见面、独处、酒店或现实安排时");
     expect(prompt).toContain("私人通讯只在建立足够信任后走豆瓣自留地");
+    expect(prompt).toContain("第一次可以试探，第二次必须给具体下一步");
+    expect(prompt).toContain("两个人一起商量环境和隐私安全");
     expect(prompt).not.toContain("最终奖励");
     expect(prompt).not.toContain("不主动提见面、不主动推销或催单");
     expect(prompt).not.toContain("【别拿睡觉当话题】");
