@@ -354,7 +354,7 @@ fun DashboardScreen(
 
         Spacer(Modifier.height(18.dp))
         SectionHeader(title = "共享人设资料")
-        SharedPersonaFactsCard(facts = personaFacts)
+        SharedPersonaFactsCard(facts = personaFacts, activePersonaId = activePersonaId)
 
         Spacer(Modifier.height(18.dp))
         SectionHeader(title = "客户策略")
@@ -1474,7 +1474,7 @@ private fun VoiceSendTestRow(
 }
 
 @Composable
-private fun SharedPersonaFactsCard(facts: PersonaFactsUiState) {
+private fun SharedPersonaFactsCard(facts: PersonaFactsUiState, activePersonaId: String) {
     val ageText = if (facts.ageMode == "birth_year") {
         facts.birthYear.takeIf { it.isNotBlank() }?.let { "${it}年出生" } ?: "未设置"
     } else {
@@ -1531,7 +1531,10 @@ private fun SharedPersonaFactsCard(facts: PersonaFactsUiState) {
                     .joinToString(" · ")
                     .ifBlank { "未设置" }
             )
-            SharedFactRow("豆瓣号", facts.contactQq.ifBlank { "未设置" })
+            SharedFactRow(
+                if (activePersonaId == "female_sutang") "豆瓣号" else "QQ号",
+                facts.contactQq.ifBlank { "未设置" }
+            )
         }
     }
 }

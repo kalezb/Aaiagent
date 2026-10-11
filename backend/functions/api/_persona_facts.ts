@@ -87,7 +87,10 @@ export function normalizePersonaFacts(value, fallback = DEFAULT_PERSONA_FACTS) {
   const contactQqCandidate = String(source.contact_qq ?? base.contact_qq ?? "")
     .replace(/\s+/gu, "")
     .slice(0, 40);
-  const contactQq = /^[A-Za-z0-9._-]{2,40}$/u.test(contactQqCandidate) ? contactQqCandidate : "";
+  const contactQq = (/^\d{5,12}$/u.test(contactQqCandidate) ||
+    /^[A-Za-z0-9._-]{2,40}$/u.test(contactQqCandidate))
+    ? contactQqCandidate
+    : "";
 
   return {
     age_mode: ageMode,
@@ -156,7 +159,7 @@ export function validatePersonaFactsInput(value) {
     source.contact_qq !== undefined &&
     String(source.contact_qq).trim() !== "";
   if (contactQqProvided && !normalized.contact_qq) {
-    return { ok: false, error: "豆瓣号需要填写 2 到 40 位字母、数字、下划线、点或横线" };
+    return { ok: false, error: "联系方式需要填写 5 到 12 位QQ号，或 2 到 40 位豆瓣号" };
   }
   return { ok: true, facts: normalized };
 }
@@ -173,9 +176,11 @@ function locationPrecisionLine(facts) {
   return "只说到区县";
 }
 
-export function buildPersonaFactsPrompt(facts) {
+export function buildPersonaFactsPrompt(facts, options: { contactLabel?: string } = {}) {
   const normalized = normalizePersonaFacts(facts);
   const age = resolvePersonaAge(normalized);
+  const contactLabel = options.contactLabel === "豆瓣号" ? "豆瓣号" : "QQ号";
+  const contactKind = contactLabel === "豆瓣号" ? "豆瓣自留地账号" : "QQ号";
   const lines = [
     "【人物事实｜最高优先级】",
     "以下是你本人的固定事实。优先级高于历史聊天、人设风格描述、对方推测和模型推断。不得自行改写、补充或编造。",
@@ -190,8 +195,8 @@ export function buildPersonaFactsPrompt(facts) {
     normalized.vehicle ? `车辆：${normalized.vehicle}。被问车辆时只说这个事实，不能否认或更换车型。` : "",
     normalized.housing ? `住房：${normalized.housing}。被问住房时只说这个事实，不展开价格或地址。` : "",
     normalized.contact_qq
-      ? `豆瓣号：${normalized.contact_qq}。这是唯一允许使用的豆瓣自留地账号。只有系统明确允许披露联系方式时才能发送；不得使用旧提示词、环境变量或自行编造其他联系方式。`
-      : "豆瓣号：未设置。不得自行编造、猜测或从旧提示词里补出任何联系方式。",
+      ? `${contactLabel}：${normalized.contact_qq}。这是唯一允许使用的${contactKind}。只有系统明确允许披露联系方式时才能发送；不得使用旧提示词、环境变量或自行编造其他联系方式。`
+      : `${contactLabel}：未设置。不得自行编造、猜测或从旧提示词里补出任何联系方式。`,
     normalized.hometown ? `老家/籍贯：${normalized.hometown}。` : "",
     normalized.current_city
       ? `现居地：${normalized.current_city}${normalized.current_district || ""}。`

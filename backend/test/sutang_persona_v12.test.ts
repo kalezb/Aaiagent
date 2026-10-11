@@ -12,7 +12,10 @@ import {
   resolveContactRequestPolicy,
   sanitizeContactDisclosure,
 } from "../functions/api/_reply_policy";
-import { normalizePersonaFacts } from "../functions/api/_persona_facts";
+import {
+  buildPersonaFactsPrompt,
+  normalizePersonaFacts,
+} from "../functions/api/_persona_facts";
 
 function buildSutangPrompt() {
   return buildLayeredSystemPrompt({
@@ -114,5 +117,11 @@ describe("Su Tang v12 persona", () => {
       sutangScope: true,
     })).toBe("联系方式先不发了 在这儿聊就行");
     expect(normalizePersonaFacts({ contact_qq: " sutang2026 " }).contact_qq).toBe("sutang2026");
+
+    const genericPrompt = buildPersonaFactsPrompt(
+      normalizePersonaFacts({ contact_qq: "22345678" }),
+    );
+    expect(genericPrompt).toContain("QQ号：22345678");
+    expect(genericPrompt).not.toContain("豆瓣号");
   });
 });

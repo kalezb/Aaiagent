@@ -3707,7 +3707,7 @@ describe("chat logic", () => {
       { contact_qq: "old2025" },
       { contact_qq: "sutang2026" },
     );
-    const prompt = buildPersonaFactsPrompt(merged);
+    const prompt = buildPersonaFactsPrompt(merged, { contactLabel: "豆瓣号" });
     const layered = buildLayeredSystemPrompt({
       personaPrompt: "你是苏棠，AI辅助客服，不是真人。",
       personaFacts: merged,
@@ -3727,7 +3727,7 @@ describe("chat logic", () => {
     expect(layered).not.toContain("不得冒充真人、编造真人身份或承诺线下真人身份");
     expect(validatePersonaFactsInput({ contact_qq: "a" })).toMatchObject({
       ok: false,
-      error: "豆瓣号需要填写 2 到 40 位字母、数字、下划线、点或横线",
+      error: "联系方式需要填写 5 到 12 位QQ号，或 2 到 40 位豆瓣号",
     });
   });
 

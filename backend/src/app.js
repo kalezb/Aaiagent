@@ -1451,6 +1451,10 @@ function setSharedFactValue(id, value) {
   input.value = value === null || value === undefined ? "" : String(value);
 }
 
+function sharedContactLabel() {
+  return ($("drawerPersona") && $("drawerPersona").value) === "female_sutang" ? "豆瓣号" : "QQ号";
+}
+
 function renderSharedFacts(facts, version) {
   setSharedFactValue("sharedFactsAgeMode", facts.age_mode || "fixed_age");
   setSharedFactValue("sharedFactsFixedAge", facts.fixed_age ?? "");
@@ -1459,6 +1463,7 @@ function renderSharedFacts(facts, version) {
   setSharedFactValue("sharedFactsHasChildren", facts.has_children ? "true" : "false");
   setSharedFactValue("sharedFactsChildrenAge", facts.children_age ?? "");
   setSharedFactValue("sharedFactsQq", facts.contact_qq || "");
+  if ($("sharedFactsContactLabel")) $("sharedFactsContactLabel").textContent = sharedContactLabel();
   setSharedFactValue("sharedFactsHometown", facts.hometown || "");
   setSharedFactValue("sharedFactsCurrentCity", facts.current_city || "");
   setSharedFactValue("sharedFactsCurrentDistrict", facts.current_district || "");
@@ -2198,7 +2203,7 @@ function renderAgentSummary(facts) {
     ["老家", factText(facts.hometown)],
     ["现居", factText([facts.current_city, facts.current_district].filter(Boolean))],
     ["工作", factText([facts.work_city, facts.work_district].filter(Boolean))],
-    ["豆瓣", factText(facts.contact_qq)],
+    [sharedContactLabel(), factText(facts.contact_qq)],
     ["位置主动提", facts.proactive_location_allowed ? "允许" : "不允许"],
   ];
   return rows.map(function (row) {

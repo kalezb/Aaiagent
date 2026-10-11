@@ -3357,7 +3357,9 @@ export function buildLayeredSystemPrompt({
   const fixed = [
     personaStylePrompt,
     normalizedFacts
-      ? buildPersonaFactsPrompt(normalizedFacts)
+      ? buildPersonaFactsPrompt(normalizedFacts, {
+        contactLabel: personaId === "female_sutang" ? "豆瓣号" : "QQ号",
+      })
       : "",
     factsOverridePrompt,
     locationScopePrompt,

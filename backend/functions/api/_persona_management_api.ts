@@ -225,7 +225,9 @@ export async function handlePersonaManagementRequest({
       if (!snapshot) return json({ error: "published_persona_not_found" }, 404);
       const basePrompt = [
         snapshot.systemPrompt,
-        buildPersonaFactsPrompt(snapshot.facts),
+        buildPersonaFactsPrompt(snapshot.facts, {
+          contactLabel: personaId === "female_sutang" ? "豆瓣号" : "QQ号",
+        }),
         "只输出对客户可见的回复。如果规则要求忽略某类平台内容，只输出 [忽略]。",
       ].filter(Boolean).join("\n\n");
       const runVariant = async (variant) => {

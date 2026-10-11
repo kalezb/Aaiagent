@@ -1470,7 +1470,9 @@ export async function handleChatRequest({ request, env, path, method }) {
               env, token: tokenRow.token, apiKey, modelConfig, modelName,
               // 关键：重说时**不给她看历史**（历史里全是他没被回的消息，一看就又要交代）。
               // 只让她接他刚说的这一句，看不到隔了多久，就没得解释。
-              systemPrompt: `${personaPrompt}\n\n${buildPersonaFactsPrompt(effectivePersonaFacts)}\n` +
+              systemPrompt: `${personaPrompt}\n\n${buildPersonaFactsPrompt(effectivePersonaFacts, {
+                contactLabel: activePersonaId === "female_sutang" ? "豆瓣号" : "QQ号",
+              })}\n` +
                 agentRuleState.textFor("late_reply_current_only", LATE_REPLY_RULE) + " 简短、自然。",
               userPrompt: incomingTurnText || incomingText,
               maxTokens: 96,
