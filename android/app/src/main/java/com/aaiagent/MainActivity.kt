@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
             }
             enabledPlatforms = setOf(
                 withContext(Dispatchers.IO) { repository.getConfig(HostingSessionPolicy.PLATFORM_KEY) }
-                    ?.takeIf { it in setOf("soul", "qq", "immomo", "lianxin") }
+                    ?.takeIf { it in setOf("soul", "qq", "douban", "lianxin") }
                     ?: "soul"
             )
             weatherEnabled = withContext(Dispatchers.IO) {
@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity() {
         if (token.isBlank()) return
         try {
             val config = ApiService(apiBase).getConfig(token)
-            val serverPlatform = config.platform?.takeIf { it in setOf("soul", "qq", "immomo", "lianxin") }
+            val serverPlatform = config.platform?.takeIf { it in setOf("soul", "qq", "douban", "lianxin") }
             if (serverPlatform != null) {
                 enabledPlatforms = setOf(serverPlatform)
                 withContext(Dispatchers.IO) { repository.setConfig(HostingSessionPolicy.PLATFORM_KEY, serverPlatform) }
@@ -576,7 +576,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) { repository.setContactBlacklist(normalized) }
     }
 
-    private fun platformDisplayName(p: String) = when(p) { "soul" -> "Soul"; "qq" -> "QQ"; "immomo" -> "陌陌"; "lianxin" -> "连信"; else -> p }
+    private fun platformDisplayName(p: String) = when(p) { "soul" -> "Soul"; "qq" -> "QQ"; "douban" -> "豆瓣"; "lianxin" -> "连信"; else -> p }
 
     // ═══ 托管 ═══
 

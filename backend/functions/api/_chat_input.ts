@@ -4,7 +4,7 @@ import {
   type ProgramRulesConfig,
 } from "./_program_rules";
 
-export const SUPPORTED_PLATFORMS = ["soul", "qq", "immomo", "lianxin"];
+export const SUPPORTED_PLATFORMS = ["soul", "qq", "douban", "lianxin", "immomo"];
 
 export function normalizePlatform(value, fallback = "") {
   const platform = String(value || "").trim().toLowerCase();

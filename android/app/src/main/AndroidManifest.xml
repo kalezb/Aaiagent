@@ -12,7 +12,7 @@
     <queries>
         <package android:name="cn.soulapp.android" />
         <package android:name="com.tencent.mobileqq" />
-        <package android:name="com.immomo.momo" />
+        <package android:name="com.douban.frodo" />
         <package android:name="com.lianxin.app" />
         <package android:name="com.lianxin.lxchat" />
     </queries>

@@ -5,6 +5,6 @@
     android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="250"
-    android:packageNames="cn.soulapp.android,com.tencent.mobileqq,com.immomo.momo,com.lianxin.app,com.lianxin.lxchat"
+    android:packageNames="cn.soulapp.android,com.tencent.mobileqq,com.douban.frodo,com.lianxin.app,com.lianxin.lxchat"
     android:canPerformGestures="true"
     android:canTakeScreenshot="true" />

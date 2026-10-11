@@ -237,7 +237,7 @@ class AssistantAccessibilityService : AccessibilityService() {
     private fun platformForPackage(packageName: String): String? = when (packageName) {
         "cn.soulapp.android" -> "soul"
         "com.tencent.mobileqq" -> "qq"
-        "com.immomo.momo" -> "immomo"
+        "com.douban.frodo" -> "douban"
         "com.lianxin.app", "com.lianxin.lxchat" -> "lianxin"
         else -> null
     }

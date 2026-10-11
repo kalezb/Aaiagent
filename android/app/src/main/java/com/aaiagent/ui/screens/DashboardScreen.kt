@@ -181,7 +181,7 @@ fun checkPermissionStatus(context: Context): PermissionStatus {
 fun platformDisplayName(platform: String): String = when (platform) {
     "soul" -> "Soul"
     "qq" -> "QQ"
-    "immomo" -> "陌陌"
+    "douban" -> "豆瓣"
     "lianxin" -> "连信"
     else -> platform
 }
@@ -1110,7 +1110,7 @@ private fun PlatformPersonaCard(
                 fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(8.dp))
-            listOf("soul", "qq", "immomo", "lianxin")
+            listOf("soul", "qq", "douban", "lianxin")
                 .chunked(2)
                 .forEach { rowPlatforms ->
                     Row(

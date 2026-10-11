@@ -38,7 +38,7 @@ class NotificationListener : NotificationListenerService() {
         val platform = when (packageName) {
             "cn.soulapp.android" -> "soul"
             "com.tencent.mobileqq" -> "qq"
-            "com.immomo.momo" -> "immomo"
+            "com.douban.frodo" -> "douban"
             "com.lianxin.app", "com.lianxin.lxchat" -> "lianxin"
             else -> return
         }

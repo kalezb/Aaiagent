@@ -2,7 +2,7 @@ const API_BASE = "/api";
 const PLATFORMS = [
   { id: "soul", label: "Soul", short: "S" },
   { id: "qq", label: "QQ", short: "Q" },
-  { id: "immomo", label: "陌陌", short: "陌" },
+  { id: "douban", label: "豆瓣", short: "豆" },
   { id: "lianxin", label: "连信", short: "连" },
 ];
 
