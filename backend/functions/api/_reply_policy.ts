@@ -345,11 +345,14 @@ const CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|�
 // 不把“我在豆瓣看电影”这种普通聊天误判成要联系方式。
 const DOUBAN_CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以|能).{0,6}(?:豆瓣|书影音)(?:号|账号|id)?|(?:豆瓣|书影音)(?:号|账号|id)?(?:多少|给我|发我|发一下|加一下|留一下|互加|互换|交换|是什么|是啥)|(?:你|你的).{0,4}(?:豆瓣|书影音)(?:号|账号|id)?/iu;
 
-const CONTACT_NEGATION_PATTERN = /(?:不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换|换|要)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号|豆瓣|书影音|好友)/iu;
+const CONTACT_NEGATION_PATTERN = /(?:(?:^|[^要好行])不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换|换|要)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号|豆瓣|书影音|好友)/iu;
 
 export function isContactRequest(value) {
   const text = String(value || "").replace(/\s+/gu, "");
-  if (!text || CONTACT_NEGATION_PATTERN.test(text)) return false;
+  if (!text) return false;
+  // "要不/要不要/好不好/行不行" 是委婉提议索要，不是否定拒绝
+  const isSuggestion = /(?:要不(?:要|你)?|好不好|行不行|能不能|可不可)/u.test(text);
+  if (!isSuggestion && CONTACT_NEGATION_PATTERN.test(text)) return false;
   return CONTACT_REQUEST_PATTERN.test(text) || DOUBAN_CONTACT_REQUEST_PATTERN.test(text);
 }
 

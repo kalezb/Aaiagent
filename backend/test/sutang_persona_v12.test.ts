@@ -95,9 +95,13 @@ describe("Su Tang v13 persona", () => {
 
   it("treats Douban as the only private tree-hole channel and keeps WeChat or QQ out", () => {
     expect(isContactRequest("加个豆瓣吧")).toBe(true);
+    expect(isContactRequest("要不留个豆瓣号呗，去看看你写的随笔")).toBe(true);
+    expect(isContactRequest("要不加个微信呗")).toBe(true);
+    expect(isContactRequest("不想加微信")).toBe(false);
     expect(isContactRequest("加个微信吧")).toBe(true);
     expect(isContactRequest("我在豆瓣看电影")).toBe(false);
     expect(isDoubanContactRequest("加个豆瓣吧")).toBe(true);
+    expect(isDoubanContactRequest("要不留个豆瓣号呗，去看看你写的随笔")).toBe(true);
     expect(isDoubanContactRequest("我在豆瓣看电影")).toBe(false);
     expect(isDoubanContactRequest("加我微信 我在豆瓣看到你了")).toBe(false);
 
