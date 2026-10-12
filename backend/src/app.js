@@ -302,12 +302,24 @@ async function loadCustomers(keepSelection = true) {
 
 function renderCustomers() {
   const host = $("customerList");
-  let list = state.groups || [];
+  const allGroups = state.groups || [];
+
+  // 更新顶部 KPI 指标（融合旗舰风）
+  const unreadCount = allGroups.filter((g) => g.has_unread || (g.last_message?.role === "user")).length;
+  const waitingCount = allGroups.filter((g) => g.mode === "manual" || g.priority_reply).length;
+  const priorityCount = allGroups.filter((g) => g.priority_reply || (g.profile?.facts?.婚姻 === "已婚")).length;
+  const deviceCount = state.tokens?.length || 1;
+  if ($("kpiDeviceCount")) $("kpiDeviceCount").textContent = `${deviceCount} 台`;
+  if ($("kpiUnreadCount")) $("kpiUnreadCount").textContent = `${unreadCount} 条`;
+  if ($("kpiWaitingCount")) $("kpiWaitingCount").textContent = `${waitingCount} 人`;
+  if ($("kpiPriorityCount")) $("kpiPriorityCount").textContent = `${priorityCount} 人`;
+
+  let list = allGroups;
   const qf = state.customerQuickFilter || "all";
   if (qf === "unread") {
     list = list.filter((g) => g.has_unread || (g.last_message?.role === "user"));
   } else if (qf === "priority") {
-    list = list.filter((g) => g.priority_reply);
+    list = list.filter((g) => g.priority_reply || (g.profile?.facts?.婚姻 === "已婚"));
   } else if (qf === "waiting") {
     list = list.filter((g) => g.mode === "manual" || g.priority_reply);
   }
@@ -2868,7 +2880,7 @@ function initModernInteractions() {
     });
   }
 
-  // 3. 客户快捷状态筛选药丸
+  // 3. 客户快捷状态筛选药丸与顶部 KPI 指标联动
   const qfContainer = $("customerQuickFilter");
   if (qfContainer) {
     qfContainer.querySelectorAll(".filter-pill").forEach((btn) => {
@@ -2876,7 +2888,33 @@ function initModernInteractions() {
         qfContainer.querySelectorAll(".filter-pill").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
         state.customerQuickFilter = btn.dataset.filter || "all";
+        // 同步高亮顶部微型 KPI 卡片
+        const kpiContainer = $("sessionKpiStrip");
+        if (kpiContainer) {
+          kpiContainer.querySelectorAll(".kpi-card").forEach((c) => {
+            c.classList.toggle("active", c.dataset.kpi === state.customerQuickFilter);
+          });
+        }
         renderCustomers();
+      });
+    });
+  }
+
+  // 3.1 顶部微型 KPI 状态卡片点击联动
+  const kpiStripContainer = $("sessionKpiStrip");
+  if (kpiStripContainer) {
+    kpiStripContainer.querySelectorAll(".kpi-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const kpi = card.dataset.kpi || "all";
+        const qfBtn = $("customerQuickFilter")?.querySelector(`[data-filter="${kpi}"]`);
+        if (qfBtn) {
+          qfBtn.click();
+        } else {
+          state.customerQuickFilter = kpi;
+          kpiStripContainer.querySelectorAll(".kpi-card").forEach((c) => c.classList.remove("active"));
+          card.classList.add("active");
+          renderCustomers();
+        }
       });
     });
   }

@@ -77,29 +77,147 @@ input:focus, select:focus, textarea:focus { border-color: var(--blue); box-shado
 input::placeholder, textarea::placeholder { color: var(--muted-soft); }
 textarea { resize: vertical; line-height: 1.5; }
 
-/* ===== 按钮 ===== */
+/* ===== 按钮与多功能选项三色区分系统（遵循用户截图规范） ===== */
 .button, .primary-button, .ghost-button, .danger-button, .icon-button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 32px; padding: 5px 12px;
-  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 28px; padding: 3px 10px;
+  border-radius: 4px;
   font-weight: 500; font-size: 12px; white-space: nowrap;
   transition: var(--transition);
 }
 .primary-button {
   background: var(--blue); color: #fff;
-  box-shadow: 0 1px 2px rgba(14,165,233,.25);
+  border: 1px solid var(--blue);
+  box-shadow: 0 1px 2px rgba(14,165,233,.22);
 }
-.primary-button:hover { background: var(--blue-dark); box-shadow: 0 2px 5px rgba(14,165,233,.32); }
-.ghost-button {
-  background: var(--panel); color: var(--text);
-  border: 1px solid var(--line);
+.primary-button:hover { background: var(--blue-dark); border-color: var(--blue-dark); }
+
+/* 1. 蓝色系操作：编辑 / 主查看 / 关联账号（对应截图【编辑】） */
+.btn-action-blue, 
+button[data-rule-edit], 
+button[data-lib-edit], 
+button[data-conflict-edit],
+button[data-persona-edit],
+#bindButton,
+#personaButton {
+  background: #f0f5ff !important;
+  border: 1px solid #adc6ff !important;
+  color: #2f54eb !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+  cursor: pointer;
 }
-.ghost-button:hover { border-color: var(--blue-light); background: var(--blue-soft); color: var(--blue-text); }
-.danger-button { background: var(--danger-soft); color: var(--danger-text); border: 1px solid #fecdd3; }
-.danger-button:hover { background: #fee2e2; }
-.icon-button { width: 30px; min-height: 30px; padding: 0; font-size: 14px; border-radius: var(--radius-sm); }
-.icon-button:hover { background: var(--panel-soft); }
-.small-button { min-height: 26px; padding: 2px 8px; font-size: 11px; }
+.btn-action-blue:hover, 
+button[data-rule-edit]:hover, 
+button[data-lib-edit]:hover, 
+button[data-conflict-edit]:hover,
+button[data-persona-edit]:hover,
+#bindButton:not(:disabled):hover,
+#personaButton:hover {
+  background: #d6e4ff !important;
+  border-color: #2f54eb !important;
+  color: #1d39c4 !important;
+}
+
+/* 2. 红色系操作：删除 / 批量删除 / 危险动作（对应截图【删除】、【批量删除】） */
+.btn-action-red, 
+.danger-button, 
+button[data-rule-delete], 
+button[data-media-delete], 
+.danger-text,
+#logoutButton {
+  background: #fff1f0 !important;
+  border: 1px solid #ffa39e !important;
+  color: #f5222d !important;
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+.btn-action-red:hover, 
+.danger-button:hover, 
+button[data-rule-delete]:hover, 
+button[data-media-delete]:hover, 
+.danger-text:hover,
+#logoutButton:hover {
+  background: #ffccc7 !important;
+  border-color: #f5222d !important;
+  color: #cf1322 !important;
+}
+
+/* 3. 状态标签与启停操作（对应截图【启用】绿色、【禁用】橙黄色） */
+/* 启用（绿色） */
+.tag-enabled, 
+.status-chip.on, 
+.rule-badge.on,
+.rule-badge.ok,
+button[data-rule-toggle][data-rule-enabled="0"],
+button[data-lib-toggle][data-lib-next="1"] {
+  background: #f6ffed !important;
+  border: 1px solid #b7eb8f !important;
+  color: #52c41a !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 2px 8px !important;
+}
+button[data-rule-toggle][data-rule-enabled="0"]:hover,
+button[data-lib-toggle][data-lib-next="1"]:hover {
+  background: #d9f7be !important;
+  border-color: #52c41a !important;
+}
+/* 禁用（橙黄色） */
+.tag-disabled, 
+.status-chip:not(.on), 
+.rule-badge.off,
+button[data-rule-toggle][data-rule-enabled="1"],
+button[data-lib-toggle][data-lib-next="0"] {
+  background: #fffbe6 !important;
+  border: 1px solid #ffe58f !important;
+  color: #faad14 !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 2px 8px !important;
+}
+button[data-rule-toggle][data-rule-enabled="1"]:hover,
+button[data-lib-toggle][data-lib-next="0"]:hover {
+  background: #fff1b8 !important;
+  border-color: #faad14 !important;
+}
+
+/* 4. 中性操作按钮（对应截图【刷新】、【列设置】） */
+.ghost-button,
+.icon-button,
+#refreshButton,
+#tokenButton,
+#toggleProfileBtn,
+#mobileSidebarButton,
+#mobileProfileButton {
+  border: 1px solid #d9d9d9;
+  background: #ffffff;
+  color: #262626;
+  border-radius: 4px;
+}
+.ghost-button:hover,
+.icon-button:hover,
+#refreshButton:hover,
+#tokenButton:hover,
+#toggleProfileBtn:hover,
+#mobileSidebarButton:hover,
+#mobileProfileButton:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: #f0f5ff;
+}
+
+/* 优先回复状态 */
+.priority-button.active {
+  background: #fffbe6 !important;
+  border: 1px solid #ffe58f !important;
+  color: #faad14 !important;
+}
+
+.small-button { min-height: 24px; padding: 2px 7px; font-size: 11px; }
 .text-button { padding: 2px 0; color: var(--blue-text); font-weight: 500; font-size: 12px; }
 
 /* ===== 登录 ===== */
@@ -144,6 +262,7 @@ textarea { resize: vertical; line-height: 1.5; }
 .app-main { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .page-panel { display: none; width: 100%; height: 100%; }
 .page-panel.on { display: block; }
+#page-session.on { display: flex; flex-direction: column; overflow: hidden; }
 .page-shell { height: 100%; overflow: auto; padding: 16px; }
 .page-inner { max-width: 1360px; margin: 0 auto; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
@@ -154,9 +273,42 @@ textarea { resize: vertical; line-height: 1.5; }
 .toolbar select { width: auto; min-width: 110px; }
 .small-muted { color: var(--muted-soft); font-size: 11px; }
 
+/* ===== 顶部微型 KPI 状态条 (来自方案三：融合旗舰风) ===== */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 8px 8px 0;
+  flex: 0 0 auto;
+}
+.kpi-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.kpi-card:hover {
+  border-color: var(--blue);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.kpi-card.active {
+  background: var(--blue-soft);
+  border-color: var(--blue);
+}
+.kpi-title { font-size: 11px; color: var(--muted); font-weight: 500; }
+.kpi-num { font-size: 15px; font-weight: 700; margin-top: 1px; line-height: 1.2; letter-spacing: -0.015em; }
+.kpi-icon { font-size: 16px; opacity: 0.85; }
+
 /* ===== 会话三栏 ===== */
 .session-layout {
-  height: 100%; display: grid;
+  flex: 1; min-height: 0; display: grid;
   grid-template-columns: 280px 1fr 280px; gap: 8px; padding: 8px;
   transition: grid-template-columns .2s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -512,6 +664,37 @@ textarea { resize: vertical; line-height: 1.5; }
 
   <div class="app-main">
     <section class="page-panel on" id="page-session">
+      <!-- 顶部微型 KPI 状态条 (来自方案三：融合旗舰风) -->
+      <div class="kpi-strip" id="sessionKpiStrip">
+        <div class="kpi-card active" data-kpi="all">
+          <div>
+            <div class="kpi-title">📱 托管设备</div>
+            <div class="kpi-num" style="color:var(--blue);" id="kpiDeviceCount">1 台</div>
+          </div>
+          <span class="kpi-icon">📲</span>
+        </div>
+        <div class="kpi-card" data-kpi="unread">
+          <div>
+            <div class="kpi-title">💬 实时未读消息</div>
+            <div class="kpi-num" style="color:#0284c7;" id="kpiUnreadCount">0 条</div>
+          </div>
+          <span class="kpi-icon">🔔</span>
+        </div>
+        <div class="kpi-card" data-kpi="waiting">
+          <div>
+            <div class="kpi-title">🚨 待人工接管</div>
+            <div class="kpi-num" style="color:var(--warning);" id="kpiWaitingCount">0 人</div>
+          </div>
+          <span class="kpi-icon">⚠️</span>
+        </div>
+        <div class="kpi-card" data-kpi="priority">
+          <div>
+            <div class="kpi-title">🔒 重点/避险客户</div>
+            <div class="kpi-num" style="color:var(--danger);" id="kpiPriorityCount">0 人</div>
+          </div>
+          <span class="kpi-icon">🛡️</span>
+        </div>
+      </div>
       <div class="session-layout" id="sessionLayout">
         <!-- 最左侧：客户列表 -->
         <aside class="panel customer-panel" id="sidebar">
