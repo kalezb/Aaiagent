@@ -483,6 +483,140 @@ export const DOUBAN_EMOJI_REGISTRY: Record<string, EmojiPragmaticInfo> = {
     name: "月亮",
     pragmaticRole: "夜晚氛围、道晚安、浪漫夜空。",
   },
+
+  // ── 8. Soul 互动表情与时段动态表情（平台专属社交助推） ──
+  "[皮一下]": {
+    tag: "[皮一下]",
+    category: "teasing_or_pouting",
+    name: "皮一下",
+    pragmaticRole: "调皮开玩笑逗你，气氛轻松俏皮，适合接梗调侃或幽默反击。",
+  },
+  "[戳一下]": {
+    tag: "[戳一下]",
+    category: "positive_icebreaking",
+    name: "戳一下",
+    pragmaticRole: "戳了你一下打招呼、提醒回消息或逗你玩，属于轻松破冰，顺势接话或反问对方在忙什么。",
+  },
+  "[拍一下]": {
+    tag: "[拍一下]",
+    category: "positive_icebreaking",
+    name: "拍一下",
+    pragmaticRole: "拍了拍你打招呼、催你回消息或亲昵互动，态度友好，随和顺接即可。",
+  },
+  "[弹一下]": {
+    tag: "[弹一下]",
+    category: "positive_icebreaking",
+    name: "弹一下",
+    pragmaticRole: "弹了你一下想引起注意或逗你玩，气氛轻松调皮，随和接住。",
+  },
+  "[挠一下]": {
+    tag: "[挠一下]",
+    category: "teasing_or_pouting",
+    name: "挠一下",
+    pragmaticRole: "挠你一下调侃、逗趣或轻柔催促，像朋友间嬉闹，语气轻松应对。",
+  },
+  "[摸一下]": {
+    tag: "[摸一下]",
+    category: "flirting_or_affection",
+    name: "摸一下",
+    pragmaticRole: "摸摸你安慰、关心或亲昵互动，温暖随和回应。",
+  },
+  "[在干嘛]": {
+    tag: "[在干嘛]",
+    category: "positive_icebreaking",
+    name: "在干嘛",
+    pragmaticRole: "主动找话题破冰开启聊天，分享当前生活小状态并反问对方在做什么。",
+  },
+  "[YYDS]": {
+    tag: "[YYDS]",
+    category: "positive_icebreaking",
+    name: "YYDS",
+    pragmaticRole: "强烈夸赞认可你永远的神，谦逊开心地接住，不要过于严肃。",
+  },
+  "[加油鸭]": {
+    tag: "[加油鸭]",
+    category: "action_or_support",
+    name: "加油鸭",
+    pragmaticRole: "为你加油鼓励，表达支持与暖意，感谢对方并增进好感。",
+  },
+  "[奈斯奈斯]": {
+    tag: "[奈斯奈斯]",
+    category: "positive_icebreaking",
+    name: "奈斯奈斯",
+    pragmaticRole: "表示很好、赞同或满意，顺着积极话题往下聊。",
+  },
+  "[用力抱住]": {
+    tag: "[用力抱住]",
+    category: "flirting_or_affection",
+    name: "用力抱住",
+    pragmaticRole: "想给你一个用力的拥抱，表达安慰、亲近或想念，温暖体贴地给予情绪价值。",
+  },
+  "[举手dd]": {
+    tag: "[举手dd]",
+    category: "positive_icebreaking",
+    name: "举手dd",
+    pragmaticRole: "举手报到表示自己在线、主动打招呼，热情随和回应。",
+  },
+  "[为你打Call]": {
+    tag: "[为你打Call]",
+    category: "action_or_support",
+    name: "为你打Call",
+    pragmaticRole: "应援支持与赞赏，开心互动接话。",
+  },
+  "[略略略]": {
+    tag: "[略略略]",
+    category: "teasing_or_pouting",
+    name: "略略略",
+    pragmaticRole: "调皮吐槽、撒娇式挑衅或开玩笑，绝非真正恶意，幽默互怼或顺毛哄。",
+  },
+  "[早安]": {
+    tag: "[早安]",
+    category: "positive_icebreaking",
+    name: "早安",
+    pragmaticRole: "早晨主动发来的时段问候，属于破冰找话题，自然回复早晨生活状态，礼貌问候。",
+  },
+  "[早上好]": {
+    tag: "[早上好]",
+    category: "positive_icebreaking",
+    name: "早上好",
+    pragmaticRole: "早晨主动发来的时段动态问候，破冰示好，自然顺接回复早上的状态。",
+  },
+  "[午安]": {
+    tag: "[午安]",
+    category: "positive_icebreaking",
+    name: "午安",
+    pragmaticRole: "中午时段问候，随口聊聊午饭或午休放松，气氛随性融洽。",
+  },
+  "[中午好]": {
+    tag: "[中午好]",
+    category: "positive_icebreaking",
+    name: "中午好",
+    pragmaticRole: "午间时段问候，顺带聊聊午饭或休息，随和互动。",
+  },
+  "[晚安]": {
+    tag: "[晚安]",
+    category: "positive_icebreaking",
+    name: "晚安",
+    pragmaticRole: "晚间问候，聊聊放松惬意的晚间状态，若对方准备休息则温柔道别。",
+  },
+  "[晚上好]": {
+    tag: "[晚上好]",
+    category: "positive_icebreaking",
+    name: "晚上好",
+    pragmaticRole: "晚间主动问候，聊天下班放松或夜晚安排，开启轻松对话。",
+  },
+  "[友好互动表情]": {
+    tag: "[友好互动表情]",
+    category: "positive_icebreaking",
+    name: "友好互动表情",
+    pragmaticRole: "对方发来一个表情维持对话热度，接住轻松氛围，把话题往前推进一句。",
+  },
+  "[互动表情]": {
+    tag: "[互动表情]",
+    category: "positive_icebreaking",
+    name: "互动表情",
+    pragmaticRole: "对方发来互动动效打招呼示好，轻松接住话题。",
+  },
 };
 
 /**
@@ -514,32 +648,78 @@ export function detectEmojisInText(text: string): EmojiPragmaticInfo[] {
   const found: EmojiPragmaticInfo[] = [];
   const seenTags = new Set<string>();
 
-  // 1. 匹配中括号表情 [xxx]
-  const bracketMatches = text.match(/\[[\u4e00-\u9fa5a-zA-Z0-9]+\]/gu) || [];
-  for (const tag of bracketMatches) {
-    if (seenTags.has(tag)) continue;
-    const info = DOUBAN_EMOJI_REGISTRY[tag];
-    if (info) {
-      found.push(info);
-      seenTags.add(tag);
-    } else {
-      // 未精确命中的通用中括号表情，提取字面含义并默认归入语用助推
-      const rawName = tag.replace(/^\[|\]$/gu, "");
-      const isTeasing = /白眼|气|怒|哼|傲|吐|不屑|鬼|烦/u.test(rawName);
-      const isLaugh = /笑|哈|嘻|乐/u.test(rawName);
-      found.push({
-        tag,
-        category: isTeasing ? "teasing_or_pouting" : isLaugh ? "positive_icebreaking" : "daily_fun",
-        name: rawName,
-        pragmaticRole: isTeasing
-          ? "带有调侃、傲娇或开玩笑性质，不代表真实恶意反感，应轻松接话。"
-          : "作为语气润滑剂活跃气氛，表达随和友好。",
-      });
-      seenTags.add(tag);
+  // 1. 匹配自然语言叙述格式的互动表情与时段问候（Soul 等平台适配器输出）
+  // 例：对方发来 Soul 互动表情「皮一下」：对方和你开玩笑...
+  //     对方发来 Soul 官方表情「早上好」
+  //     对方发来时段问候表情「早安」
+  //     对方发来一个友好互动表情
+  const naturalPatterns = [
+    /对方发来\s*(?:Soul\s*)?互动表情[「“]([^」”]{1,12})[」”]/u,
+    /对方发来\s*(?:Soul\s*)?官方表情[「“]([^」”]{1,12})[」”]/u,
+    /对方发来\s*时段问候表情[「“]([^」”]{1,12})[」”]/u,
+  ];
+  for (const regex of naturalPatterns) {
+    const match = text.match(regex);
+    if (match && match[1]) {
+      const stickerName = match[1].trim();
+      const lookupTag = `[${stickerName}]`;
+      const info = DOUBAN_EMOJI_REGISTRY[lookupTag] || {
+        tag: lookupTag,
+        category: /早|午|晚|安|好|打招呼/u.test(stickerName) ? "positive_icebreaking" : "daily_fun",
+        name: stickerName,
+        pragmaticRole: `对方发送的「${stickerName}」表情，属于轻松破冰或趣味互动，顺应语境自然接话。`,
+      };
+      if (!seenTags.has(info.tag)) {
+        found.push(info);
+        seenTags.add(info.tag);
+      }
     }
   }
 
-  // 2. 匹配 Unicode 表情
+  if (/对方发来一个友好互动表情|\[友好互动表情\]|\[Soul互动表情\]|\[语音互动表情\]/u.test(text)) {
+    const info = DOUBAN_EMOJI_REGISTRY["[友好互动表情]"];
+    if (info && !seenTags.has(info.tag)) {
+      found.push(info);
+      seenTags.add(info.tag);
+    }
+  }
+
+  // 2. 匹配中括号表情 [xxx]，包括带冒号前缀的 [互动表情：皮一下]、[时段表情：早安] 等
+  const bracketMatches = text.match(/\[[^\]\n]{1,24}\]/gu) || [];
+  for (const tag of bracketMatches) {
+    if (seenTags.has(tag)) continue;
+    let info = DOUBAN_EMOJI_REGISTRY[tag];
+    if (!info) {
+      // 剥离可能存在的前缀如 "互动表情："、"时段表情："、"官方表情："、"表情包："
+      const inner = tag.slice(1, -1).trim();
+      const stripped = inner.replace(/^(?:互动表情|时段表情|官方表情|表情包|表情)[：:]\s*/u, "").trim();
+      const strippedTag = `[${stripped}]`;
+      info = DOUBAN_EMOJI_REGISTRY[strippedTag];
+      if (info) {
+        info = { ...info, tag };
+      } else {
+        const isTeasing = /白眼|气|怒|哼|傲|吐|不屑|鬼|烦|挑衅/u.test(stripped);
+        const isLaugh = /笑|哈|嘻|乐|逗/u.test(stripped);
+        const isGreeting = /早|午|晚|好|嗨|招呼|问候/u.test(stripped);
+        info = {
+          tag,
+          category: isTeasing ? "teasing_or_pouting" : isGreeting ? "positive_icebreaking" : isLaugh ? "positive_icebreaking" : "daily_fun",
+          name: stripped,
+          pragmaticRole: isTeasing
+            ? "带有调侃、傲娇或开玩笑性质，不代表真实恶意反感，应轻松接话。"
+            : isGreeting
+              ? "主动打招呼问候，属于破冰找话题，自然顺接回复。"
+              : "作为语气润滑剂活跃气氛，表达随和友好。",
+        };
+      }
+    }
+    if (info && !seenTags.has(info.tag)) {
+      found.push(info);
+      seenTags.add(info.tag);
+    }
+  }
+
+  // 3. 匹配 Unicode 表情
   for (const [char, info] of Object.entries(UNICODE_EMOJI_PRAGMATIC_MAP)) {
     if (text.includes(char) && !seenTags.has(char)) {
       found.push(info);

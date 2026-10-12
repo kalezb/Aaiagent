@@ -96,4 +96,47 @@ describe("emoji pragmatics and Douban 164 emojis registry", () => {
     expect(promptDisabled).not.toContain("【本轮表情语用解析】");
     expect(promptDisabled).not.toContain("【表情理解原则】");
   });
+
+  it("detects Soul interaction stickers and time-sensitive greetings with accurate pragmatic roles", () => {
+    // 1. 自然语言描述格式（SoulAdapter 识别产物）
+    const soulInteractionText = "对方发来 Soul 互动表情「皮一下」：对方和你开玩笑，气氛轻松调皮";
+    const detectedInteraction = detectEmojisInText(soulInteractionText);
+    expect(detectedInteraction.length).toBeGreaterThanOrEqual(1);
+    expect(detectedInteraction[0].name).toBe("皮一下");
+    expect(detectedInteraction[0].pragmaticRole).toContain("调皮开玩笑逗你");
+
+    // 2. 时段问候格式
+    const timeGreetingText = "对方发来时段问候表情「早上好」";
+    const detectedGreeting = detectEmojisInText(timeGreetingText);
+    expect(detectedGreeting.length).toBeGreaterThanOrEqual(1);
+    expect(detectedGreeting[0].name).toBe("早上好");
+    expect(detectedGreeting[0].category).toBe("positive_icebreaking");
+
+    // 3. 友好互动安全兜底
+    const fallbackText = "对方发来一个友好互动表情";
+    const detectedFallback = detectEmojisInText(fallbackText);
+    expect(detectedFallback.length).toBeGreaterThanOrEqual(1);
+    expect(detectedFallback[0].name).toBe("友好互动表情");
+
+    // 4. 规范化后的中括号带前缀格式 [时段表情：早安]、[互动表情：戳一下]
+    const bracketedWithPrefix = "早呀[时段表情：早安] [互动表情：戳一下]";
+    const detectedPrefix = detectEmojisInText(bracketedWithPrefix);
+    const tags = detectedPrefix.map((e) => e.name);
+    expect(tags).toContain("早安");
+    expect(tags).toContain("戳一下");
+  });
+
+  it("injects Douban relationship premise when platform is douban", () => {
+    const doubanPrompt = buildLayeredSystemPrompt({
+      personaId: "female_sutang",
+      personaPrompt: "苏棠",
+      platform: "douban",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      messages: [{ role: "user", content: "在干嘛呢" }],
+      agentRuleState: EMPTY_AGENT_RULE_STATE,
+    });
+    expect(doubanPrompt).toContain("【豆瓣关系前提】");
+    expect(doubanPrompt).toContain("豆瓣（豆邮/小组动态交流）认识私信聊天");
+  });
 });

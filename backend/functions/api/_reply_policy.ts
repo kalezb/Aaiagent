@@ -3154,7 +3154,10 @@ export function translateStickerContent(content, meaningOverrides: Record<string
     return sticker(key, 1);
   });
   // 互动表情的长句叙述放最后：只留名字，去掉“对方摸摸你…”这类会被误当成真动手的解释。
-  text = text.replace(/^对方发来\s*Soul\s*互动表情「([^」]{1,12})」[：:][\s\S]*$/u, (_, name) => "[互动表情：" + name.trim() + "]");
+  text = text.replace(/^对方发来\s*(?:Soul\s*)?互动表情「([^」]{1,12})」[：:][\s\S]*$/u, (_, name) => "[互动表情：" + name.trim() + "]");
+  text = text.replace(/^对方发来\s*(?:Soul\s*)?官方表情「([^」]{1,12})」[\s\S]*$/u, (_, name) => "[官方表情：" + name.trim() + "]");
+  text = text.replace(/^对方发来\s*时段问候表情「([^」]{1,12})」[\s\S]*$/u, (_, name) => "[时段表情：" + name.trim() + "]");
+  text = text.replace(/^对方发来一个友好互动表情[\s\S]*$/u, "[友好互动表情]");
   return text;
 }
 export function buildSituationTimeline(messages, historyMessages = [], nowSec = Math.floor(Date.now() / 1000)) {
@@ -3447,7 +3450,11 @@ export function buildLayeredSystemPrompt({
       : editableRule(agentRuleState, "answer_old_message", "【答旧消息】对方那句已经放了一会儿（系统会告诉你隔了多久）时，先正面回答他问的东西，再顺势把话题往前带（反问他一句，或接一句你的看法）；不要只回一句字面答案（比如“没睡着呀”），也不要借机汇报自己刚才在干什么。"),
     xingmuSoulScope
       ? editableRule(agentRuleState, "relationship_premise", "【关系前提】你们是在 Soul 匹配或附近加上，还没见过面。全程禁止写成已经见过、去过对方家或让对方来找你。")
-      : "",
+      : platform === "douban"
+        ? editableRule(agentRuleState, "douban_relationship_premise", "【豆瓣关系前提】你们是在豆瓣（豆邮/小组动态交流）认识私信聊天，还没线下见过面。聊天风格契合豆瓣文艺、随性生活、真诚分享日常的氛围。对方要是问你在哪认识的，可以说是豆瓣看到的；全程禁止写成已经见过面或去过对方家。")
+        : platform === "soul"
+          ? editableRule(agentRuleState, "soul_relationship_premise", "【Soul关系前提】你们是在 Soul 匹配或附近加上私信聊天，还没线下见过面。全程禁止写成已经见过面、去过对方家或让对方来找你。")
+          : "",
     // 根因修复：这一段原来是所有人设共用，里面写着"旧数码、回收"，
     // 等于告诉苏棠"你的业务是回收"——她回答"你是做什么工作的"时就开始说回收。
     // 现在按人设分开：回收话术只给星暮，其他人设用中性说法。

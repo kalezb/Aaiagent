@@ -38,7 +38,16 @@ class DoubanAdapter(private val service: AccessibilityService) : PlatformAdapter
             "豆瓣小组",
             "豆瓣活动",
             "官方通知",
-            "系统通知"
+            "系统通知",
+            "豆邮助手",
+            "豆瓣读书",
+            "豆瓣电影",
+            "豆瓣小组助手",
+            "豆瓣日历",
+            "豆瓣FM",
+            "豆瓣广播",
+            "豆瓣音乐",
+            "豆瓣同城"
         )
 
         fun isOfficialAccount(name: String): Boolean {

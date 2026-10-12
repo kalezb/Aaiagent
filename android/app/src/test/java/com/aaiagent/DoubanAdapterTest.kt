@@ -29,6 +29,9 @@ class DoubanAdapterTest {
         assertTrue(DoubanAdapter.isOfficialAccount("豆瓣通知"))
         assertTrue(DoubanAdapter.isOfficialAccount("豆瓣市集"))
         assertTrue(DoubanAdapter.isOfficialAccount("官方通知"))
+        assertTrue(DoubanAdapter.isOfficialAccount("豆邮助手"))
+        assertTrue(DoubanAdapter.isOfficialAccount("豆瓣电影"))
+        assertTrue(DoubanAdapter.isOfficialAccount("豆瓣小组助手"))
         assertFalse(DoubanAdapter.isOfficialAccount("大可不必 5800"))
         assertFalse(DoubanAdapter.isOfficialAccount("张三"))
     }
