@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>预览方案二：Vben Admin 标签页多任务极简风</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --vb-dark-nav: #0f172a;
+  --vb-brand: #0ea5e9;
+  --vb-brand-hover: #0284c7;
+  --vb-brand-soft: #f0f9ff;
+  --vb-bg: #f8fafc;
+  --vb-panel: #ffffff;
+  --vb-border: #e2e8f0;
+  --vb-border-light: #f1f5f9;
+  --vb-text: #0f172a;
+  --vb-muted: #64748b;
+  --vb-muted-light: #94a3b8;
+  --vb-radius: 6px;
+  --vb-radius-sm: 4px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--vb-bg);
+  color: var(--vb-text);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.012em;
+  -webkit-font-smoothing: antialiased;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 顶部通知横幅 */
+.banner-bar {
+  background: #0f172a;
+  color: #94a3b8;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.banner-badge {
+  background: var(--vb-brand);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-right: 8px;
+}
+.banner-links a {
+  color: var(--vb-brand);
+  text-decoration: none;
+  margin-left: 14px;
+  font-weight: 500;
+}
+.banner-links a:hover { text-decoration: underline; }
+
+/* Vben 高级深色顶栏 */
+.topbar {
+  height: 48px;
+  background: #0f172a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #1e293b;
+}
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}
+.brand-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.cmd-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 220px;
+}
+.cmd-key {
+  margin-left: auto;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+/* 多任务标签栏 (Tabs Bar) */
+.tabs-bar {
+  height: 38px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--vb-border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 4px;
+  overflow-x: auto;
+}
+.v-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--vb-muted);
+  cursor: pointer;
+  background: var(--vb-bg);
+  border: 1px solid transparent;
+  user-select: none;
+  transition: all .15s;
+}
+.v-tab:hover {
+  background: #f1f5f9;
+  color: var(--vb-text);
+}
+.v-tab.active {
+  background: #ffffff;
+  color: var(--vb-brand);
+  border-color: var(--vb-border);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.tab-close {
+  font-size: 11px;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vb-muted-light);
+}
+.tab-close:hover {
+  background: #e2e8f0;
+  color: var(--vb-text);
+}
+
+/* 主内容区 */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr 290px;
+  gap: 8px;
+  padding: 8px;
+  min-height: 0;
+}
+.panel {
+  background: var(--vb-panel);
+  border: 1px solid var(--vb-border);
+  border-radius: var(--vb-radius);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 客户列表 */
+.panel-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--vb-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.user-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background .15s;
+  position: relative;
+}
+.user-item:hover { background: #f8fafc; }
+.user-item.active {
+  background: var(--vb-brand-soft);
+  color: var(--vb-brand);
+}
+.user-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px; width: 3px;
+  background: var(--vb-brand);
+  border-radius: 0 3px 3px 0;
+}
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #334155;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 12px;
+  position: relative;
+}
+.dot-online {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+}
+.user-info { flex: 1; min-width: 0; }
+.user-name { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-sub { font-size: 11px; color: var(--vb-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+
+/* 聊天区 */
+.chat-head {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--vb-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bubble {
+  max-width: 68%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.bubble-in {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--vb-border);
+}
+.bubble-out {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  color: #fff;
+}
+.bubble-time {
+  font-size: 10px;
+  margin-top: 3px;
+  opacity: .7;
+}
+.bubble-out .bubble-time { text-align: right; }
+
+.composer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--vb-border-light);
+  background: #fff;
+  display: flex;
+  gap: 8px;
+}
+.composer input {
+  flex: 1;
+  border: 1px solid var(--vb-border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+}
+.composer input:focus { border-color: var(--vb-brand); }
+.v-btn {
+  background: var(--vb-brand);
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.v-btn:hover { background: var(--vb-brand-hover); }
+
+/* 右侧画像 */
+.detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.d-card {
+  border: 1px solid var(--vb-border);
+  border-radius: 4px;
+  padding: 10px;
+}
+.d-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vb-muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.d-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.d-row span:first-child { color: var(--vb-muted); font-size: 11px; }
+.d-row span:last-child { font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="banner-bar">
+  <div>
+    <span class="banner-badge">方案二预览</span>
+    <strong>Vben Admin 标签页多任务极简风</strong> — 深色顶栏反差 + 多任务标签切换 + 极简 1px 微边框 + Vben Inter 字体
+  </div>
+  <div class="banner-links">
+    <a href="preview-tdesign.html">看方案一 (TDesign树形)</a>
+    <a href="preview-fusion.html">看方案三 (融合旗舰)</a>
+    <a href="/">返回当前看板</a>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="brand-group">
+    <div class="brand-logo">V</div>
+    <span class="brand-title">Aaiagent Vben Suite</span>
+  </div>
+  <div class="cmd-search" onclick="alert('快捷命令搜索栏：支持按昵称、设备号全局瞬时查找！')">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <span>快速搜索或跳转...</span>
+    <span class="cmd-key">⌘ K</span>
+  </div>
+</header>
+
+<!-- 多任务标签栏 -->
+<div class="tabs-bar">
+  <div class="v-tab active" onclick="switchTab(this, '小柔', 'Soul')">
+    <span>💬 小柔 (Soul)</span>
+    <span class="tab-close" onclick="closeTab(event, this)">✕</span>
+  </div>
+  <div class="v-tab" onclick="switchTab(this, '琪琪', '豆瓣')">
+    <span>💬 琪琪 (豆瓣)</span>
+    <span class="tab-close" onclick="closeTab(event, this)">✕</span>
+  </div>
+  <div class="v-tab" onclick="switchTab(this, '阿泽', '连信')">
+    <span>💬 阿泽 (连信)</span>
+    <span class="tab-close" onclick="closeTab(event, this)">✕</span>
+  </div>
+</div>
+
+<main class="layout">
+  <!-- 左侧：在线客户精简列表 -->
+  <aside class="panel">
+    <div class="panel-head">
+      <span class="panel-title">会话工作簿</span>
+      <span style="font-size:11px;color:var(--vb-muted);">共 8 人</span>
+    </div>
+    <div class="user-list">
+      <div class="user-item active" onclick="openCustomer('小柔', 'Soul', '我刚下班，感觉有点累，你晚饭吃了没？')">
+        <div class="avatar">柔<span class="dot-online"></span></div>
+        <div class="user-info">
+          <div class="user-name">小柔</div>
+          <div class="user-sub">我刚下班，感觉有点累...</div>
+        </div>
+      </div>
+      <div class="user-item" onclick="openCustomer('琪琪', '豆瓣', '周末有空一起出来看展吗？')">
+        <div class="avatar">琪<span class="dot-online"></span></div>
+        <div class="user-info">
+          <div class="user-name">琪琪</div>
+          <div class="user-sub">周末有空一起出来看展吗？</div>
+        </div>
+      </div>
+      <div class="user-item" onclick="openCustomer('阿泽', '连信', '已发送 1 张自拍生活照')">
+        <div class="avatar">泽<span class="dot-online"></span></div>
+        <div class="user-info">
+          <div class="user-name">阿泽</div>
+          <div class="user-sub">[照片] 已发送 1 张自拍生活照</div>
+        </div>
+      </div>
+      <div class="user-item" onclick="openCustomer('晴天', 'QQ', '已婚状态，已由系统触发避险停止回复')">
+        <div class="avatar" style="background:#fee2e2;color:#b91c1c;">晴</div>
+        <div class="user-info">
+          <div class="user-name">晴天</div>
+          <div class="user-sub" style="color:#ef4444;">已婚已停回复</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 中间：极简 IM 对话 -->
+  <section class="panel">
+    <div class="chat-head">
+      <div>
+        <strong id="activeChatName">小柔</strong>
+        <span style="font-size:11px;color:var(--vb-muted);margin-left:6px;" id="activePlatformTag">Soul • 设备01</span>
+      </div>
+      <span style="font-size:11px;color:#10b981;">● 托管进行中</span>
+    </div>
+    <div class="chat-body" id="vbenChatMessages">
+      <div class="bubble bubble-in">
+        你好呀，看你动态也是做电商的？
+        <div class="bubble-time">14:22</div>
+      </div>
+      <div class="bubble bubble-out">
+        嗯对的呀，自己做运营呢，每天盯数据挺耗精神的，你平时也常在这上面逛吗？
+        <div class="bubble-time">14:23</div>
+      </div>
+      <div class="bubble bubble-in">
+        我刚下班，感觉有点累，你晚饭吃了没？
+        <div class="bubble-time">14:30</div>
+      </div>
+    </div>
+    <div class="composer">
+      <input type="text" id="vbenMsgInput" placeholder="输入回复，按 Enter 键极速响应...">
+      <button class="v-btn" onclick="sendVbenMsg()">发送</button>
+    </div>
+  </section>
+
+  <!-- 右侧：资料面板 -->
+  <aside class="panel">
+    <div class="panel-head">
+      <span class="panel-title">客户情报</span>
+    </div>
+    <div class="detail-body">
+      <div class="d-card">
+        <div class="d-card-title">Profile Summary</div>
+        <div class="d-row"><span>客户昵称</span><span id="vbenProfName">小柔</span></div>
+        <div class="d-row"><span>婚姻状态</span><span style="color:#10b981;">未婚</span></div>
+        <div class="d-row"><span>年龄分析</span><span>27 岁</span></div>
+        <div class="d-row"><span>意向等级</span><span style="color:var(--vb-brand);">高活跃用户</span></div>
+      </div>
+      <div class="d-card">
+        <div class="d-card-title">System Rule Hits</div>
+        <div class="d-row"><span>人设匹配</span><span>苏棠 (电商独立人设)</span></div>
+        <div class="d-row"><span>避险规则</span><span>通过 (无违规)</span></div>
+        <div class="d-row"><span>动态表情</span><span>正常解析</span></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+function switchTab(el, name, platform) {
+  document.querySelectorAll('.v-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  openCustomer(name, platform, '');
+}
+function closeTab(e, el) {
+  e.stopPropagation();
+  const tab = el.parentElement;
+  tab.remove();
+}
+function openCustomer(name, platform, lastMsg) {
+  document.getElementById('activeChatName').textContent = name;
+  document.getElementById('activePlatformTag').textContent = platform + ' • 设备01';
+  document.getElementById('vbenProfName').textContent = name;
+}
+function sendVbenMsg() {
+  const input = document.getElementById('vbenMsgInput');
+  const val = input.value.trim();
+  if (!val) return;
+  const container = document.getElementById('vbenChatMessages');
+  const div = document.createElement('div');
+  div.className = 'bubble bubble-out';
+  div.innerHTML = val + '<div class="bubble-time">刚刚</div>';
+  container.appendChild(div);
+  input.value = '';
+  container.scrollTop = container.scrollHeight;
+}
+document.getElementById('vbenMsgInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendVbenMsg();
+});
+</script>
+</body>
+</html>
