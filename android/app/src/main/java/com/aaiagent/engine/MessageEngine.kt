@@ -1920,9 +1920,10 @@ class MessageEngine(
             if (!canContinue(leaseToken, null)) return emptyList()
             val svc = service ?: return emptyList()
             val root = svc.rootInActiveWindow ?: return emptyList()
+            val hasOverlay = adapter.hasTransientOverlay(root)
             if (!adapter.isInChat(root)) {
                 if (!adapter.isInMessageList(root) &&
-                    ChatPageStabilityPolicy.shouldRecoverWrongPageOnAttempt(attempt)
+                    ChatPageStabilityPolicy.shouldRecoverWrongPageOnAttempt(attempt, hasOverlay)
                 ) {
                     val back = adapter.navigateToMessageList(
                         svc,
@@ -1934,7 +1935,8 @@ class MessageEngine(
                         "目标=$expectedContactName",
                     )
                 }
-                if (attempt == 0) delay(700)
+                val delayMs = ChatPageStabilityPolicy.retryDelayMs(attempt, hasOverlay)
+                if (delayMs > 0L) delay(delayMs)
                 return@repeat
             }
             chatPageIdentityTracker.rememberConfirmedTitle(
@@ -4647,7 +4649,7 @@ class MessageEngine(
         const val CHAT_VERIFY_RETRY_DELAY_MS = 450L
         const val CHAT_PAGE_RECHECK_DELAY_MS = 600L
         const val CHAT_IDENTITY_RETRY_DELAY_MS = 200L
-        const val READ_MESSAGE_RETRIES = 4
+        const val READ_MESSAGE_RETRIES = 6
         const val VISUAL_RETURN_RETRIES = 4
         const val MAX_LLM_RETRIES = 3
         const val STALE_REPLY_COOLDOWN_MS = 1_000L

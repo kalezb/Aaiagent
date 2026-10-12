@@ -166,11 +166,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             .any(::isVisibleOnScreen) ||
             isPublishPage(root) ||
             explicitProfile
+        val hasOverlay = hasTransientOverlay(root)
         val stableChat = ChatPageStabilityPolicy.shouldTreatAsChat(
             chatDetected = chatPage,
             explicitNonChat = explicitNonChat,
             lastChatAtMs = lastConfirmedChatAtMs,
             nowMs = now,
+            hasTransientOverlay = hasOverlay,
         )
         if (stableChat) {
             lastConfirmedChatAtMs = now
@@ -178,6 +180,10 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             lastConfirmedChatAtMs = 0L
         }
         return stableChat
+    }
+
+    override fun hasTransientOverlay(root: AccessibilityNodeInfo): Boolean {
+        return findVisibleTransientOverlay(root) != null
     }
 
     private fun profileMarkerCount(root: AccessibilityNodeInfo): Int {
@@ -722,6 +728,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             } else {
                 0
             }
+            val isPotentialSticker = stickerNode != null || expressionStickerNode != null || type == SoulMediaType.STICKER
+            val stickerDescription = if (isPotentialSticker) {
+                findStickerAccessibilityDescription(item, expressionStickerNode, stickerNode)
+            } else {
+                null
+            }
+            val resolvedStickerText = SoulStickerPolicy.resolveFromDescription(stickerDescription)
+
             val content = when {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
                 type == SoulMediaType.VOICE_EMOJI -> "[语音互动表情]"
@@ -729,6 +743,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                     SoulVoiceContent.resolveIncoming(voiceTranscription, text)
                 // 自己发的语音：先放占位，等排序之后统一按"时长 + 顺序"补上当时说的话。
                 type == SoulMediaType.VOICE -> SoulVoiceContent.resolveOutgoing(null, text)
+                resolvedStickerText != null -> resolvedStickerText
                 type == SoulMediaType.STICKER -> "[表情]"
                 text.isNotEmpty() -> text
                 stickerNode != null -> "[Soul互动表情]"
@@ -747,13 +762,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 isVoice = type == SoulMediaType.VOICE,
                 content = content
             )
-            val finalType = if (stickerNode != null && text.isEmpty()) {
-                SoulInteractionMessage.TYPE
-            } else {
-                type
+            val finalType = when {
+                resolvedStickerText != null -> "text"
+                stickerNode != null && text.isEmpty() -> SoulInteractionMessage.TYPE
+                else -> type
             }
-            val stickerRect = stickerNode?.let {
-                Rect().also { rect -> it.getBoundsInScreen(rect) }
+            val stickerRect = if (resolvedStickerText == null) {
+                stickerNode?.let {
+                    Rect().also { rect -> it.getBoundsInScreen(rect) }
+                }
+            } else {
+                null
             }
             val itemBounds = Rect()
             item.getBoundsInScreen(itemBounds)
@@ -815,6 +834,29 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         // 本 App 自己的悬浮窗 / 前台服务文字会被一起读进来，绝不能当成聊天消息
         // （真机 2026-10-07：`AI 托管` / `已开启 AI 托管` 被当成消息入库并同步给后端）。
         return messages.filterNot { HostingOverlayTextPolicy.isOverlayText(it.content) }
+    }
+
+    private fun findStickerAccessibilityDescription(
+        item: AccessibilityNodeInfo,
+        expressionNode: AccessibilityNodeInfo?,
+        stickerNode: AccessibilityNodeInfo?
+    ): CharSequence? {
+        val candidates = listOfNotNull(
+            expressionNode?.contentDescription,
+            stickerNode?.contentDescription,
+            item.findAccessibilityNodeInfosByViewId(prefix + "image")
+                .firstOrNull { isVisibleOnScreen(it) || it.isVisibleToUser }?.contentDescription,
+            item.findAccessibilityNodeInfosByViewId(prefix + "img_static")
+                .firstOrNull { isVisibleOnScreen(it) || it.isVisibleToUser }?.contentDescription,
+            item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
+                .firstOrNull { isVisibleOnScreen(it) || it.isVisibleToUser }?.contentDescription,
+            item.contentDescription
+        )
+        for (desc in candidates) {
+            val label = SoulStickerPolicy.extractLabelFromDescription(desc)
+            if (!label.isNullOrBlank()) return desc
+        }
+        return null
     }
 
     /**
@@ -934,10 +976,15 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val isLatestIncoming = pending.messageIndex == messages.lastIndex &&
                 messages[pending.messageIndex].sender == "other"
             if (isLatestIncoming && !previewLabel.isNullOrBlank()) {
-                val modelText = if (SoulGameInteraction.isGameLabel(previewLabel)) {
-                    SoulGameInteraction.modelTextFor(previewLabel)
-                } else {
-                    SoulInteractionPreview.modelTextFor(previewLabel)
+                val modelText = when {
+                    SoulGameInteraction.isGameLabel(previewLabel) ->
+                        SoulGameInteraction.modelTextFor(previewLabel)
+                    SoulStickerPolicy.isTimeSensitive(previewLabel) -> {
+                        val greeting = SoulStickerPolicy.resolveTimeGreeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
+                        SoulStickerPolicy.modelTextForTimeGreeting(greeting)
+                    }
+                    else ->
+                        SoulInteractionPreview.modelTextFor(previewLabel)
                 }
                 result[pending.messageIndex] = result[pending.messageIndex].copy(
                     content = modelText,
@@ -957,17 +1004,22 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             remainingPending.forEachIndexed { index, pending ->
                 val name = match.names.getOrNull(index)
                 val quickMenuLabel = match.quickMenuLabels.getOrNull(index)
-                val modelText = when {
+                val confirmedModelText = when {
                     !quickMenuLabel.isNullOrBlank() && SoulGameInteraction.isGameLabel(quickMenuLabel) ->
                         SoulGameInteraction.modelTextFor(quickMenuLabel)
                     !name.isNullOrBlank() -> StickerMatcher.modelTextFor(name)
                     else -> null
                 }
-                if (modelText.isNullOrBlank()) {
+                if (confirmedModelText.isNullOrBlank()) {
                     unresolved.add(pending.messageIndex)
+                    // 第四层：任何无法百分之百确认的表情，一律按“对方发来一个友好互动表情”做安全回复，严禁硬猜错判。
+                    result[pending.messageIndex] = result[pending.messageIndex].copy(
+                        content = SoulStickerPolicy.safeFallbackModelText(),
+                        type = "text"
+                    )
                 } else {
                     result[pending.messageIndex] = result[pending.messageIndex].copy(
-                        content = modelText,
+                        content = confirmedModelText,
                         type = "text"
                     )
                 }

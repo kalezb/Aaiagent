@@ -49,4 +49,16 @@ class StickerMatcherTest {
         assertFalse(StickerMatcher.isConfidentQuickMatch(14, 42.6, 16, 45.0))
         assertFalse(StickerMatcher.isConfidentQuickMatch(30, 42.6, 44, 90.4))
     }
+
+    @Test
+    fun `interaction sticker template match requires high confidence and unambiguous difference`() {
+        // 非常接近（<= 10.0）属于高置信度强匹配
+        assertTrue(StickerMatcher.isConfidentTemplateMatch(bestDist = 8.0, secondDist = 9.0))
+        // 距离适中且与第二名有充分差距（gap >= 2.5）确认匹配
+        assertTrue(StickerMatcher.isConfidentTemplateMatch(bestDist = 14.0, secondDist = 18.0))
+        // 差异过小（gap < 2.5），存在歧义，拒绝硬猜
+        assertFalse(StickerMatcher.isConfidentTemplateMatch(bestDist = 14.0, secondDist = 15.0))
+        // 距离过大（> 20.0），完全不匹配
+        assertFalse(StickerMatcher.isConfidentTemplateMatch(bestDist = 22.0, secondDist = 30.0))
+    }
 }

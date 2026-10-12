@@ -219,6 +219,19 @@ object StickerMatcher {
             secondColor - bestColor >= MIN_QUICK_COLOR_GAP
     }
 
+    /**
+     * 第三层：加强差异门槛检查，只有高置信度才确认。
+     * 当差距不明显或距离过大时拒绝硬猜，交由第四层安全兜底。
+     */
+    internal fun isConfidentTemplateMatch(
+        bestDist: Double,
+        secondDist: Double
+    ): Boolean {
+        if (bestDist > MAX_TEMPLATE_DISTANCE) return false
+        val gap = secondDist - bestDist
+        return bestDist <= STRONG_MATCH_DISTANCE || gap >= MIN_BEST_GAP
+    }
+
     private fun quickFeature(source: Bitmap, bounds: Rect): QuickFeature? {
         val cropped = cropBitmap(source, bounds) ?: return null
         val normalized = normalizeForTemplate(cropped)
@@ -287,8 +300,7 @@ object StickerMatcher {
         }
 
         val gap = secondBestDist - bestDist
-        val accepted = bestDist <= MAX_TEMPLATE_DISTANCE &&
-            (gap >= MIN_BEST_GAP || bestDist <= STRONG_MATCH_DISTANCE)
+        val accepted = isConfidentTemplateMatch(bestDist, secondBestDist)
         if (!accepted) {
             Log.d(
                 "AIA",
@@ -473,9 +485,9 @@ object StickerMatcher {
     }
 
     private const val TEMPLATE_SIZE = 64
-    private const val MAX_TEMPLATE_DISTANCE = 22.0
-    private const val STRONG_MATCH_DISTANCE = 12.0
-    private const val MIN_BEST_GAP = 1.0
+    private const val MAX_TEMPLATE_DISTANCE = 20.0
+    private const val STRONG_MATCH_DISTANCE = 10.0
+    private const val MIN_BEST_GAP = 2.5
 
     private const val SCREENSHOT_ATTEMPTS = 3
 

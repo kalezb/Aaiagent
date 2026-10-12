@@ -10,6 +10,7 @@ interface PlatformAdapter {
 
     fun isInChat(root: AccessibilityNodeInfo): Boolean
     fun isInMessageList(root: AccessibilityNodeInfo): Boolean
+    fun hasTransientOverlay(root: AccessibilityNodeInfo): Boolean = false
 
     /** One shared page classification entry for tracing, navigation and send guards. */
     fun observePage(root: AccessibilityNodeInfo): PageObservation {
