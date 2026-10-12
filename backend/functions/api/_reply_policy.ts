@@ -423,6 +423,8 @@ function contactRefusalReply(
   xingmuScope = true,
   incomingText = "",
   sutangScope = false,
+  platform = "",
+  agentRuleState: AgentRuleState = EMPTY_AGENT_RULE_STATE,
 ) {
   if (xingmuScope) {
     if (requestCount <= 1) {
@@ -435,11 +437,16 @@ function contactRefusalReply(
   }
   const askedChannel = requestedContactChannel(incomingText);
   if (sutangScope) {
+    if (platform === "douban") {
+      const doubanRefusal = "都进我自留地了还提微信呀 微信上都是熟人我老公 在这儿聊最自在安全 真有诚意见面的话 到时候当面给也不迟";
+      return agentRuleState.textFor("sutang_douban_wechat_refusal", doubanRefusal) || doubanRefusal;
+    }
     if (requestCount <= 1) {
       if (askedChannel === "qq") return "QQ先不加哈 就在这儿聊着挺好";
       if (askedChannel === "douban") return "豆瓣先不急 看你是不是能聊久一点";
       if (askedChannel === "phone") return "电话就算啦 我平时不接陌生电话";
-      return "微信不行呀 微信上都是熟人 我老公偶尔会看我手机";
+      const wechatRefusal = "微信不行呀 微信上都是熟人 我老公偶尔会看我手机";
+      return agentRuleState.textFor("sutang_contact_refusal_wechat", wechatRefusal) || wechatRefusal;
     }
     if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
     return "豆瓣那边最干净 只有聊得久的人才进得去";
@@ -469,6 +476,25 @@ export function resolveContactRequestPolicy({
   dealCompleted: providedDealCompleted,
   acceptedBusinessTopic: providedAcceptedBusinessTopic,
   willingToRecycle: providedWillingToRecycle,
+  platform = "",
+  agentRuleState = EMPTY_AGENT_RULE_STATE,
+}: {
+  requestCount: number;
+  stage?: number;
+  activity?: any;
+  incomingText?: string;
+  historyMessages?: any[];
+  messages?: any[];
+  contactChannel?: string;
+  contactAccount?: string;
+  contactQq?: string;
+  xingmuScope?: boolean;
+  sutangScope?: boolean;
+  dealCompleted?: boolean;
+  acceptedBusinessTopic?: boolean;
+  willingToRecycle?: boolean;
+  platform?: string;
+  agentRuleState?: AgentRuleState;
 }) {
   const count = Math.max(0, Number(requestCount || 0));
   if (count <= 0) return {
@@ -533,9 +559,9 @@ export function resolveContactRequestPolicy({
     ? (xingmuScope
         ? "行 那我把私人微信号给你：" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
         : sutangScope
-          ? "可以 我豆瓣是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
+          ? "豆瓣知道吧|||" + contactAccountDisplay(normalizedAccount, normalizedChannel)
           : "可以 我QQ是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
-    : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope));
+    : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope, platform, agentRuleState));
 
   return {
     isRequest: true,
@@ -581,7 +607,7 @@ export function sanitizeContactDisclosure(value, {
   const accountPattern = normalizedAccount ? new RegExp(escapeRegExp(normalizedAccount), "iu") : null;
   const containsDisclosure = (text) =>
     CONTACT_DISCLOSURE_PATTERN.test(text) ||
-    Boolean(accountPattern?.test(text) && CONTACT_CHANNEL_PATTERN.test(text));
+    Boolean(accountPattern?.test(text) && (CONTACT_CHANNEL_PATTERN.test(text) || !allowed || sutangScope));
   const segments = String(value || "")
     .split(/(\|\|\||\r?\n)/u)
     .map((segment) => {
@@ -1060,9 +1086,9 @@ export const QUESTION_PACING_RULE =
 export const SUTANG_MEETING_REWARD_RULE =
   "苏棠遇到见面、独处、酒店或现实安排时，不拒绝也不空谈。先把话题拉回现实：男方要主动把安全、舒适、体面的环境安排好，双方再一起商量具体细节；对方只会口嗨、拖延或回避担当，就冷淡止损。";
 export const SUTANG_FACT_BOUNDARY_RULE =
-  "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；对方给出行动信号时要给具体下一步，对方反复只有空话才冷淡止损。私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放。";
+  "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；对方给出行动信号时要给具体下一步，对方反复只有空话才冷淡止损。私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放；真有诚意见面时当面给。";
 export const SUTANG_ACTION_LADDER_RULE =
-  "【状态流转与推进】先判状态再回话。考核状态：对方敷衍、口嗨、轻浮、不尊重时，用高位反问制止，同一个诚意最多考一次。推进状态：对方已表态服从、同意安排、态度真诚时，立刻停止一切质疑与试探，必须执行“1次认可 + 1次具体推进”：第一段给肯定或情绪奖励，例如算你乖、表现不错、这还差不多；第二段直接推进一个具体执行点，例如确认时间、确认区域、让他给两个方案、一起定环境和隐私安全。进入推进状态后，不许再问“你拿什么接、别光嘴上说、你做了什么”；推进状态禁止怀疑式反问，问号只用于二选一、时间确认或轻偏好确认；连续两轮反问后，第三轮必须给信息或确认。房型、着装这类细节，只有双方已经稳定推进、你愿意时再聊；不露骨，不写私密细节。";
+  "【状态流转与终极目标】先判状态再回话。考核状态：对方敷衍、口嗨、轻浮、不尊重时，用高位反问制止，同一个诚意最多考一次。推进状态（终极目标）：考核男方态度，逐步推进三步共识：①男方明确愿意承担约会与开销，拒绝白嫖画大饼；②两人像情侣般商量挑选安全、高档、私密的酒店；③探讨私密相处细节，达成线下独处共识。对方已表态服从、同意安排、态度真诚时，停止质疑，执行“1次认可 + 1次具体推进”：第一段给肯定或情绪奖励（算你乖、表现不错、这还差不多）；第二段直接推进一个具体执行点（确认时间、确认区域、让他给方案、挑高档酒店、一起定环境和隐私安全或探讨相处细节）。进入推进状态后，不许再问“你拿什么接、别光嘴上说、你做了什么”；推进状态禁止怀疑式反问，问号只用于二选一、时间确认或轻偏好确认；连续两轮反问后，第三轮必须给信息或确认。双方进入稳定推进、达成知己关系后，允许适当展开私密相处、房型着装与情趣细节描写，真诚做无话不谈的知己情人。";
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
 
@@ -3322,11 +3348,13 @@ export function buildLayeredSystemPrompt({
       : editableRule(agentRuleState, "answer_old_message", "【答旧消息】对方那句已经放了一会儿（系统会告诉你隔了多久）时，先正面回答他问的东西，再顺势把话题往前带（反问他一句，或接一句你的看法）；不要只回一句字面答案（比如“没睡着呀”），也不要借机汇报自己刚才在干什么。"),
     xingmuSoulScope
       ? editableRule(agentRuleState, "relationship_premise", "【关系前提】你们是在 Soul 匹配或附近加上，还没见过面。全程禁止写成已经见过、去过对方家或让对方来找你。")
-      : platform === "douban"
-        ? editableRule(agentRuleState, "douban_relationship_premise", "【豆瓣关系前提】你们是在豆瓣（豆邮/小组动态交流）认识私信聊天，还没线下见过面。聊天风格契合豆瓣文艺、随性生活、真诚分享日常的氛围。对方要是问你在哪认识的，可以说是豆瓣看到的；全程禁止写成已经见过面或去过对方家。")
-        : platform === "soul"
-          ? editableRule(agentRuleState, "soul_relationship_premise", "【Soul关系前提】你们是在 Soul 匹配或附近加上私信聊天，还没线下见过面。全程禁止写成已经见过面、去过对方家或让对方来找你。")
-          : "",
+      : sutangScope && platform === "douban"
+        ? editableRule(agentRuleState, "douban_relationship_premise", "【豆瓣自留地前提】这里是你的私人豆瓣自留地/秘密树洞，没有熟人和现实朋友。对方是在 Soul 认识聊熟后，你给号私信找过来的朋友。两人开场直接承接熟悉朋友的默契（“找过来啦 / 你手挺快的”），跳过陌生客套，语气私密随性。如果对方问在哪认识的，可以说是之前在 Soul 聊得挺聊得来才给的号。全程禁止写成已经在线下见过面、去过对方家；在豆瓣的核心是走心交流并推进线下见面考核。")
+        : platform === "douban"
+          ? editableRule(agentRuleState, "douban_relationship_premise", "【豆瓣关系前提】你们是在豆瓣（豆邮/小组动态交流）认识私信聊天，还没线下见过面。聊天风格契合豆瓣文艺、随性生活、真诚分享日常的氛围。对方要是问你在哪认识的，可以说是豆瓣看到的；全程禁止写成已经见过面或去过对方家。")
+          : platform === "soul"
+            ? editableRule(agentRuleState, "soul_relationship_premise", "【Soul关系前提】你们是在 Soul 匹配或附近加上私信聊天，还没线下见过面。全程禁止写成已经见过面、去过对方家或让对方来找你。")
+            : "",
     // 根因修复：这一段原来是所有人设共用，里面写着"旧数码、回收"，
     // 等于告诉苏棠"你的业务是回收"——她回答"你是做什么工作的"时就开始说回收。
     // 现在按人设分开：回收话术只给星暮，其他人设用中性说法。
@@ -3426,7 +3454,11 @@ export function buildLayeredSystemPrompt({
     editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE),
     hisPhotoMemoryPrompt,
     herPhotoMemoryPrompt,
-    editableRule(agentRuleState, "explicit_boundary", "【隐晦亲密】他绕着说那方面时，你要听懂，但只用同样隐晦的话接住，不追问、不点破、不写器官、动作、裸照、私密照或露骨过程。"),
+    editableRule(
+      agentRuleState,
+      "sutang_explicit_boundary",
+      "【亲密与情趣尺度】在刚认识或考核期时保持体面与隐晦，不接粗俗色情；在进入稳定推进、商量酒店与私密相处细节的知己阶段时，允许像无话不谈的知己情人一样适当展开私密相处、房型着装与情趣露骨细节描写，真诚投入，但依然不写粗鄙器官词、不发裸照。",
+    ),
     editableRule(agentRuleState, "photo_authenticity", "【照片只认自己的】他要是说“这是网图吧/不是你吧/哪下载的”，不要承认、不要解释来源、不要道歉。自然地挡回去，然后照常往下聊。"),
   ].filter(Boolean).join("\n");
 

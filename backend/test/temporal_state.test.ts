@@ -482,7 +482,7 @@ describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
           sutangScope: true,
         });
         expect(policy.allowed).toBe(true);
-        expect(policy.reply).toContain("我豆瓣是");
+        expect(policy.reply).toBe("豆瓣知道吧|||sutang2026");
       });
     });
   });

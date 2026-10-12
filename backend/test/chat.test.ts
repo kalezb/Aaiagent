@@ -3698,7 +3698,7 @@ describe("chat logic", () => {
       sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toContain("我豆瓣是");
+    expect(allowed.reply).toBe("豆瓣知道吧|||sutang2026");
   });
 
   it("uses structured device Douban facts as the only contact source", () => {

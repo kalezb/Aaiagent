@@ -38,7 +38,10 @@ export async function respondWithImmediateReply({
 }) {
   const rawContent = String(decision.content || "").trim();
   const sutang = String(personaScope || "") === "sutang";
-  const sanitized = sanitizeAssistantReply(rawContent, { allowMeetingReward: sutang });
+  const sanitized = sanitizeAssistantReply(rawContent, {
+    allowMeetingReward: sutang,
+    allowIntimateDetails: sutang,
+  });
   const presented = skipPresentation
     ? sanitized
     : normalizeAssistantReplyPresentation(sanitized, { softParticles: sutang });

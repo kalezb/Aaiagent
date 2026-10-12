@@ -34,15 +34,28 @@ export function sanitizeStaleAssistantReply(value, policy) {
 
 const EXPLICIT_WORDS = /(裸照|脱光|做爱|上床|睡你|约炮|包养|奶子|下面湿|勃起|口交|射|淫|鸡巴|逼样)/u;
 const EXPLICIT_WORDS_WITH_MEETING = /(裸照|脱光|做爱|上床|开房|睡你|约炮|包养|奶子|下面湿|勃起|口交|射|淫|鸡巴|逼样)/u;
+// 2026-10-13 用户要求：进入知己情人阶段后，终极目标探讨私密相处与线下独处共识，
+// 允许适当展开私密相处、房型着装与情趣细节描写，只拦截粗俗色情、涉黄交易词。
+const EXPLICIT_WORDS_INTIMATE = /(裸照|约炮|包养|奶子|下面湿|勃起|口交|射精|鸡巴|逼样)/u;
 
-export function dropExplicitSegments(value, options: { allowMeetingReward?: boolean } = {}) {
-  const pattern = options.allowMeetingReward ? EXPLICIT_WORDS : EXPLICIT_WORDS_WITH_MEETING;
+export function dropExplicitSegments(
+  value,
+  options: { allowMeetingReward?: boolean; allowIntimateDetails?: boolean } = {},
+) {
+  const pattern = options.allowIntimateDetails
+    ? EXPLICIT_WORDS_INTIMATE
+    : options.allowMeetingReward
+      ? EXPLICIT_WORDS
+      : EXPLICIT_WORDS_WITH_MEETING;
   const segments = String(value || "").split("|||");
   const kept = segments.filter((segment) => !pattern.test(segment));
   return kept.join("|||").trim();
 }
 
-export function sanitizeAssistantReply(value, options: { allowMeetingReward?: boolean } = {}) {
+export function sanitizeAssistantReply(
+  value,
+  options: { allowMeetingReward?: boolean; allowIntimateDetails?: boolean } = {},
+) {
   const cleaned = String(value || "")
     .split(/(\r?\n|\|\|\|)/u)
     .map((part) =>

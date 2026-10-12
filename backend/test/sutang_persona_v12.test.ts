@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_AGENT_RULES,
 } from "../functions/api/_agent_rule_inventory";
-import { buildAgentRuleState } from "../functions/api/_agent_rule_contract";
+import { buildAgentRuleState, EMPTY_AGENT_RULE_STATE } from "../functions/api/_agent_rule_contract";
+import { sanitizeAssistantReply } from "../functions/api/_assistant_output";
 import { defaultDrawersForPersona } from "../functions/api/_persona_drawers";
 import {
   buildLayeredSystemPrompt,
@@ -117,14 +118,14 @@ describe("Su Tang v13 persona", () => {
       sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toContain("我豆瓣是");
+    expect(allowed.reply).toBe("豆瓣知道吧|||sutang2026");
 
-    expect(sanitizeContactDisclosure("可以 我豆瓣是sutang2026", {
+    expect(sanitizeContactDisclosure("豆瓣知道吧|||sutang2026", {
       allowed: true,
       contactChannel: "douban",
       contactAccount: "sutang2026",
       sutangScope: true,
-    })).toBe("可以 我豆瓣是sutang2026");
+    })).toBe("豆瓣知道吧|||sutang2026");
     expect(sanitizeContactDisclosure("可以 我微信是private_xh", {
       allowed: true,
       contactChannel: "douban",
@@ -177,8 +178,61 @@ describe("Su Tang v13 persona", () => {
       contactQq: "sutang2026",
       xingmuScope: false,
       sutangScope: true,
+      platform: "soul",
     });
     expect(wechatAsked.allowed).toBe(false);
     expect(wechatAsked.reply).toContain("微信不行");
+
+    // 豆瓣自留地上被索要微信时借力打力钩回线下见面考核
+    const doubanWechatAsked = resolveContactRequestPolicy({
+      requestCount: 1,
+      stage: 2,
+      activity: { totalExchanges: 5, activeDays: 1 },
+      incomingText: "加个微信呗",
+      messages: [{ role: "user", content: "加个微信呗" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+      platform: "douban",
+    });
+    expect(doubanWechatAsked.allowed).toBe(false);
+    expect(doubanWechatAsked.reply).toContain("都进我自留地了还提微信呀");
+    expect(doubanWechatAsked.reply).toContain("真有诚意见面的话 到时候当面给也不迟");
+  });
+
+  it("handles Douban arrival premise, three-step ultimate goal, and intimate details loosening", () => {
+    const prompt = buildLayeredSystemPrompt({
+      personaId: "female_sutang",
+      personaPrompt: "你是苏棠，29岁，重庆人，做电商运营。",
+      platform: "douban",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      messages: [{ role: "user", content: "找过来啦" }],
+      agentRuleState: EMPTY_AGENT_RULE_STATE,
+    });
+    expect(prompt).toContain("【豆瓣自留地前提】");
+    expect(prompt).toContain("私人豆瓣自留地/秘密树洞");
+    expect(prompt).toContain("跳过陌生客套");
+    expect(prompt).toContain("三步共识");
+    expect(prompt).toContain("商量挑选安全、高档、私密的酒店");
+    expect(prompt).toContain("探讨私密相处细节");
+    expect(prompt).toContain("做无话不谈的知己情人");
+
+    // 亲密尺度解绑：允许情趣与相处细节，但拦截粗鄙色情
+    const intimateTalk = "商量挑选安全高档酒店|||一起睡你探讨私密相处细节";
+    const filtered = sanitizeAssistantReply(intimateTalk, {
+      allowMeetingReward: true,
+      allowIntimateDetails: true,
+    });
+    expect(filtered).toContain("商量挑选安全高档酒店");
+    expect(filtered).toContain("私密相处细节");
+
+    const vulgarTalk = "想看你裸照|||出来约炮";
+    const filteredVulgar = sanitizeAssistantReply(vulgarTalk, {
+      allowMeetingReward: true,
+      allowIntimateDetails: true,
+    });
+    expect(filteredVulgar).toBe("");
   });
 });

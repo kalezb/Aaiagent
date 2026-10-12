@@ -73,6 +73,10 @@ const EXPLICIT_AGENT_RULE_IDS = new Set([
   "fixed_age",
   "his_photo_memory",
   "her_photo_memory",
+  "douban_relationship_premise",
+  "sutang_contact_refusal_wechat",
+  "sutang_douban_wechat_refusal",
+  "sutang_explicit_boundary",
 ]);
 
 const SYSTEM_ACTION_RULE_IDS = new Set([

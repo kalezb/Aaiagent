@@ -127,7 +127,19 @@ describe("emoji pragmatics and Douban 164 emojis registry", () => {
   });
 
   it("injects Douban relationship premise when platform is douban", () => {
-    const doubanPrompt = buildLayeredSystemPrompt({
+    const genericPrompt = buildLayeredSystemPrompt({
+      personaId: "female",
+      personaPrompt: "客服",
+      platform: "douban",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      messages: [{ role: "user", content: "在干嘛呢" }],
+      agentRuleState: EMPTY_AGENT_RULE_STATE,
+    });
+    expect(genericPrompt).toContain("【豆瓣关系前提】");
+    expect(genericPrompt).toContain("豆瓣（豆邮/小组动态交流）认识私信聊天");
+
+    const sutangPrompt = buildLayeredSystemPrompt({
       personaId: "female_sutang",
       personaPrompt: "苏棠",
       platform: "douban",
@@ -136,7 +148,7 @@ describe("emoji pragmatics and Douban 164 emojis registry", () => {
       messages: [{ role: "user", content: "在干嘛呢" }],
       agentRuleState: EMPTY_AGENT_RULE_STATE,
     });
-    expect(doubanPrompt).toContain("【豆瓣关系前提】");
-    expect(doubanPrompt).toContain("豆瓣（豆邮/小组动态交流）认识私信聊天");
+    expect(sutangPrompt).toContain("【豆瓣自留地前提】");
+    expect(sutangPrompt).toContain("私人豆瓣自留地/秘密树洞");
   });
 });

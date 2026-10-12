@@ -761,7 +761,11 @@ export async function handleChatRequest({ request, env, context, path, method })
       const nowSec2 = Math.floor(Date.now() / 1000);
       const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
       const currentExchanges = (Array.isArray(messages) ? messages.length : 0) + (Array.isArray(historyMessages) ? historyMessages.length : 0);
-      const sutangRelationshipStage = computeRelationshipStage(contact?.relationship_stage, currentExchanges);
+      const isDoubanArrival = activePersonaScope === "sutang" && platform === "douban";
+      const sutangRelationshipStage = computeRelationshipStage(
+        contact?.relationship_stage || (isDoubanArrival ? "familiar" : "new"),
+        isDoubanArrival ? Math.max(6, currentExchanges) : currentExchanges,
+      );
       const stage = starSoulScope
         ? funnelState.stage
         : (sutangRelationshipStage === "close" ? 3 : sutangRelationshipStage === "familiar" ? 2 : 1);
@@ -869,25 +873,53 @@ export async function handleChatRequest({ request, env, context, path, method })
         dealCompleted: funnelState.evidence.dealCompleted === true,
         acceptedBusinessTopic: funnelState.evidence.acceptedBusinessTopic === true,
         willingToRecycle: funnelState.evidence.willingToRecycle === true,
+        platform,
+        agentRuleState,
       });
       const currentContactRequest = messages.some((message) =>
         message?.role === "user" && isContactRequest(message?.content)
       );
       const contactRulesEnabled = agentRuleState.isEnabled("no_contact_leak", true) ||
         agentRuleState.isEnabled("business_contact_boundary", true);
-      const contactReply = contactRulesEnabled && currentContactRequest
-        ? avoidRepeatedAssistantReply(
-            contactPolicy.reply,
-            [...historyMessages, ...recentAssistantReplies],
-            latestIncomingText(messages),
-            nowSec2,
-            contactConfig.channel === "douban"
-              ? "豆瓣号已经给过你了，往上翻一下哈，加的时候说下你是谁"
-              : contactConfig.channel === "qq"
-                ? "QQ号已经给过你了，往上翻一下哈，加的时候说下你是谁"
-                : "私人微信已经给过你了，往上翻一下哈，加的时候说下你是谁",
-          )
-        : "";
+      let contactReply = "";
+      if (contactRulesEnabled && currentContactRequest) {
+        let targetReply = contactPolicy.reply;
+        // 2026-10-13 用户要求：苏棠在 Soul 未到放号阶段时，若知识库配有私人通讯抽屉卡（如 scene_17_private_contact），优先匹配知识库话术
+        if (activePersonaScope === "sutang" && !contactPolicy.allowed && platform !== "douban") {
+          const contactCards = [
+            ...(personaDrawers?.counters || []),
+            ...(personaDrawers?.topics || []),
+            ...(personaDrawers?.custom || []),
+          ];
+          const matchedCard = contactCards.find((card) =>
+            card && card.enabled !== false && (card.id === "scene_17_private_contact" || card.id === "custom_contact_refusal")
+          );
+          if (matchedCard && String(matchedCard.content || "").trim()) {
+            const cardSegments = String(matchedCard.content)
+              .trim()
+              .split(/\n\s*\n/gu)
+              .map((s) => s.trim().replace(/\r?\n+/gu, " "))
+              .filter(Boolean);
+            if (cardSegments.length > 0) {
+              const cardIndex = Math.max(0, contactPolicy.requestCount - 1) % cardSegments.length;
+              targetReply = cardSegments[cardIndex];
+            }
+          }
+        }
+        contactReply = avoidRepeatedAssistantReply(
+          targetReply,
+          [...historyMessages, ...recentAssistantReplies],
+          latestIncomingText(messages),
+          nowSec2,
+          contactConfig.channel === "douban"
+            ? (activePersonaScope === "sutang"
+                ? "豆瓣号之前给过你了，往上翻翻看"
+                : "豆瓣号已经给过你了，往上翻一下哈，加的时候说下你是谁")
+            : contactConfig.channel === "qq"
+              ? "QQ号已经给过你了，往上翻一下哈，加的时候说下你是谁"
+              : "私人微信已经给过你了，往上翻一下哈，加的时候说下你是谁",
+        );
+      }
       if (contactReply) {
         return respondWithImmediateReply({
           env,
@@ -1036,7 +1068,9 @@ export async function handleChatRequest({ request, env, context, path, method })
         messages,
         historyMessages,
         conversationTimeline,
-        conversationStage,
+        conversationStage: isDoubanArrival && (!conversationStage || conversationStage === "first_contact")
+          ? "familiar"
+          : conversationStage,
         relationshipOrigin,
         memorySummary: String(contact?.conversation_summary || summary || "").trim(),
         evaluationQuoteSent,
@@ -1506,8 +1540,8 @@ export async function handleChatRequest({ request, env, context, path, method })
           reason: "control_markup_or_invalid_segment",
           apply: (value) => agentRuleState.isEnabled("no_time_markers", true)
             ? sanitizeAssistantReply(value, {
-              allowMeetingReward: activePersonaScope === "sutang" &&
-                agentRuleState.isEnabled("sutang_meeting_reward_rule", true),
+              allowMeetingReward: activePersonaScope === "sutang",
+              allowIntimateDetails: activePersonaScope === "sutang",
             })
             : value,
         },
