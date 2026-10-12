@@ -3407,7 +3407,7 @@ export function buildLayeredSystemPrompt({
     locationScopePrompt,
     conversationStageInstruction(conversationStage, relationshipOrigin),
     buildCustomAgentRulesPrompt(agentRuleState, personaId),
-    editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
+    sutangScope ? "" : editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
     editableRule(agentRuleState, "proactive_topic_rule", PROACTIVE_TOPIC_RULE),
     editableRule(agentRuleState, "human_feel_rule", HUMAN_FEEL_RULE),
     editableRule(agentRuleState, "advancement_rule", ADVANCEMENT_RULE),
@@ -3421,12 +3421,6 @@ export function buildLayeredSystemPrompt({
       : "",
     editableRule(agentRuleState, "output_shape_hard", OUTPUT_HARD_RULE),
     editableRule(agentRuleState, "question_pacing", QUESTION_PACING_RULE),
-    sutangScope
-      ? editableRule(agentRuleState, "sutang_meeting_reward_rule", SUTANG_MEETING_REWARD_RULE)
-      : "",
-    sutangScope
-      ? editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE)
-      : "",
     fixedAgePrompt,
     xingmuIdentityPrompt,
     // 2026-10-05：原来只给星暮，苏棠没有这条，对方说要睡了还硬回一句。现在所有人设通用。
