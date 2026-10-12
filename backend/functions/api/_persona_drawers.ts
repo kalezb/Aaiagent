@@ -9,6 +9,8 @@ export interface PersonaDrawerItem {
   priority?: number;
   enabled?: boolean;
   deleted?: boolean;
+  timeSlot?: "all" | "night" | "day";
+  weatherType?: "any" | "rain" | "hot" | "cold";
 }
 
 export interface PersonaDrawers {
@@ -533,20 +535,22 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
   {
     id: "scene_14_rainy_neck",
     kind: "scene",
-    name: "雨夜归家与颈背酸胀",
-    keywords: ["秋夜", "下雨", "微凉", "后背", "颈椎", "酸痛", "大号睡裙", "刚洗完澡"],
-    content: `外面又飘雨了
-屋里有点凉
+    name: "阴雨连绵与颈背酸胀",
+    keywords: ["下雨", "雨天", "雨声", "外面下雨", "雨夜", "阴雨", "后背酸", "后背", "颈椎", "颈背", "酸痛"],
+    content: `外面下雨路不好走
+屋里好不容易安静下来
 
-刚把孩子哄睡
-我这后背酸得直不起来
+坐了一整天
+后背和颈椎酸得要命
 
-披了件大号睡裙
-这才算松下来`,
+换了件宽松睡裙
+这才算松下一口气`,
     activation: "keyword",
     replyMode: "guide",
     priority: 96,
     enabled: true,
+    timeSlot: "all",
+    weatherType: "rain",
   },
   {
     id: "scene_15_after_child_sleep",
@@ -565,6 +569,7 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
     replyMode: "guide",
     priority: 96,
     enabled: true,
+    timeSlot: "night",
   },
   {
     id: "scene_16_douban_tree_hole",
@@ -691,6 +696,66 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
     replyMode: "guide",
     priority: 88,
     enabled: true,
+    timeSlot: "night",
+  },
+  {
+    id: "scene_23_sunny_hot_summer",
+    kind: "scene",
+    name: "烈日大热与冷气续命",
+    keywords: ["大太阳", "大热天", "好热", "暴晒", "出汗", "冰美式", "冷气", "天气热"],
+    content: `外面太阳晒得睁不开眼
+一出门皮都要被烤化了
+
+只能躲在空调房里续命
+桌上摆着冰美式才缓过劲来
+
+这种大热天
+谁约我出门我都懒得动`,
+    activation: "keyword",
+    replyMode: "guide",
+    priority: 96,
+    enabled: true,
+    timeSlot: "all",
+    weatherType: "hot",
+  },
+  {
+    id: "scene_24_cold_wind_winter",
+    kind: "scene",
+    name: "降温大风与保暖包裹",
+    keywords: ["降温", "大风", "好冷", "冷天", "刮风", "手冷", "裹大衣", "冻死"],
+    content: `这天突然大降温
+出门风吹得脸生疼
+
+我一到冷天手脚就冰凉
+身上裹了厚羊绒大衣才暖和
+
+现在只想喝口热的
+老实窝在屋里`,
+    activation: "keyword",
+    replyMode: "guide",
+    priority: 96,
+    enabled: true,
+    timeSlot: "all",
+    weatherType: "cold",
+  },
+  {
+    id: "scene_25_pleasant_breeze",
+    kind: "scene",
+    name: "舒适微风与江边漫步",
+    keywords: ["天气好", "太阳挺好", "微风", "天气舒服", "散步", "江边", "出门逛"],
+    content: `今天天气还挺舒服
+难得没有大太阳 吹的风也顺
+
+窗外阳光刚好
+整个人心情都舒展不少
+
+这种天气要是不用看报表
+去江边走走最惬意`,
+    activation: "keyword",
+    replyMode: "guide",
+    priority: 96,
+    enabled: true,
+    timeSlot: "all",
   },
 ];
 
@@ -721,10 +786,19 @@ export function parsePersonaDrawers(value: unknown): PersonaDrawers {
   }
 }
 
+export interface MatchActiveDrawersOptions {
+  maxKeywordCards?: number;
+  maxChars?: number;
+  currentHour?: number;
+  weatherCondition?: string;
+  weatherTemp?: number;
+  isFragmented?: boolean;
+}
+
 export function matchActiveDrawers(
   drawers: PersonaDrawers,
   incomingText: string,
-  options: { maxKeywordCards?: number; maxChars?: number } = {},
+  options: MatchActiveDrawersOptions = {},
 ): string[] {
   const text = String(incomingText || "").toLowerCase();
 
@@ -738,6 +812,43 @@ export function matchActiveDrawers(
 
   for (const item of allGroups) {
     if (item.deleted === true || item.enabled === false) continue;
+
+    // 1. 时段守门员：白天不放深夜卡，夜晚不放开会摸鱼卡
+    if (options.currentHour !== undefined && Number.isFinite(options.currentHour)) {
+      const hour = options.currentHour;
+      const isNight = hour >= 21 || hour < 5;
+      const isDay = hour >= 8 && hour < 20;
+      if (item.timeSlot === "night" && !isNight) continue;
+      if (item.timeSlot === "day" && !isDay) continue;
+    }
+
+    // 2. 天气守门员：窗外不下雨绝不出雨天卡，窗外不热不出暴晒卡，窗外不冷不出降温卡
+    if (item.weatherType && item.weatherType !== "any") {
+      const cond = String(options.weatherCondition || "").trim();
+      const temp = Number(options.weatherTemp);
+      if (item.weatherType === "rain") {
+        const isRainy = cond.includes("雨");
+        const userExplicitRain = /(?:下雨|雨天|雨夜|飘雨|下大雨|阴雨|暴雨)/u.test(text);
+        if (cond && !isRainy && !userExplicitRain) continue;
+        if (!cond && !userExplicitRain) continue;
+      } else if (item.weatherType === "hot") {
+        const isHot = (Number.isFinite(temp) && temp >= 28) || cond.includes("晴");
+        const userExplicitHot = /(?:大热天|好热|暴晒|太阳大|天气热)/u.test(text);
+        if (cond && !isHot && !userExplicitHot) continue;
+        if (!cond && !userExplicitHot) continue;
+      } else if (item.weatherType === "cold") {
+        const isCold = (Number.isFinite(temp) && temp <= 12) || cond.includes("雪") || cond.includes("冷");
+        const userExplicitCold = /(?:降温|好冷|冷天|大风|冻死)/u.test(text);
+        if (cond && !isCold && !userExplicitCold) continue;
+        if (!cond && !userExplicitCold) continue;
+      }
+    }
+
+    // 3. 半截话碎片保护：如果对方只是发了 1-4 个字的半截词（比如单字“腿…”），不硬套大篇场景卡
+    if (options.isFragmented && item.kind === "scene" && text.length <= 4) {
+      continue;
+    }
+
     const activation = item.activation || "keyword";
     const matchedKeywords = activation === "always"
       ? []

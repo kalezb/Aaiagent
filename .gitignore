@@ -67,3 +67,4 @@ logs/
 
 # 人设审计用的设备钥匙（不进仓库）
 backend/scripts/persona-audit.tokens.json
+/exports/

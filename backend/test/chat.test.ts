@@ -2277,7 +2277,7 @@ describe("chat logic", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
     const systemMessage = payload.messages.find((m: { role: string }) => m.role === "system");
-    expect(systemMessage.content).toContain("【雨夜归家与颈背酸胀】");
+    expect(systemMessage.content).toContain("【阴雨连绵与颈背酸胀】");
   });
 
   it("only gives Sutang's default scene cards to Sutang", () => {
@@ -8627,11 +8627,14 @@ describe("monitoring sync and customer profile batching", () => {
   it("uses only the new Su Tang knowledge cards", () => {
     const drawers = defaultDrawersForPersona("female_sutang");
     const ids = (drawers.topics || []).map((item) => item.id);
-    expect(ids).toHaveLength(22);
+    expect(ids).toHaveLength(25);
     expect(ids).toContain("scene_01_black_stockings");
     expect(ids).toContain("scene_13_invitation_reward");
     expect(ids).toContain("scene_14_rainy_neck");
     expect(ids).toContain("scene_16_douban_tree_hole");
+    expect(ids).toContain("scene_23_sunny_hot_summer");
+    expect(ids).toContain("scene_24_cold_wind_winter");
+    expect(ids).toContain("scene_25_pleasant_breeze");
     expect(ids).not.toContain("sofa_tired");
     expect(ids).not.toContain("food_hungry");
 
@@ -8645,8 +8648,8 @@ describe("monitoring sync and customer profile batching", () => {
     expect(invite).not.toContain("一句硬话回掉");
 
     const rainyNeck = matchActiveDrawers(drawers, "今晚下雨 后背酸得厉害").join("\n");
-    expect(rainyNeck).toContain("雨夜归家与颈背酸胀");
-    expect(rainyNeck).toContain("后背酸得直不起来");
+    expect(rainyNeck).toContain("阴雨连绵与颈背酸胀");
+    expect(rainyNeck).toContain("后背和颈椎酸得要命");
 
     expect(matchActiveDrawers(drawers, "今天吃什么了")).toEqual([]);
   });

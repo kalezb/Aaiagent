@@ -2800,6 +2800,60 @@ export function detectLateReplyToOldQuestion(messages, historyMessages = []) {
 }
 
 /**
+ * 识别陌生人发送的“半截话”、断句、叹气或碎片词
+ */
+export function isFragmentedMessage(text: string): boolean {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 12) return false;
+  
+  // 1. 单字或语气词/叹气
+  if (/^(?:唉|唉[….]+?|无语|无语[了…]*|服了|晕|啊这|额|额[….]*|那个|那个[….]*|那个谁|咳|呵|好吧|算了|算了吧|行吧)$/u.test(trimmed)) {
+    return true;
+  }
+  // 2. 孤立状态断句（无主语无前因）
+  if (/^(?:好累|好烦|头疼|头晕|难受|心累|饿了|刚醒|刚到|在忙|emo|emo了)$/u.test(trimmed)) {
+    return true;
+  }
+  // 3. 孤立试探/半句
+  if (/^(?:在？|在吗|在呢|发个|看下|出来|理我|说个事|想问你|其实我|我刚刚|突然想)$/u.test(trimmed)) {
+    return true;
+  }
+  // 4. 以省略号、破折号或波浪线结尾的短断句（<= 8个字）
+  if (/(?:……|\.{2,}|~|—{2,})$/u.test(trimmed) && trimmed.length <= 8) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 为半截话生成“先承接后反撩”的高情商接话指引
+ */
+export function buildFragmentedMessageGuidance(incomingText: string, historyMessages: any[] = []): string {
+  const trimmed = String(incomingText || "").trim();
+  if (!isFragmentedMessage(trimmed)) return "";
+
+  // 检查上一句助手说了什么，是否有上文话题
+  const lastAssistantMsg = [...(historyMessages || [])]
+    .reverse()
+    .find((m: any) => m?.role === "assistant");
+  const lastText = String(lastAssistantMsg?.content || "").trim();
+
+  // 判断上文是否有明确主题
+  let contextTopic = "";
+  if (/(?:报表|投流|电商|数据|上班|加班|开会|工作|主管)/u.test(lastText)) contextTopic = "工作";
+  else if (/(?:吃饭|外卖|宵夜|饿|火锅|做饭)/u.test(lastText)) contextTopic = "吃饭生活";
+  else if (/(?:睡觉|睡了|休息|困|失眠)/u.test(lastText)) contextTopic = "休息睡眠";
+  else if (/(?:见面|地方|安排|独处|出来)/u.test(lastText)) contextTopic = "现实安排";
+
+  if (contextTopic) {
+    return `【半截话承接（情商拉满）】对方发了短促碎片“${trimmed}”，上文在聊【${contextTopic}】。不要瞎猜对方的具体细节（防猜错尴尬），顺着上文大方向轻带一句，再用反问推拉把球踢给对方（例如“盯数据累了 还是应酬累了？”或“这就撑不住了？刚才不是挺能聊的”）。`;
+  }
+
+  return `【半截话承接（情商拉满）】对方发了没头没尾的半截话“${trimmed}”。绝对不要脑补猜测具体发生何事，用成熟姐姐的高位慵懒语气抓情绪推拉（例如“话讲一半 吊谁胃口呢？”、“打字手滑了？”、“叹什么气 谁惹你了？”、“想说什么直接说 吞吞吐吐的”）。`;
+}
+
+/**
  * 2026-10-06 稀奇：他隔夜回一句“睡了”，模型反复回“今天忙了一整天 单子多 刚歇下来”这类汇报。
  * 提示词写了也压不稳，所以命中“他隔很久才回”时，纯汇报自己忙的段直接删掉（只删不换）。
  */
@@ -3542,10 +3596,10 @@ export function buildLayeredSystemPrompt({
       (herPhotoAlreadySent ? " 当前档案：她已经给他看过照片。" : " 当前档案：她还没给他看过照片。")
     : "";
 
-  // 2026-10-06 用户反馈：模型像“汇报机器人”，时间也算不清，人设里的暧昧执行不到位。
-  // 这几条放在提示词最末尾（离对话最近）：时间先算清、别汇报、每轮加一层。
+  const fragmentGuidance = sutangScope ? buildFragmentedMessageGuidance(incoming, historyMessages) : "";
   const sutangPresence = [
     situationTimeline,
+    fragmentGuidance,
     "【现场感｜每轮都照做】",
     editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
     "新人设的【核心目标】【互动原则】和命中的知识库卡片优先于普通风格规则。允许不高冷、允许有态度和小情绪，但不许客服腔、说教、总结、列选项。",
@@ -3555,7 +3609,7 @@ export function buildLayeredSystemPrompt({
     herPhotoMemoryPrompt,
     editableRule(agentRuleState, "explicit_boundary", "【隐晦亲密】他绕着说那方面时，你要听懂，但只用同样隐晦的话接住，不追问、不点破、不写器官、动作、裸照、私密照或露骨过程。"),
     editableRule(agentRuleState, "photo_authenticity", "【照片只认自己的】他要是说“这是网图吧/不是你吧/哪下载的”，不要承认、不要解释来源、不要道歉。自然地挡回去，然后照常往下聊。"),
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 
   const genericPresence = [
     situationTimeline,

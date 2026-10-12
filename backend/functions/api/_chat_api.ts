@@ -51,6 +51,7 @@ import {
   softenReflexiveQuestioning,
   normalizeAssistantReplyPresentation,
   parseSocialExitInstruction,
+  isFragmentedMessage,
 } from "./_reply_policy";
 import {
   applyFunnelTurn,
@@ -378,16 +379,6 @@ export async function handleChatRequest({ request, env, path, method }) {
         activePersonaId,
         await env.KV.get(`persona:drawers:${activePersonaId}`, "json"),
       );
-      const matchedDrawerTips = matchActiveDrawers(
-        personaDrawers,
-        latestIncomingText(messages),
-        agentRuleState.isEnabled("drawer_budget", true)
-          ? {}
-          : { maxKeywordCards: Number.MAX_SAFE_INTEGER, maxChars: Number.MAX_SAFE_INTEGER },
-      );
-      const matchedKnowledgeCardIds = matchedDrawerTips
-        .map((tip) => String(tip).match(/【id:([^】]+)】/u)?.[1] || "")
-        .filter(Boolean);
       timing.persona_ms = Date.now() - personaStartedAt;
       const personaPrompt = normalizeLateReplyPersonaPrompt(
         activePersona?.system_prompt || "\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684\u804a\u5929\u52a9\u624b\u3002",
@@ -705,6 +696,31 @@ export async function handleChatRequest({ request, env, path, method }) {
       const weather = deviceSettings.weather_enabled
         ? await getWeather(homeCity, env.KV, env.WEATHER_API_KEY || "")
         : null;
+
+      const chinaTimeForGating = getChinaTimeContext();
+      const matchHour = String(chinaTimeForGating.currentDatetime || "").match(/(\d{1,2}):(\d{2})/);
+      const currentHour = matchHour ? Number(matchHour[1]) : new Date().getHours();
+      const latestText = latestIncomingText(messages);
+      const isFrag = isFragmentedMessage(latestText);
+
+      const matchedDrawerTips = matchActiveDrawers(
+        personaDrawers,
+        latestText,
+        {
+          ...(agentRuleState.isEnabled("drawer_budget", true)
+            ? {}
+            : { maxKeywordCards: Number.MAX_SAFE_INTEGER, maxChars: Number.MAX_SAFE_INTEGER }),
+          currentHour,
+          weatherCondition: weather?.condition,
+          weatherTemp: weather?.temp,
+          isFragmented: isFrag,
+        },
+      );
+      const matchedKnowledgeCardIds = matchedDrawerTips
+        .map((tip) => String(tip).match(/【id:([^】]+)】/u)?.[1] || "")
+        .filter(Boolean);
+
+
 
       // model config
       const modelConfig = await loadLlmConfig(env.KV, env, deviceSettings.model_line);
