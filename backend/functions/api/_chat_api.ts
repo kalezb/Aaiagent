@@ -760,10 +760,18 @@ export async function handleChatRequest({ request, env, context, path, method })
       const weekday = chinaTime.weekday;
       const nowSec2 = Math.floor(Date.now() / 1000);
       const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
-      const stage = starSoulScope ? funnelState.stage : 1;
+      const currentExchanges = (Array.isArray(messages) ? messages.length : 0) + (Array.isArray(historyMessages) ? historyMessages.length : 0);
+      const sutangRelationshipStage = computeRelationshipStage(contact?.relationship_stage, currentExchanges);
+      const stage = starSoulScope
+        ? funnelState.stage
+        : (sutangRelationshipStage === "close" ? 3 : sutangRelationshipStage === "familiar" ? 2 : 1);
       const stageText = starSoulScope
         ? funnelStageText(stage, funnelState.completed)
-        : "你们可以从当前话题自然延续，保持已有的熟悉度，不假装很熟。";
+        : (sutangRelationshipStage === "close"
+            ? "亲密/深度互动阶段，自然推进并信任彼此。"
+            : sutangRelationshipStage === "familiar"
+              ? "熟悉阶段，自然分享日常，话题顺畅展开。"
+              : "刚认识阶段，从当前话题自然延续，保持合适边界。");
       const profileContext = customerProfilePrompt(customerProfile.profile);
       const messageDelay = deviceSettings.time_enabled
         ? resolveIncomingDelayPolicy(messages, historyMessages, nowSec2)
@@ -991,7 +999,6 @@ export async function handleChatRequest({ request, env, context, path, method })
           }
         }
       }
-      const currentExchanges = (Array.isArray(messages) ? messages.length : 0) + (Array.isArray(historyMessages) ? historyMessages.length : 0);
       const temporalContextPrompt = buildTemporalContextPrompt({
         contact,
         nowSec: nowSecForActivity,

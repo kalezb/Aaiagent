@@ -492,7 +492,9 @@ export function resolveContactRequestPolicy({
       ? (contactAccount || contactQq)
       : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
-  const totalExchanges = Number(activity?.totalExchanges || 0);
+  const inMemoryExchanges = (Array.isArray(historyMessages) ? historyMessages.length : 0) +
+    (Array.isArray(messages) ? messages.length : 0);
+  const totalExchanges = Math.max(Number(activity?.totalExchanges || 0), inMemoryExchanges);
   const activeDays = Number(activity?.activeDays || 0);
   let allowed = false;
   if (xingmuScope) {
