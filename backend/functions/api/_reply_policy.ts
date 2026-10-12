@@ -507,6 +507,14 @@ export function resolveContactRequestPolicy({
       Number(stage || 0) >= 5 &&
       (dealCompleted || acceptedBusinessTopic || willingToRecycle)
     );
+  } else if (sutangScope) {
+    // 2026-10-13 核心业务：苏棠的转化目标是在 1~2 小时连贯对话内完成推进与达成目的！
+    // 绝不能卡死在跨天（activeDays >= 2），只要连贯聊了 15 条以上（深入互动）、且要了至少 2 次联系方式，当场放行豆瓣自留地！
+    allowed = Boolean(
+      normalizedAccount &&
+      count >= 2 &&
+      totalExchanges >= 15
+    );
   } else {
     const requiredMessages = businessIntent ? 10 : 30;
     allowed = Boolean(

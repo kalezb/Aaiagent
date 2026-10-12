@@ -5,8 +5,10 @@ import {
   detectActivityFromReply,
   evaluateActivityState,
   buildTemporalContextPrompt,
+  computeRelationshipStage,
   maybeSummarizeConversation,
 } from "../functions/api/_temporal_state";
+import { resolveContactRequestPolicy } from "../functions/api/_reply_policy";
 import { onRequest } from "../functions/api/route";
 
 describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
@@ -445,5 +447,44 @@ describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
         expect(updateCall.params[0]).toBe("对方是程序员在重庆，喜欢登山，约好周末一起喝咖啡。");
       });
     });
+
+    describe("1~2 小时快节奏关系进阶与苏棠当日达成目标", () => {
+      it("computeRelationshipStage 依据连贯会话互动轮数快速进阶", () => {
+        expect(computeRelationshipStage("new", 2)).toBe("new");
+        expect(computeRelationshipStage("new", 8)).toBe("familiar");
+        expect(computeRelationshipStage("new", 18)).toBe("close");
+        expect(computeRelationshipStage("cold", 20)).toBe("cold");
+      });
+
+      it("buildTemporalContextPrompt 结合互动轮数自动推进关系标签", () => {
+        const promptEarly = buildTemporalContextPrompt({
+          contact: { last_reply_at: Math.floor(Date.now() / 1000) - 60, relationship_stage: "new" },
+          totalExchanges: 3,
+        });
+        expect(promptEarly).toContain("刚认识");
+
+        const promptLate = buildTemporalContextPrompt({
+          contact: { last_reply_at: Math.floor(Date.now() / 1000) - 60, relationship_stage: "new" },
+          totalExchanges: 18,
+        });
+        expect(promptLate).toContain("亲密");
+      });
+
+      it("苏棠在同一天（activeDays: 1）连贯互动15条以上、要了2次联系方式即可放行豆瓣，不再强制卡2天", () => {
+        const policy = resolveContactRequestPolicy({
+          requestCount: 2,
+          stage: 1,
+          activity: { totalExchanges: 16, activeDays: 1 },
+          incomingText: "加个豆瓣聊呗",
+          contactChannel: "douban",
+          contactQq: "sutang2026",
+          xingmuScope: false,
+          sutangScope: true,
+        });
+        expect(policy.allowed).toBe(true);
+        expect(policy.reply).toContain("我豆瓣是");
+      });
+    });
   });
+
 

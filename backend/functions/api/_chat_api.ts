@@ -49,6 +49,7 @@ import {
   evaluateActivityState,
   detectActivityFromReply,
   buildTemporalContextPrompt,
+  computeRelationshipStage,
   maybeSummarizeConversation,
 } from "./_temporal_state";
 import {
@@ -990,10 +991,12 @@ export async function handleChatRequest({ request, env, context, path, method })
           }
         }
       }
+      const currentExchanges = (Array.isArray(messages) ? messages.length : 0) + (Array.isArray(historyMessages) ? historyMessages.length : 0);
       const temporalContextPrompt = buildTemporalContextPrompt({
         contact,
         nowSec: nowSecForActivity,
         activityEvaluation: activityEval,
+        totalExchanges: currentExchanges,
       });
       const layeredPromptOptions = {
         temporalContextPrompt,
@@ -1675,14 +1678,17 @@ export async function handleChatRequest({ request, env, context, path, method })
       // update token
       await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?").bind(nowSec, tokenRow.token).run();
 
-      // 2026-10-12 更新联系人最新时间戳与识别出的新动作
+      // 2026-10-13 更新联系人最新时间戳、动作与1~2小时快节奏关系阶段
       const detectedAct = detectActivityFromReply(safeReply);
       const newActivity = detectedAct ? detectedAct.label : "";
       const newActivityAt = detectedAct ? nowSec : 0;
+      const totalTurns = currentExchanges + 1;
+      const nextStage = computeRelationshipStage(contact?.relationship_stage, totalTurns);
       await env.DB.prepare(
-        "UPDATE contacts SET last_reply_at = ?, last_activity = CASE WHEN ? <> '' THEN ? ELSE last_activity END, last_activity_at = CASE WHEN ? <> '' THEN ? ELSE last_activity_at END WHERE token = ? AND platform = ? AND contact_id = ?"
+        "UPDATE contacts SET last_reply_at = ?, relationship_stage = ?, last_activity = CASE WHEN ? <> '' THEN ? ELSE last_activity END, last_activity_at = CASE WHEN ? <> '' THEN ? ELSE last_activity_at END WHERE token = ? AND platform = ? AND contact_id = ?"
       ).bind(
         nowSec,
+        nextStage,
         newActivity,
         newActivity,
         newActivity,

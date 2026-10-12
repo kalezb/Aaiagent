@@ -249,6 +249,20 @@ export function evaluateActivityState(
 }
 
 /**
+ * 2026-10-13 用户业务核心：1~2 小时连贯会话内的关系进阶流转计算
+ * 0~5 轮（前10-15分钟）：刚认识 (new)
+ * 6~15 轮（半小时~1小时）：熟悉 (familiar)
+ * 16+ 轮（1~2小时深入互动）：亲密/推进 (close)
+ */
+export function computeRelationshipStage(currentStage?: string, totalExchanges = 0): string {
+  const current = String(currentStage || "new").trim();
+  if (current === "cold") return "cold";
+  if (totalExchanges >= 16) return "close";
+  if (totalExchanges >= 6) return current === "close" || current === "flirty" ? current : "familiar";
+  return current || "new";
+}
+
+/**
  * 构建高密度、极简、无废话的时空上下文提示词
  * 每轮严格控制在 30~55 个汉字，确保大模型一眼看懂、绝不犯迷糊
  */
@@ -257,6 +271,7 @@ export function buildTemporalContextPrompt(options: {
   nowSec?: number;
   date?: Date;
   activityEvaluation?: ActivityEvaluation;
+  totalExchanges?: number;
 }): string {
   const nowSec = options.nowSec || Math.floor(Date.now() / 1000);
   const date = options.date || new Date(nowSec * 1000);
@@ -290,8 +305,9 @@ export function buildTemporalContextPrompt(options: {
     lines.push(`生活状态：${options.activityEvaluation.activityHint}`);
   }
 
-  // 关系阶段与心情
-  const stage = String(contact?.relationship_stage || "new").trim();
+  // 关系阶段与心情（支持 1~2 小时连贯会话内基于互动轮数快节奏推进）
+  const rawStage = String(contact?.relationship_stage || "new").trim();
+  const stage = computeRelationshipStage(rawStage, options.totalExchanges || 0);
   const stageLabel = stage === "familiar" ? "熟悉"
     : stage === "flirty" ? "暧昧"
     : stage === "close" ? "亲密"
