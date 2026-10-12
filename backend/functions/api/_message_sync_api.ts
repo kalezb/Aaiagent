@@ -10,6 +10,7 @@ import {
 import { json } from "./_http_runtime";
 import { loadRuntimePersonaFacts } from "./_persona_runtime";
 import { maybeExtractCustomerProfile } from "./_profile_runtime";
+import { maybeSummarizeConversation } from "./_temporal_state";
 import {
   SYNCED_TIME_KINDS,
 } from "./_time_runtime";
@@ -174,8 +175,18 @@ export async function handleMessageSyncRequest({
           error instanceof Error ? error.message : String(error),
         );
       });
-      if (typeof context.waitUntil === "function") context.waitUntil(profileJob);
-      else await profileJob;
+      const summarizeJob = maybeSummarizeConversation(
+        env,
+        tokenRow,
+        platform,
+        contact_id,
+      ).catch(() => {});
+      if (typeof context.waitUntil === "function") {
+        context.waitUntil(profileJob);
+        context.waitUntil(summarizeJob);
+      } else {
+        await profileJob;
+      }
     }
     return json({
       ok: true,

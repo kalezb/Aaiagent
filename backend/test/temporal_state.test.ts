@@ -5,6 +5,7 @@ import {
   detectActivityFromReply,
   evaluateActivityState,
   buildTemporalContextPrompt,
+  maybeSummarizeConversation,
 } from "../functions/api/_temporal_state";
 import { onRequest } from "../functions/api/route";
 
@@ -340,7 +341,109 @@ describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
       // 验证更新了 contacts 表中的 last_activity = '去洗漱'
       const updateCall = runCalls.find((c: any) => c.sql.includes("UPDATE contacts SET last_reply_at = ?"));
       expect(updateCall).toBeDefined();
-      expect(updateCall.params).toContain("去洗漱");
+        expect(updateCall.params).toContain("去洗漱");
+      });
+    });
+
+    describe("长对话后台压缩提炼 (maybeSummarizeConversation)", () => {
+      it("当消息总数小于50条时，不触发总结压缩", async () => {
+        let fetchCalled = false;
+        vi.stubGlobal("fetch", async () => {
+          fetchCalled = true;
+          return new Response(JSON.stringify({}), { status: 200 });
+        });
+
+        const db = {
+          prepare: (sql: string) => ({
+            bind: () => ({
+              first: async () => ({ total: 25 }),
+              all: async () => ({ results: [] }),
+              run: async () => ({ success: true }),
+            }),
+          }),
+        };
+
+        await maybeSummarizeConversation(
+          { DB: db } as any,
+          { token: "test-token" } as any,
+          "soul",
+          "user-1",
+        );
+
+        expect(fetchCalled).toBe(false);
+      });
+
+      it("当消息总数达到50条且未更新过摘要时，触发后台LLM总结并写入 contacts.conversation_summary", async () => {
+        let fetchPayload: any = null;
+        vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+          if (init && init.body) {
+            fetchPayload = JSON.parse(String(init.body));
+          }
+          return new Response(JSON.stringify({
+            choices: [{
+              message: { content: "对方是程序员在重庆，喜欢登山，约好周末一起喝咖啡。" },
+            }],
+          }), { status: 200, headers: { "Content-Type": "application/json" } });
+        });
+
+        const runCalls: any[] = [];
+        const db = {
+          prepare: (sql: string) => ({
+            bind: (...params: any[]) => ({
+              first: async () => {
+                if (sql.includes("COUNT(*)")) return { total: 55 };
+                if (sql.includes("FROM contacts")) return { conversation_summary: "", summary_updated_at: 0 };
+                if (sql.includes("FROM device_settings")) return { model_line: "a" };
+                if (sql.includes("FROM tokens")) return { token: params[0], monthly_limit: 100, spent: 0 };
+                return null;
+              },
+              all: async () => {
+                if (sql.includes("FROM chat_history")) {
+                  return {
+                    results: [
+                      { role: "user", content: "我在重庆做程序员" },
+                      { role: "assistant", content: "我也在重庆呀" },
+                      { role: "user", content: "平时喜欢去登山" },
+                      { role: "user", content: "周末一起去喝咖啡吧" },
+                      { role: "assistant", content: "好呀 周末见" },
+                      { role: "user", content: "你平时几点下班？" },
+                      { role: "assistant", content: "一般六点左右吧" },
+                      { role: "user", content: "那挺好的" },
+                      { role: "user", content: "今天天气不错" },
+                      { role: "assistant", content: "是呀，挺舒服的" },
+                    ],
+                  };
+                }
+                return { results: [] };
+              },
+              run: async () => {
+                runCalls.push({ sql, params });
+                return { success: true };
+              },
+            }),
+          }),
+        };
+
+        const kv = {
+          get: async () => null,
+        };
+
+        await maybeSummarizeConversation(
+          { DB: db, KV: kv, DEEPSEEK_API_KEY: "test-key", GEMINI_API_KEY: "test-key" } as any,
+          { token: "test-token" } as any,
+          "soul",
+          "user-1",
+        );
+
+        expect(fetchPayload).toBeDefined();
+        const systemPrompt = fetchPayload.messages.find((m: any) => m.role === "system")?.content;
+        expect(systemPrompt).toContain("对话记忆整理助手");
+        expect(systemPrompt).toContain("严格不超过200字");
+
+        const updateCall = runCalls.find((c: any) => c.sql.includes("UPDATE contacts SET conversation_summary = ?"));
+        expect(updateCall).toBeDefined();
+        expect(updateCall.params[0]).toBe("对方是程序员在重庆，喜欢登山，约好周末一起喝咖啡。");
+      });
     });
   });
-});
+

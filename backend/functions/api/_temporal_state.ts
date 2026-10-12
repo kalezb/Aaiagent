@@ -1,4 +1,12 @@
 import { getChinaTimeContext } from "./_time_runtime";
+import { loadDeviceSettings } from "./_device_runtime";
+import {
+  loadLlmConfig,
+  isGeminiModelConfig,
+  buildModelHeaders,
+  buildModelRequestPayload,
+} from "./_model_runtime";
+import { enforceTokenBudget } from "./_model_call_runtime";
 
 export interface ContactTemporalState {
   last_activity?: string;
@@ -301,3 +309,99 @@ export function buildTemporalContextPrompt(options: {
 
   return lines.join("\n");
 }
+
+/**
+ * 长期记忆压缩：当客户消息累计达到 50 条时，自动在后台悄悄把前 30 条提炼成不超过 200 字的小备忘
+ * （0毫秒阻塞，完全不耽误正常秒回聊天）
+ */
+export async function maybeSummarizeConversation(
+  env: any,
+  tokenRow: any,
+  platform: string,
+  contactId: string,
+): Promise<void> {
+  if (!env?.DB || !tokenRow?.token) return;
+  const token = tokenRow.token;
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. 检查总消息数，必须达到 50 条才启动压缩
+  const countRow = await env.DB.prepare(
+    "SELECT COUNT(*) AS total FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ?"
+  ).bind(token, platform, contactId).first();
+  const total = Number(countRow?.total || 0);
+  if (total < 50) return;
+
+  // 2. 防频繁触发：如果 12 小时内刚更新过摘要，跳过
+  const contact = await env.DB.prepare(
+    "SELECT conversation_summary, summary_updated_at FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?"
+  ).bind(token, platform, contactId).first();
+  const lastUpdated = Number(contact?.summary_updated_at || 0);
+  if (lastUpdated > 0 && now - lastUpdated < 12 * 3600) return;
+
+  // 3. 拉取最早的 30 条消息进行提炼压缩
+  const queryResult = await env.DB.prepare(
+    "SELECT role, content FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? ORDER BY created_at ASC, id ASC LIMIT 30"
+  ).bind(token, platform, contactId).all();
+  const results = queryResult?.results || [];
+  if (results.length < 10) return;
+
+  const dialogueLines = results
+    .map((r: any) => `${r.role === "assistant" ? "我" : "对方"}：${String(r.content || "").slice(0, 100)}`)
+    .join("\n");
+
+  const deviceSettings = await loadDeviceSettings(env.DB, token);
+  const modelConfig = await loadLlmConfig(env.KV, env, deviceSettings?.model_line);
+  const usingGemini = isGeminiModelConfig(modelConfig);
+  const apiKey = usingGemini
+    ? (modelConfig.apiKeyOverride || env.GEMINI_API_KEY || "")
+    : (env.DEEPSEEK_API_KEY || "");
+  if (!apiKey) return;
+
+  const budget = await enforceTokenBudget(env.DB, tokenRow);
+  if (!budget.allowed) return;
+
+  const summaryBaseUrl = usingGemini
+    ? modelConfig.baseUrl
+    : (env.DEEPSEEK_API_BASE || "https://api.deepseek.com/v1").replace(/\/+$/, "");
+  const summaryModel = usingGemini
+    ? modelConfig.modelName
+    : (env.SUMMARY_MODEL || "deepseek-flash");
+
+  const payload = buildModelRequestPayload(
+    usingGemini ? modelConfig : { provider: "deepseek" },
+    summaryModel,
+    [
+      {
+        role: "system",
+        content:
+          "你是一个对话记忆整理助手。请把以下对话压缩成一段备忘摘要（严格不超过200字）。" +
+          "保留：1. 对方个人信息（职业、城市、感情状况、爱好）；" +
+          "2. 你们聊过的重要话题；" +
+          "3. 关系进展到哪了；" +
+          "4. 有什么未完成的约定或情绪。" +
+          "不要保留寒暄和废话。直接输出提炼后的摘要内容，不要任何问候或包裹说明。",
+      },
+      {
+        role: "user",
+        content: `已有旧备忘：${contact?.conversation_summary || "无"}\n\n需压缩的对话：\n${dialogueLines}`,
+      },
+    ],
+    0,
+    300,
+  );
+
+  const response = await fetch(summaryBaseUrl + "/chat/completions", {
+    method: "POST",
+    headers: buildModelHeaders(apiKey, usingGemini ? modelConfig : { provider: "deepseek" }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) return;
+  const data: any = await response.json();
+  const summaryText = String(data?.choices?.[0]?.message?.content || "").trim().slice(0, 220);
+  if (!summaryText) return;
+
+  await env.DB.prepare(
+    "UPDATE contacts SET conversation_summary = ?, summary_updated_at = ? WHERE token = ? AND platform = ? AND contact_id = ?"
+  ).bind(summaryText, now, token, platform, contactId).run();
+}
+

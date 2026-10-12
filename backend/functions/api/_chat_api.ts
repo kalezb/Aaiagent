@@ -57,6 +57,7 @@ import {
   evaluateActivityState,
   detectActivityFromReply,
   buildTemporalContextPrompt,
+  maybeSummarizeConversation,
 } from "./_temporal_state";
 import {
   applyFunnelTurn,
@@ -193,7 +194,7 @@ import {
   resolveContactConfig,
 } from "./_persona_scope_runtime";
 
-export async function handleChatRequest({ request, env, path, method }) {
+export async function handleChatRequest({ request, env, context, path, method }) {
     // POST /api/chat — core AI reply
     if (path === "/api/chat" && method === "POST") {
       const authHeader = request.headers.get("Authorization") || "";
@@ -1698,6 +1699,20 @@ export async function handleChatRequest({ request, env, path, method }) {
         platform,
         contact_id,
       ).run();
+
+      // 2026-10-12 异步后台长对话提炼压缩（0ms 阻塞，完全不耽误回复速度）
+      const summarizeJob = maybeSummarizeConversation(
+        env,
+        tokenRow,
+        platform,
+        contact_id,
+      ).catch((err) => {
+        console.error("conversation summary failed", err instanceof Error ? err.message : String(err));
+      });
+      if (typeof context?.waitUntil === "function") {
+        context.waitUntil(summarizeJob);
+      }
+
       timing.persist_ms = Date.now() - persistStartedAt;
 
       timing.total_ms = Date.now() - chatStartedAt;

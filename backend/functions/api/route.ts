@@ -133,6 +133,7 @@ export const onRequest = async (context) => {
     const chatResponse = await handleChatRequest({
       request,
       env,
+      context,
       path,
       method,
     });
