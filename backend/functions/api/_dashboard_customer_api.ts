@@ -22,7 +22,7 @@ import {
 import {
   loadRuntimePersonaFacts,
 } from "./_persona_runtime";
-import { loadCustomerProfile } from "./_profile_runtime";
+import { loadCustomerProfile, mergeCustomerProfile } from "./_profile_runtime";
 
 export async function handleDashboardCustomerRequest({
   request,
@@ -309,6 +309,23 @@ export async function handleDashboardCustomerRequest({
     const messagePage = await loadCustomerMessages(env.DB, identity, limit, sinceId);
     const profile = await loadCustomerProfile(env.DB, identity.token, identity.id);
     return json({ identity, ...messagePage, profile });
+  }
+
+  // POST /api/customer-profile - update customer profile directly from dashboard inline edit
+  if (path === "/api/customer-profile" && method === "POST") {
+    if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+    const body = await request.json();
+    const token = String(body.token || "").trim();
+    const groupId = String(body.group_id || "").trim();
+    const patch = body.profile || {};
+    if (!token || !groupId) return json({ error: "缺少必要参数" }, 400);
+    const existing = await loadCustomerProfile(env.DB, token, groupId);
+    const updated = mergeCustomerProfile(existing.profile, patch);
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(
+      "INSERT INTO customer_profiles (token, group_id, profile_json, last_processed_message_id, extracted_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(token, group_id) DO UPDATE SET profile_json = excluded.profile_json, updated_at = excluded.updated_at"
+    ).bind(token, groupId, JSON.stringify(updated), existing.last_processed_message_id || 0, existing.extracted_at || now, now).run();
+    return json({ success: true, profile: updated });
   }
 
   // GET /api/takeover-alerts - 需要人工接管的记录（对方要联系方式等，系统当时停手并发了邮件）

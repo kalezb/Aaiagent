@@ -41,4 +41,37 @@ describe("dashboard customer API", () => {
     });
     expect(response?.status).toBe(400);
   });
+
+  it("rejects unauthorized profile updates", async () => {
+    const response = await handleDashboardCustomerRequest({
+      request: new Request("https://example.com/api/customer-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "t1", group_id: "g1", profile: {} }),
+      }),
+      env: { DASHBOARD_PASSWORD: "dashboard-secret" },
+      url: new URL("https://example.com/api/customer-profile"),
+      path: "/api/customer-profile",
+      method: "POST",
+    });
+    expect(response?.status).toBe(401);
+  });
+
+  it("rejects incomplete customer profile update parameters", async () => {
+    const response = await handleDashboardCustomerRequest({
+      request: new Request("https://example.com/api/customer-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Dashboard-Password": "dashboard-secret",
+        },
+        body: JSON.stringify({ token: "", group_id: "" }),
+      }),
+      env: { DASHBOARD_PASSWORD: "dashboard-secret" },
+      url: new URL("https://example.com/api/customer-profile"),
+      path: "/api/customer-profile",
+      method: "POST",
+    });
+    expect(response?.status).toBe(400);
+  });
 });

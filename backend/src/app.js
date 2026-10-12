@@ -302,12 +302,21 @@ async function loadCustomers(keepSelection = true) {
 
 function renderCustomers() {
   const host = $("customerList");
-  $("customerSummary").textContent = `${state.groups.length} 位客户`;
-  if (!state.groups.length) {
+  let list = state.groups || [];
+  const qf = state.customerQuickFilter || "all";
+  if (qf === "unread") {
+    list = list.filter((g) => g.has_unread || (g.last_message?.role === "user"));
+  } else if (qf === "priority") {
+    list = list.filter((g) => g.priority_reply);
+  } else if (qf === "waiting") {
+    list = list.filter((g) => g.mode === "manual" || g.priority_reply);
+  }
+  $("customerSummary").textContent = `${list.length} 位客户`;
+  if (!list.length) {
     host.innerHTML = '<div class="section-empty">没有匹配的客户<br>可以换设备、平台或搜索词</div>';
     return;
   }
-  host.innerHTML = state.groups.map((group) => {
+  host.innerHTML = list.map((group) => {
     const active = state.selected?.id === group.id;
     const last = group.last_message;
     const preview = last
@@ -522,6 +531,7 @@ function profileText(value, fallback = "未收集") {
 }
 
 function renderProfileIdentity(profileState) {
+  state.currentProfileState = profileState;
   const profile = profileState?.profile || {};
   const basic = profile.basic || {};
   const location = profile.location || {};
@@ -542,7 +552,95 @@ function renderProfileIdentity(profileState) {
   $("profileDislikes").textContent = profileText(preferences.dislikes);
   $("profileRecent").textContent = profileText([...(recent.goals || []), ...(recent.events || [])]);
   $("profileNotes").textContent = profileText(profile.notes);
-  $("profileUpdated").textContent = profileState?.updated_at ? `更新于 ${formatShortTime(profileState.updated_at)}` : "明确资料即时更新，复杂资料分批提取";
+  $("profileUpdated").textContent = profileState?.updated_at ? `已更新 ${formatShortTime(profileState.updated_at)}` : "点击文字可直接修改";
+  attachProfileInlineEditors();
+}
+
+function attachProfileInlineEditors() {
+  document.querySelectorAll(".field-value.editable").forEach((elem) => {
+    elem.onclick = (e) => {
+      e.stopPropagation();
+      if (elem.querySelector("input")) return;
+      const currentText = elem.textContent === "未收集" ? "" : elem.textContent.trim();
+      const section = elem.dataset.section;
+      const field = elem.dataset.field;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "inline-edit-input";
+      input.value = currentText;
+      elem.textContent = "";
+      elem.appendChild(input);
+      input.focus();
+      input.select();
+
+      let committed = false;
+      async function commit() {
+        if (committed) return;
+        committed = true;
+        const val = input.value.trim();
+        elem.textContent = val || "未收集";
+        if (val !== currentText) {
+          await saveProfileField(section, field, val);
+        }
+      }
+
+      input.onblur = commit;
+      input.onkeydown = (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          commit();
+        } else if (ev.key === "Escape") {
+          committed = true;
+          elem.textContent = currentText || "未收集";
+        }
+      };
+    };
+  });
+}
+
+async function saveProfileField(section, field, value) {
+  const group = state.selected;
+  if (!group) return;
+  const patch = {};
+  if (section === "notes") {
+    patch.notes = value ? [value] : [];
+  } else if (section === "likes") {
+    patch.preferences = { likes: value ? value.split(/[,，、 ]+/).filter(Boolean) : [] };
+  } else if (section === "dislikes") {
+    patch.preferences = { dislikes: value ? value.split(/[,，、 ]+/).filter(Boolean) : [] };
+  } else if (section === "recent") {
+    patch.recent = { goals: value ? [value] : [] };
+  } else if (section === "basic") {
+    patch.basic = { [field]: value };
+  } else if (section === "location") {
+    patch.location = { [field]: value };
+  } else if (section === "education") {
+    patch.education = { [field]: value };
+  } else if (section === "work") {
+    patch.work = { [field]: value };
+  } else if (section === "family") {
+    patch.family = { [field]: value };
+  } else if (section === "relationship") {
+    patch.relationship = { [field]: value };
+  } else {
+    patch[section] = { [field]: value };
+  }
+  try {
+    const res = await api("POST", "/customer-profile", {
+      token: group.token,
+      group_id: group.id,
+      profile: patch,
+    });
+    if (res && res.success) {
+      showToast("客户资料已保存");
+      if (state.currentProfileState) {
+        state.currentProfileState.profile = res.profile;
+        renderProfileIdentity(state.currentProfileState);
+      }
+    }
+  } catch (err) {
+    showToast("保存失败：" + err.message, "error");
+  }
 }
 
 async function refreshMessages(forceBottom = false) {
@@ -644,8 +742,8 @@ function renderMessages(messages) {
           <div class="message-meta">
             <span>${esc(formatFullTime(message.created_at))}</span>
             ${kind ? `<span class="kind-label kind-${esc(String(message.time_kind || ""))}">${esc(kind)}</span>` : ""}
-            <span class="source-label">${esc(sourceLabel(message.source))}</span>
-            <span class="platform-label">${esc(platformName(message.platform))}</span>
+            <span class="source-label ${message.role === "assistant" ? (message.source === "manual" ? "source-manual" : "source-ai") : "source-user"}">${esc(message.role === "assistant" ? (message.source === "manual" ? "人工回复" : "AI 自动") : "客户发来")}</span>
+            <span class="platform-label pf-${esc(String(message.platform || '').toLowerCase())}">${esc(platformName(message.platform))}</span>
           </div>
         </div>
       </div>`;
@@ -2737,3 +2835,117 @@ document.querySelectorAll(".modal-layer").forEach((layer) => {
     else layer.hidden = true;
   });
 });
+
+
+// ===== 现代看板交互增强 =====
+function initModernInteractions() {
+  // 1. 折叠客户资料卡
+  const layout = $("sessionLayout") || document.querySelector(".session-layout");
+  const toggleBtn = $("toggleProfileBtn");
+  const closeBtn = $("closeProfileBtn");
+  if (toggleBtn && layout) {
+    toggleBtn.addEventListener("click", () => {
+      layout.classList.toggle("profile-collapsed");
+    });
+  }
+  if (closeBtn && layout) {
+    closeBtn.addEventListener("click", () => {
+      layout.classList.add("profile-collapsed");
+    });
+  }
+
+  // 2. 快捷消息发送（Enter 发送，Ctrl+Enter 换行）
+  const manualInput = $("manualInput");
+  if (manualInput) {
+    manualInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
+        e.preventDefault();
+        const sendBtn = $("manualSendButton");
+        if (sendBtn && !sendBtn.disabled) {
+          sendBtn.click();
+        }
+      }
+    });
+  }
+
+  // 3. 客户快捷状态筛选药丸
+  const qfContainer = $("customerQuickFilter");
+  if (qfContainer) {
+    qfContainer.querySelectorAll(".filter-pill").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        qfContainer.querySelectorAll(".filter-pill").forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        state.customerQuickFilter = btn.dataset.filter || "all";
+        renderCustomers();
+      });
+    });
+  }
+
+  // 4. 快捷填入常用表情
+  const paletteContainer = $("stickerPaletteChips");
+  if (paletteContainer) {
+    paletteContainer.querySelectorAll(".palette-chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const name = btn.dataset.name;
+        const meaning = btn.dataset.meaning;
+        if (!name) return;
+        const addBtn = $("addStickerMeaningButton");
+        if (addBtn) addBtn.click();
+        const list = $("stickerMeaningRows");
+        if (list && list.lastElementChild) {
+          const inputs = list.lastElementChild.querySelectorAll("input");
+          if (inputs.length >= 2) {
+            inputs[0].value = name;
+            inputs[1].value = meaning || "";
+            showToast(`已添加表情「${name}」`);
+            showFloatingSaveBar();
+          }
+        }
+      });
+    });
+  }
+
+  // 5. 规则中心悬浮保存栏
+  const saveBtn = $("saveAllChangesBtn");
+  const discardBtn = $("discardAllChangesBtn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      if ($("saveProgramRulesButton")) $("saveProgramRulesButton").click();
+      if ($("savePersonaPromptButton")) $("savePersonaPromptButton").click();
+      if ($("saveSharedFactsButton")) $("saveSharedFactsButton").click();
+      hideFloatingSaveBar();
+      showToast("所有规则修改已保存并生效！");
+    });
+  }
+  if (discardBtn) {
+    discardBtn.addEventListener("click", () => {
+      loadDrawers();
+      hideFloatingSaveBar();
+      showToast("已放弃未保存的改动");
+    });
+  }
+  const drawersPage = $("page-drawers");
+  if (drawersPage) {
+    drawersPage.addEventListener("input", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") {
+        showFloatingSaveBar();
+      }
+    });
+  }
+}
+
+function showFloatingSaveBar() {
+  const bar = $("floatingSaveBar");
+  if (bar) bar.hidden = false;
+}
+
+function hideFloatingSaveBar() {
+  const bar = $("floatingSaveBar");
+  if (bar) bar.hidden = true;
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initModernInteractions);
+} else {
+  initModernInteractions();
+}
