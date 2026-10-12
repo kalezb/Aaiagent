@@ -3325,6 +3325,7 @@ export function buildLayeredSystemPrompt({
   matchedDrawerTips = [],
   programRules = DEFAULT_PROGRAM_RULES,
   agentRuleState = EMPTY_AGENT_RULE_STATE,
+  temporalContextPrompt = "",
 }) {
   const effectivePersonaPrompt = normalizeLateReplyPersonaPrompt(personaPrompt);
   const stage = Number(relationStageLevel || 1);
@@ -3599,6 +3600,7 @@ export function buildLayeredSystemPrompt({
   const fragmentGuidance = sutangScope ? buildFragmentedMessageGuidance(incoming, historyMessages) : "";
   const sutangPresence = [
     situationTimeline,
+    temporalContextPrompt,
     fragmentGuidance,
     "【现场感｜每轮都照做】",
     editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
@@ -3613,6 +3615,7 @@ export function buildLayeredSystemPrompt({
 
   const genericPresence = [
     situationTimeline,
+    temporalContextPrompt,
     "【现场感｜每轮都照做】",
     "1. 先算时间：每条对方发的话，行首【】里写了它是什么时候发的。隔天的说“昨晚/昨天”，当天的说“今天/刚才”；不要把他昨天说的当成刚说的。",
     "2. 先接住对方最新这句里的具体内容；对方只是短句冷场时，再主动从他提过的事或当前生活场景里挑一个具体话题，不要总结说教、不要连续追问，也不要另起一个跟他无关的话题。",

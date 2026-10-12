@@ -54,6 +54,11 @@ import {
   isFragmentedMessage,
 } from "./_reply_policy";
 import {
+  evaluateActivityState,
+  detectActivityFromReply,
+  buildTemporalContextPrompt,
+} from "./_temporal_state";
+import {
   applyFunnelTurn,
   emptyFunnelState,
   funnelStageText,
@@ -273,12 +278,34 @@ export async function handleChatRequest({ request, env, path, method }) {
       // Input shape is validated before duplicate/rate/budget checks above.
 
       // whitelist check
-      const contact = await env.DB.prepare("SELECT is_whitelisted, marital_status, marital_checked, voice_warn_at, his_photo_at, her_photo_at FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?").bind(tokenRow.token, platform, contact_id).first();
+      const contact = await env.DB.prepare("SELECT is_whitelisted, marital_status, marital_checked, voice_warn_at, his_photo_at, her_photo_at, last_activity, last_activity_at, last_reply_at, relationship_stage, mood, conversation_summary, summary_updated_at FROM contacts WHERE token = ? AND platform = ? AND contact_id = ?").bind(tokenRow.token, platform, contact_id).first();
       if (!contact) {
         const nowSec2 = Math.floor(Date.now() / 1000);
         await env.DB.prepare("INSERT INTO contacts (token, platform, contact_id, contact_name, is_whitelisted, notes, created_at) VALUES (?, ?, ?, ?, 1, '', ?)").bind(tokenRow.token, platform, contact_id, contact_name, nowSec2).run();
       } else if (contact.is_whitelisted === 0) {
         return json({ action: "skip" });
+      }
+
+      // 2026-10-12 动作静默守门员：洗漱中（20分钟内）或当晚入睡后，接口直接静默跳过回复，防已读不回与秒回穿帮
+      const nowSecForActivity = Math.floor(Date.now() / 1000);
+      const chinaHour = Number(String(getChinaTimeContext().currentDatetime || "").match(/(\d{1,2}):\d{2}/)?.[1] || new Date().getHours());
+      const activityEval = evaluateActivityState(
+        contact?.last_activity,
+        contact?.last_activity_at,
+        nowSecForActivity,
+        chinaHour,
+      );
+      if (activityEval.isSilenced) {
+        return json({
+          action: "skip",
+          reason: activityEval.silenceReason || "activity_in_progress",
+          activity: contact?.last_activity,
+        });
+      }
+      if (activityEval.shouldClear && contact?.last_activity) {
+        await env.DB.prepare(
+          "UPDATE contacts SET last_activity = '', last_activity_at = 0 WHERE token = ? AND platform = ? AND contact_id = ?"
+        ).bind(tokenRow.token, platform, contact_id).run();
       }
 
       // 2026-10-07 用户要求：确认对方已婚就不再回复这个人（直接跳过，连模型都不调）。
@@ -671,6 +698,9 @@ export async function handleChatRequest({ request, env, path, method }) {
       const summarizedUpToId = olderMessages.reduce((max, message) => Math.max(max, Number(message.id || 0)), memoryRow.summarizedUpToId);
       if (olderMessages.length > 0) {
         await persistMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases, summary, summarizedUpToId);
+        await env.DB.prepare(
+          "UPDATE contacts SET conversation_summary = ?, summary_updated_at = ? WHERE token = ? AND platform = ? AND contact_id = ?"
+        ).bind(summary.slice(0, 300), Math.floor(Date.now() / 1000), tokenRow.token, platform, contact_id).run();
       }
       if (starSoulScope) {
         const funnelTurn = applyFunnelTurn({
@@ -967,7 +997,13 @@ export async function handleChatRequest({ request, env, path, method }) {
           }
         }
       }
+      const temporalContextPrompt = buildTemporalContextPrompt({
+        contact,
+        nowSec: nowSecForActivity,
+        activityEvaluation: activityEval,
+      });
       const layeredPromptOptions = {
+        temporalContextPrompt,
         personaId: activePersonaId,
         personaPrompt,
         // 2026-10-07 用户要求：还不知道对方是否单身时，找机会自然问一句。
@@ -999,7 +1035,7 @@ export async function handleChatRequest({ request, env, path, method }) {
         conversationTimeline,
         conversationStage,
         relationshipOrigin,
-        memorySummary: summary,
+        memorySummary: String(contact?.conversation_summary || summary || "").trim(),
         evaluationQuoteSent,
         funnelState,
         contactRequest: starSoulScope && currentContactRequest && !contactPolicy.allowed,
@@ -1645,6 +1681,23 @@ export async function handleChatRequest({ request, env, path, method }) {
 
       // update token
       await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?").bind(nowSec, tokenRow.token).run();
+
+      // 2026-10-12 更新联系人最新时间戳与识别出的新动作
+      const detectedAct = detectActivityFromReply(safeReply);
+      const newActivity = detectedAct ? detectedAct.label : "";
+      const newActivityAt = detectedAct ? nowSec : 0;
+      await env.DB.prepare(
+        "UPDATE contacts SET last_reply_at = ?, last_activity = CASE WHEN ? <> '' THEN ? ELSE last_activity END, last_activity_at = CASE WHEN ? <> '' THEN ? ELSE last_activity_at END WHERE token = ? AND platform = ? AND contact_id = ?"
+      ).bind(
+        nowSec,
+        newActivity,
+        newActivity,
+        newActivity,
+        newActivityAt,
+        tokenRow.token,
+        platform,
+        contact_id,
+      ).run();
       timing.persist_ms = Date.now() - persistStartedAt;
 
       timing.total_ms = Date.now() - chatStartedAt;

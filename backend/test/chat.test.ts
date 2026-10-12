@@ -746,6 +746,13 @@ class MockD1 {
             }
             return links[0] ?? null;
           }
+          if (sql.includes("FROM contacts")) {
+            return this.contactsRows.find((row) =>
+              (!row.token || row.token === params[0]) &&
+              (!row.platform || row.platform === params[1]) &&
+              (!row.contact_id || row.contact_id === params[2])
+            ) ?? null;
+          }
           return null;
         },
         all: async () => {

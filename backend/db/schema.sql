@@ -160,6 +160,13 @@ CREATE TABLE IF NOT EXISTS contacts (
     contact_name TEXT NOT NULL,
     is_whitelisted INTEGER NOT NULL DEFAULT 1,
     notes       TEXT NOT NULL DEFAULT '',
+    last_activity TEXT NOT NULL DEFAULT '',
+    last_activity_at INTEGER NOT NULL DEFAULT 0,
+    last_reply_at INTEGER NOT NULL DEFAULT 0,
+    relationship_stage TEXT NOT NULL DEFAULT 'new',
+    mood        TEXT NOT NULL DEFAULT 'normal',
+    conversation_summary TEXT NOT NULL DEFAULT '',
+    summary_updated_at INTEGER NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL,
     UNIQUE(token, platform, contact_id)
 );
@@ -529,3 +536,13 @@ ALTER TABLE chat_history ADD COLUMN voice_seconds INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE contacts ADD COLUMN voice_warn_at INTEGER NOT NULL DEFAULT 0;
 -- 2026-10-07：婚况只在客户资料表里查一次（用户要求：不要每轮都去搜、不要白烧 token）。
 ALTER TABLE contacts ADD COLUMN marital_checked INTEGER NOT NULL DEFAULT 0;
+
+-- 2026-10-12 时间感知与多会话状态管理
+ALTER TABLE contacts ADD COLUMN last_activity TEXT NOT NULL DEFAULT '';
+ALTER TABLE contacts ADD COLUMN last_activity_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE contacts ADD COLUMN last_reply_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE contacts ADD COLUMN relationship_stage TEXT NOT NULL DEFAULT 'new';
+ALTER TABLE contacts ADD COLUMN mood TEXT NOT NULL DEFAULT 'normal';
+ALTER TABLE contacts ADD COLUMN conversation_summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE contacts ADD COLUMN summary_updated_at INTEGER NOT NULL DEFAULT 0;
+
