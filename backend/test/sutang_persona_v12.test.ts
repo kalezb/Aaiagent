@@ -127,6 +127,18 @@ describe("Su Tang v13 persona", () => {
       contactAccount: "sutang2026",
       sutangScope: true,
     })).toBe("联系方式先不发了 在这儿聊就行");
+    expect(sanitizeContactDisclosure("平时写日记 标电影都在豆瓣那儿比微信干净", {
+      allowed: false,
+      contactChannel: "douban",
+      contactAccount: "sutang2026",
+      sutangScope: true,
+    })).toBe("平时写日记 标电影都在豆瓣那儿比微信干净");
+    expect(sanitizeContactDisclosure("微信不行呀 微信上都是熟人 我老公偶尔会看我手机", {
+      allowed: false,
+      contactChannel: "douban",
+      contactAccount: "sutang2026",
+      sutangScope: true,
+    })).toBe("微信不行呀 微信上都是熟人 我老公偶尔会看我手机");
     expect(normalizePersonaFacts({ contact_qq: " sutang2026 " }).contact_qq).toBe("sutang2026");
 
     const genericPrompt = buildPersonaFactsPrompt(

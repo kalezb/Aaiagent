@@ -588,7 +588,8 @@ export function sanitizeContactDisclosure(value, {
         : normalizedChannel === "douban"
           ? /(?:微信号?|vx|v信|qq|q号|扣扣|企鹅号|手机号|电话)/iu
           : /(?:微信号?|vx|v信|手机号|电话|豆瓣|书影音)/iu;
-      if (wrongChannelPattern.test(segment)) return fallback;
+      const isChannelRefusalOrComparison = /(?:不行|不加|不给|不上|没有|不方便|比|很少用|熟人|老公|担不起|安全|干净|不便)/u.test(segment);
+      if (wrongChannelPattern.test(segment) && !isChannelRefusalOrComparison) return fallback;
       if (!containsDisclosure(segment)) return segment;
       if (allowed && normalizedAccount && segment.includes(normalizedAccount)) return segment;
       return fallback;
