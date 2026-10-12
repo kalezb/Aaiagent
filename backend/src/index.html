@@ -576,15 +576,261 @@ button[data-lib-toggle][data-lib-next="0"]:hover {
 .rule-badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
 .rule-card-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 
-/* 图库与知识库 */
-.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-.gallery-card { border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); overflow: hidden; box-shadow: var(--shadow-sm); cursor: pointer; transition: var(--transition); }
-.gallery-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); border-color: var(--blue-light); }
-.gallery-cover { height: 110px; background: var(--panel-soft); display: grid; place-items: center; overflow: hidden; }
-.gallery-cover img { width: 100%; height: 100%; object-fit: cover; }
-.gallery-meta { padding: 8px 10px; }
-.gallery-meta h4 { font-size: 13px; font-weight: 600; }
-.gallery-meta p { font-size: 11px; color: var(--muted); margin-top: 1px; }
+/* ===== 图库列表视图（修复排版错乱） ===== */
+.gallery-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lib-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.lib-row:hover {
+  border-color: var(--blue-light);
+  box-shadow: var(--shadow);
+}
+.lib-row-thumb {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--panel-soft);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-soft);
+}
+.lib-row-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lib-row-thumb-empty {
+  font-size: 11px;
+  color: var(--muted-soft);
+}
+.lib-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.lib-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lib-row-title b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.lib-row-desc {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ===== 图库分组内详情视图 ===== */
+.lib-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.lib-detail-item {
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+}
+.lib-detail-item:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--blue-light);
+}
+.lib-detail-img {
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--panel-soft);
+  cursor: pointer;
+}
+.lib-detail-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .2s ease;
+}
+.lib-detail-img:hover img {
+  transform: scale(1.04);
+}
+.lib-detail-info {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.lib-detail-name {
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-detail-actions {
+  display: flex;
+  gap: 6px;
+}
+.lib-detail-actions button {
+  flex: 1;
+}
+.lib-detail-copy {
+  margin-top: 2px;
+}
+.lib-copy-select {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* ===== 知识库卡片系统（卡片化大改版，直观清晰不横滑） ===== */
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.drawer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+.drawer-card:hover {
+  border-color: var(--blue-light);
+  box-shadow: var(--shadow);
+}
+.drawer-card.off {
+  opacity: 0.65;
+  background: #fbfcfe;
+}
+.drawer-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.drawer-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.drawer-card-icon {
+  color: var(--blue);
+  flex-shrink: 0;
+}
+.drawer-card-head input {
+  font-weight: 600;
+  font-size: 13px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--text);
+  flex: 1;
+}
+.drawer-card-head input:hover {
+  border-color: var(--line);
+  background: var(--panel-soft);
+}
+.drawer-card-head input:focus {
+  border-color: var(--blue);
+  background: #fff;
+}
+.drawer-status-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.drawer-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 80px;
+  gap: 8px;
+}
+.drawer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.drawer-field select, .drawer-field input {
+  font-size: 12px;
+  padding: 5px 8px;
+}
+.drawer-field textarea {
+  min-height: 80px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  color: var(--text);
+  resize: vertical;
+}
+.drawer-field textarea:focus {
+  background: #ffffff;
+  border-color: var(--blue);
+}
+.drawer-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.drawer-card-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* Toast */
 .toast-stack { position: fixed; bottom: 16px; right: 16px; z-index: 120; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }

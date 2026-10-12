@@ -2403,9 +2403,15 @@ function renderDrawerList(list) {
     var replyMode = drawer.replyMode === "exact" ? "exact" : "guide";
     return '<article class="drawer-card ' + (drawer.enabled ? "" : "off") + '" data-drawer-card="' + esc(drawer.id) + '">'
       + '<div class="drawer-card-head">'
-      + '<input data-drawer-name="' + esc(drawer.id) + '" value="' + esc(drawer.name || "") + '" aria-label="抽屉名字">'
-      + '<label class="switch"><input type="checkbox" data-drawer-toggle="' + esc(drawer.id) + '" ' + (drawer.enabled ? "checked" : "") + '>开着</label>'
-      + "</div>"
+      + '<div class="drawer-title-wrap">'
+      + '<span class="drawer-card-icon">🗂️</span>'
+      + '<input data-drawer-name="' + esc(drawer.id) + '" value="' + esc(drawer.name || "") + '" placeholder="卡片名称" aria-label="抽屉名字">'
+      + '</div>'
+      + '<div class="drawer-status-wrap">'
+      + '<span class="status-chip ' + (drawer.enabled ? "on" : "") + '">' + (drawer.enabled ? "启用" : "禁用") + '</span>'
+      + '<label class="switch"><input type="checkbox" data-drawer-toggle="' + esc(drawer.id) + '" ' + (drawer.enabled ? "checked" : "") + '></label>'
+      + '</div>'
+      + '</div>'
       + '<div class="drawer-meta-grid">'
       + '<label class="drawer-field">类型<select data-drawer-kind="' + esc(drawer.id) + '">' + drawerKindOptions(drawer.kind) + "</select></label>"
       + '<label class="drawer-field">生效<select data-drawer-activation="' + esc(drawer.id) + '">'
@@ -2415,7 +2421,7 @@ function renderDrawerList(list) {
       + '<label class="drawer-field">优先级<input data-drawer-priority="' + esc(drawer.id) + '" type="number" min="-100" max="100" value="' + Number(drawer.priority || 0) + '"></label>'
       + "</div>"
       + '<label class="drawer-field">触发词（命中才用时填写，用逗号分隔）'
-      + '<input data-drawer-keywords="' + esc(drawer.id) + '" value="' + esc((drawer.keywords || []).join(", ")) + '">'
+      + '<input data-drawer-keywords="' + esc(drawer.id) + '" value="' + esc((drawer.keywords || []).join(", ")) + '" placeholder="例如：早餐, 早上好, 起床">'
       + "</label>"
       + '<label class="drawer-field">说话方式'
       + '<select data-drawer-reply-mode="' + esc(drawer.id) + '">'
@@ -2423,14 +2429,22 @@ function renderDrawerList(list) {
       + '<option value="exact" ' + (replyMode === "exact" ? "selected" : "") + '>优先按原文说，尽量不改写</option>'
       + "</select></label>"
       + '<label class="drawer-field">里面的话'
-      + '<textarea data-drawer-content="' + esc(drawer.id) + '">' + esc(drawer.content || "") + "</textarea>"
+      + '<textarea data-drawer-content="' + esc(drawer.id) + '" placeholder="写下遇到对应情况时，模型该说的话或人设素材...">' + esc(drawer.content || "") + "</textarea>"
       + "</label>"
-      + '<div class="drawer-card-footer"><span class="small-muted">' + esc(drawerKindLabel(drawer.kind)) + " · " + (activation === "always" ? "一直生效" : "命中生效") + "</span>"
+      + '<div class="drawer-card-footer"><span class="small-muted">' + esc(drawerKindLabel(drawer.kind)) + " · " + (activation === "always" ? "一直生效" : "命中生效") + " · 优先级 " + Number(drawer.priority || 0) + "</span>"
       + '<div class="drawer-card-footer-actions">'
-      + '<button class="ghost-button small-button danger-text" data-drawer-delete="' + esc(drawer.id) + '">删除</button>'
-      + '<button class="primary-button small-button" data-drawer-save="' + esc(drawer.id) + '">保存修改</button></div></div>'
+      + '<button class="danger-button small-button" data-drawer-delete="' + esc(drawer.id) + '">删除</button>'
+      + '<button class="btn-action-blue small-button" data-drawer-save="' + esc(drawer.id) + '">保存修改</button></div></div>'
       + "</article>";
   }).join("");
+}
+
+async function reloadCurrentCards() {
+  if (currentPage === "kb") {
+    await loadKnowledge();
+  } else {
+    await loadDrawers();
+  }
 }
 
 async function saveDrawer(id) {
@@ -2457,7 +2471,7 @@ async function saveDrawer(id) {
       expected_version: Number(state.agentOverview?.shared_version || 0),
     });
     showToast("卡片已保存，下一条聊天立即生效");
-    await loadDrawers();
+    await reloadCurrentCards();
   } catch (error) {
     if (!(await handleAgentVersionConflict(error))) showToast(error.message, "error");
   }
@@ -2473,7 +2487,7 @@ async function toggleDrawer(id, on) {
       expected_version: Number(state.agentOverview?.shared_version || 0),
     });
     showToast((on ? "这张卡片已打开" : "这张卡片已关掉") + "，下一条聊天立即生效");
-    await loadDrawers();
+    await reloadCurrentCards();
   } catch (error) {
     if (!(await handleAgentVersionConflict(error))) showToast(error.message, "error");
   }
@@ -2489,7 +2503,7 @@ async function deleteDrawerCard(id) {
       expected_version: Number(state.agentOverview?.shared_version || 0),
     });
     showToast("卡片已删除，下一条聊天立即生效");
-    await loadDrawers();
+    await reloadCurrentCards();
   } catch (error) {
     if (!(await handleAgentVersionConflict(error))) showToast(error.message, "error");
   }
@@ -2529,7 +2543,7 @@ async function saveAgentCard() {
     await api("POST", "/drawers/cards", payload);
     $("agentCardModal").hidden = true;
     showToast("卡片已保存，下一条聊天立即生效");
-    await loadDrawers();
+    await reloadCurrentCards();
   } catch (error) {
     if (!(await handleAgentVersionConflict(error))) showToast(error.message, "error");
   } finally {
