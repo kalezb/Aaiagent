@@ -52,8 +52,11 @@ class StickerMatcherTest {
 
     @Test
     fun `interaction sticker template match requires high confidence and unambiguous difference`() {
-        // 非常接近（<= 10.0）属于高置信度强匹配
+        // 非常接近（<= 10.0）且无歧义（gap >= 0.8）属于高置信度强匹配
         assertTrue(StickerMatcher.isConfidentTemplateMatch(bestDist = 8.0, secondDist = 9.0))
+        // 差异过小（gap < 0.8），即使绝对距离较近，也存在两模板高度相似歧义，拒绝硬猜
+        assertFalse(StickerMatcher.isConfidentTemplateMatch(bestDist = 8.0, secondDist = 8.5))
+        assertFalse(StickerMatcher.isConfidentTemplateMatch(bestDist = 8.0, secondDist = 8.1))
         // 距离适中且与第二名有充分差距（gap >= 2.5）确认匹配
         assertTrue(StickerMatcher.isConfidentTemplateMatch(bestDist = 14.0, secondDist = 18.0))
         // 差异过小（gap < 2.5），存在歧义，拒绝硬猜

@@ -29,11 +29,32 @@ object ChatPageStabilityPolicy {
         return attempt > 0
     }
 
+    /**
+     * 动效结束后，聊天页重绘完成前同样需要缓冲等待。
+     * 动效遮挡刚消失时（overlaySeen = true），至少等待 2 轮非动效检查确认，
+     * 避免在动效结束的第 1 次检查中因页面正在重绘而误退。
+     */
+    fun shouldRecoverWrongPage(
+        attempt: Int,
+        hasTransientOverlay: Boolean = false,
+        overlaySeen: Boolean = false,
+        nonOverlayAttemptsAfterOverlay: Int = 0,
+    ): Boolean {
+        if (hasTransientOverlay) {
+            return attempt >= OVERLAY_MAX_RECOVER_ATTEMPTS
+        }
+        if (overlaySeen) {
+            return nonOverlayAttemptsAfterOverlay >= 2
+        }
+        return attempt > 0
+    }
+
     fun retryDelayMs(
         attempt: Int,
         hasTransientOverlay: Boolean = false,
+        overlayRecentlyCleared: Boolean = false,
     ): Long {
-        return if (hasTransientOverlay) {
+        return if (hasTransientOverlay || overlayRecentlyCleared) {
             OVERLAY_RETRY_DELAY_MS
         } else if (attempt == 0) {
             NORMAL_RETRY_DELAY_MS
@@ -48,11 +69,14 @@ object ChatPageStabilityPolicy {
         lastChatAtMs: Long,
         nowMs: Long,
         hasTransientOverlay: Boolean = false,
+        lastOverlayAtMs: Long = 0L,
     ): Boolean {
         if (chatDetected) return true
         if (explicitNonChat) return false
         if (lastChatAtMs <= 0L || nowMs < lastChatAtMs) return false
-        val grace = if (hasTransientOverlay) OVERLAY_GRACE_MS else GRACE_MS
+        val overlayActiveRecently = hasTransientOverlay ||
+            (lastOverlayAtMs > 0L && nowMs >= lastOverlayAtMs && nowMs - lastOverlayAtMs <= GRACE_MS)
+        val grace = if (overlayActiveRecently) OVERLAY_GRACE_MS else GRACE_MS
         return nowMs - lastChatAtMs <= grace
     }
 }

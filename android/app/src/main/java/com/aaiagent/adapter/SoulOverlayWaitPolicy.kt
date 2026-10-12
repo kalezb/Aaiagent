@@ -17,9 +17,11 @@ package com.aaiagent.adapter
 object SoulOverlayWaitPolicy {
     fun shouldWaitForClear(
         chatUsable: Boolean,
-        overlayVisible: Boolean
+        overlayVisible: Boolean,
+        isBlockingOverlay: Boolean = false,
     ): Boolean {
         if (!overlayVisible) return false
+        if (isBlockingOverlay) return true
         return !chatUsable
     }
 }

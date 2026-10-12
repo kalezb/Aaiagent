@@ -56,4 +56,25 @@ class SoulTransientOverlayPolicyTest {
         ))
         assertFalse(SoulTransientOverlayPolicy.isTransientViewId(null))
     }
+
+    @Test
+    fun `recognizes animation layers by class name even without view id`() {
+        assertTrue(SoulTransientOverlayPolicy.isTransientViewId(null, "com.opensource.svgaplayer.SVGAImageView"))
+        assertTrue(SoulTransientOverlayPolicy.isTransientViewId(null, "com.airbnb.lottie.LottieAnimationView"))
+        assertTrue(SoulTransientOverlayPolicy.shouldWaitForClear(null, "com.opensource.svgaplayer.SVGAImageView"))
+        assertTrue(SoulTransientOverlayPolicy.shouldWaitForClear(null, "com.airbnb.lottie.LottieAnimationView"))
+    }
+
+    @Test
+    fun `isBlockingOverlay distinguishes active animation from empty decorative host`() {
+        // pb_light_interaction 无子节点时属于常驻空容器，不阻塞
+        assertFalse(SoulTransientOverlayPolicy.isBlockingOverlay("cn.soulapp.android:id/pb_light_interaction", childCount = 0))
+        // pb_light_interaction 拥有子节点时属于正播放互动的阻塞层
+        assertTrue(SoulTransientOverlayPolicy.isBlockingOverlay("cn.soulapp.android:id/pb_light_interaction", childCount = 1))
+
+        // SVGA 或 Lottie 无论子节点均属于阻断动效层
+        assertTrue(SoulTransientOverlayPolicy.isBlockingOverlay("cn.soulapp.android:id/svga_player", childCount = 0))
+        assertTrue(SoulTransientOverlayPolicy.isBlockingOverlay("cn.soulapp.android:id/gift_fly_animation", childCount = 0))
+        assertTrue(SoulTransientOverlayPolicy.isBlockingOverlay(null, childCount = 0, className = "com.opensource.svgaplayer.SVGAImageView"))
+    }
 }

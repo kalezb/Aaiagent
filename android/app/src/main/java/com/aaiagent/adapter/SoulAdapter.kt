@@ -97,6 +97,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     private var secondaryBackTapStreak = 0
     @Volatile
     private var lastConfirmedChatAtMs = 0L
+    @Volatile
+    private var lastOverlayAtMs = 0L
     // 每次读取最多打两条被拒日志，避免刷屏。
     private var rejectedItemLogCount = 0
 
@@ -167,16 +169,20 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             isPublishPage(root) ||
             explicitProfile
         val hasOverlay = hasTransientOverlay(root)
+        if (hasOverlay) {
+            lastOverlayAtMs = now
+        }
         val stableChat = ChatPageStabilityPolicy.shouldTreatAsChat(
             chatDetected = chatPage,
             explicitNonChat = explicitNonChat,
             lastChatAtMs = lastConfirmedChatAtMs,
             nowMs = now,
             hasTransientOverlay = hasOverlay,
+            lastOverlayAtMs = lastOverlayAtMs,
         )
-        if (stableChat) {
+        if (chatPage) {
             lastConfirmedChatAtMs = now
-        } else if (explicitNonChat) {
+        } else if (!stableChat) {
             lastConfirmedChatAtMs = 0L
         }
         return stableChat
@@ -728,13 +734,20 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             } else {
                 0
             }
-            val isPotentialSticker = stickerNode != null || expressionStickerNode != null || type == SoulMediaType.STICKER
+            val isPotentialSticker = stickerNode != null || expressionStickerNode != null ||
+                type == SoulMediaType.STICKER || type == "image"
             val stickerDescription = if (isPotentialSticker) {
                 findStickerAccessibilityDescription(item, expressionStickerNode, stickerNode)
             } else {
                 null
             }
-            val resolvedStickerText = SoulStickerPolicy.resolveFromDescription(stickerDescription)
+            val msgEpoch = timestamp.epochMillis
+            val hour = if (msgEpoch != null && msgEpoch > 0L) {
+                java.util.Calendar.getInstance().apply { timeInMillis = msgEpoch }.get(java.util.Calendar.HOUR_OF_DAY)
+            } else {
+                java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            }
+            val resolvedStickerText = SoulStickerPolicy.resolveFromDescription(stickerDescription, currentHour = hour)
 
             val content = when {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
@@ -841,17 +854,15 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         expressionNode: AccessibilityNodeInfo?,
         stickerNode: AccessibilityNodeInfo?
     ): CharSequence? {
-        val candidates = listOfNotNull(
-            expressionNode?.contentDescription,
-            stickerNode?.contentDescription,
-            item.findAccessibilityNodeInfosByViewId(prefix + "image")
-                .firstOrNull { isVisibleOnScreen(it) || it.isVisibleToUser }?.contentDescription,
-            item.findAccessibilityNodeInfosByViewId(prefix + "img_static")
-                .firstOrNull { isVisibleOnScreen(it) || it.isVisibleToUser }?.contentDescription,
-            item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
-                .firstOrNull { isVisibleOnScreen(it) || it.isVisibleToUser }?.contentDescription,
-            item.contentDescription
-        )
+        val candidates = mutableListOf<CharSequence>()
+        expressionNode?.contentDescription?.let { candidates.add(it) }
+        stickerNode?.contentDescription?.let { candidates.add(it) }
+        listOf("image", "img_static", "la_light_interaction", "llExpression").forEach { id ->
+            item.findAccessibilityNodeInfosByViewId(prefix + id).forEach { node ->
+                node.contentDescription?.let { candidates.add(it) }
+            }
+        }
+        item.contentDescription?.let { candidates.add(it) }
         for (desc in candidates) {
             val label = SoulStickerPolicy.extractLabelFromDescription(desc)
             if (!label.isNullOrBlank()) return desc
@@ -980,7 +991,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                     SoulGameInteraction.isGameLabel(previewLabel) ->
                         SoulGameInteraction.modelTextFor(previewLabel)
                     SoulStickerPolicy.isTimeSensitive(previewLabel) -> {
-                        val greeting = SoulStickerPolicy.resolveTimeGreeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
+                        val msgTime = messages[pending.messageIndex].timestampMillis
+                        val hour = if (msgTime != null && msgTime > 0L) {
+                            java.util.Calendar.getInstance().apply { timeInMillis = msgTime }.get(java.util.Calendar.HOUR_OF_DAY)
+                        } else {
+                            java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                        }
+                        val greeting = SoulStickerPolicy.resolveTimeGreeting(hour)
                         SoulStickerPolicy.modelTextForTimeGreeting(greeting)
                     }
                     else ->
@@ -3171,15 +3188,25 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return false
     }
 
+    private fun isBlockingOverlay(node: AccessibilityNodeInfo): Boolean {
+        return SoulTransientOverlayPolicy.isBlockingOverlay(
+            viewId = node.viewIdResourceName,
+            childCount = node.childCount,
+            className = node.className,
+        )
+    }
+
     private suspend fun waitForTransientOverlayToClear(
         initialRoot: AccessibilityNodeInfo,
         chatUsable: Boolean = false,
     ): AccessibilityNodeInfo {
         var current = initialRoot
         val firstOverlay = findVisibleTransientOverlay(current) ?: return current
+        val isBlocking = isBlockingOverlay(firstOverlay)
         if (!SoulOverlayWaitPolicy.shouldWaitForClear(
                 chatUsable = chatUsable,
                 overlayVisible = true,
+                isBlockingOverlay = isBlocking,
             )
         ) {
             android.util.Log.d(
@@ -3220,7 +3247,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             if (node.isVisibleToUser &&
-                SoulTransientOverlayPolicy.shouldWaitForClear(node.viewIdResourceName)
+                SoulTransientOverlayPolicy.shouldWaitForClear(node.viewIdResourceName, node.className)
             ) {
                 return node
             }

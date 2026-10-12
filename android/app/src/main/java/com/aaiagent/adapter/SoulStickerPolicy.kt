@@ -20,6 +20,10 @@ object SoulStickerPolicy {
         "表情包",
         "互动表情",
         "Soul互动表情",
+        "动态表情",
+        "动画",
+        "动效",
+        "大表情",
         "图片",
         "图片消息",
         "语音",
@@ -37,15 +41,10 @@ object SoulStickerPolicy {
         "时段表情",
         "时段问候",
         "动态表情问候",
+        "时段动态表情",
+        "动态时段表情",
         "问候",
         "打招呼",
-        "早安",
-        "早上好",
-        "午安",
-        "中午好",
-        "下午好",
-        "晚安",
-        "晚上好"
     )
 
     /**
@@ -57,14 +56,24 @@ object SoulStickerPolicy {
         if (raw.isEmpty()) return null
 
         var cleaned = raw
-        cleaned = cleaned.trim('[', ']', '【', '】', '“', '”', '"', '\'')
-        val prefixes = listOf("表情:", "表情：", "表情包:", "表情包：", "互动表情:", "互动表情：", "Soul表情:", "Soul表情：", "表情 ")
+        cleaned = cleaned.trim('[', ']', '【', '】', '“', '”', '"', '\'', ' ')
+        val prefixes = listOf(
+            "表情:", "表情：",
+            "表情包:", "表情包：",
+            "互动表情:", "互动表情：",
+            "Soul表情:", "Soul表情：",
+            "动态表情:", "动态表情：",
+            "动画:", "动画：",
+            "大图表情:", "大图表情：",
+            "表情 "
+        )
         for (prefix in prefixes) {
             if (cleaned.startsWith(prefix, ignoreCase = true)) {
                 cleaned = cleaned.substring(prefix.length).trim()
                 break
             }
         }
+        cleaned = cleaned.trim('[', ']', '【', '】', '“', '”', '"', '\'', ' ')
 
         if (cleaned.isEmpty() || cleaned.length > 24) return null
         if (cleaned in GENERIC_DESCRIPTIONS) return null
@@ -89,9 +98,9 @@ object SoulStickerPolicy {
     fun isTimeSensitive(label: String): Boolean {
         val trimmed = label.trim()
         return trimmed in TIME_SENSITIVE_LABELS ||
-            trimmed.contains("早安") ||
-            trimmed.contains("午安") ||
-            trimmed.contains("晚安") ||
+            trimmed == "早安" ||
+            trimmed == "午安" ||
+            trimmed == "晚安" ||
             trimmed.contains("时段")
     }
 

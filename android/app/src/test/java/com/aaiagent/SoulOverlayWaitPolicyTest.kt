@@ -23,4 +23,16 @@ class SoulOverlayWaitPolicyTest {
         assertFalse(SoulOverlayWaitPolicy.shouldWaitForClear(chatUsable = true, overlayVisible = false))
         assertFalse(SoulOverlayWaitPolicy.shouldWaitForClear(chatUsable = false, overlayVisible = false))
     }
+
+    @Test
+    fun `blocking overlay like svga or gift animation must wait even if chat input is readable`() {
+        // 全屏动效、SVGA、礼物播放时属于真正遮挡，即使输入框在树中也必须等待
+        assertTrue(
+            SoulOverlayWaitPolicy.shouldWaitForClear(
+                chatUsable = true,
+                overlayVisible = true,
+                isBlockingOverlay = true
+            )
+        )
+    }
 }

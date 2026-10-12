@@ -17,16 +17,29 @@ class SoulStickerPolicyTest {
         assertEquals("抱抱", SoulStickerPolicy.extractLabelFromDescription("【抱抱】"))
         assertEquals("点赞", SoulStickerPolicy.extractLabelFromDescription("表情: 点赞"))
         assertEquals("点赞", SoulStickerPolicy.extractLabelFromDescription("表情包: 点赞"))
+        assertEquals("抱抱", SoulStickerPolicy.extractLabelFromDescription("表情: [抱抱]"))
+        assertEquals("点赞", SoulStickerPolicy.extractLabelFromDescription("表情包：【点赞】"))
         assertEquals("开心", SoulStickerPolicy.extractLabelFromDescription("互动表情: 开心"))
         assertEquals("害羞", SoulStickerPolicy.extractLabelFromDescription("Soul表情: 害羞"))
 
         // 通用占位符不作为具体标签
         assertNull(SoulStickerPolicy.extractLabelFromDescription("表情"))
         assertNull(SoulStickerPolicy.extractLabelFromDescription("表情包"))
+        assertNull(SoulStickerPolicy.extractLabelFromDescription("动态表情"))
+        assertNull(SoulStickerPolicy.extractLabelFromDescription("动画"))
+        assertNull(SoulStickerPolicy.extractLabelFromDescription("动效"))
+        assertNull(SoulStickerPolicy.extractLabelFromDescription("大表情"))
         assertNull(SoulStickerPolicy.extractLabelFromDescription("图片"))
         assertNull(SoulStickerPolicy.extractLabelFromDescription("语音"))
         assertNull(SoulStickerPolicy.extractLabelFromDescription(null))
         assertNull(SoulStickerPolicy.extractLabelFromDescription(""))
+    }
+
+    @Test
+    fun `layer 1 specific official labels like 早上好 are preserved with 100 percent accuracy`() {
+        val resolved = SoulStickerPolicy.resolveFromDescription("早上好")
+        assertNotNull(resolved)
+        assertEquals("对方发来 Soul 官方表情「早上好」", resolved)
     }
 
     @Test

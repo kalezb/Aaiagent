@@ -67,16 +67,39 @@ object SoulTransientOverlayPolicy {
 
     private val BLOCKING_OVERLAY_VIEW_IDS = TRANSIENT_VIEW_IDS - "fl_chat_card_content"
 
-    fun isTransientViewId(viewId: String?): Boolean {
+    fun isTransientViewId(viewId: String?, className: CharSequence? = null): Boolean {
+        if (matchesAnimationClass(className)) return true
         val id = localViewId(viewId)
         if (id.isEmpty()) return false
         return id in TRANSIENT_VIEW_IDS || matchesAnimationPattern(id)
     }
 
-    fun shouldWaitForClear(viewId: String?): Boolean {
+    fun shouldWaitForClear(viewId: String?, className: CharSequence? = null): Boolean {
+        if (matchesAnimationClass(className)) return true
         val id = localViewId(viewId)
         if (id.isEmpty() || id == "fl_chat_card_content") return false
         return id in BLOCKING_OVERLAY_VIEW_IDS || matchesAnimationPattern(id)
+    }
+
+    /**
+     * 判断当前遮挡层是否属于真正播放动效的阻断层。
+     * pb_light_interaction 是 Soul 的常驻空容器，无子节点时不阻塞；有子节点或其它动效层则判定为阻断动效。
+     */
+    fun isBlockingOverlay(
+        viewId: String?,
+        childCount: Int = 0,
+        className: CharSequence? = null
+    ): Boolean {
+        if (matchesAnimationClass(className)) return true
+        val id = localViewId(viewId)
+        if (id.isEmpty()) return false
+        if (id == "pb_light_interaction" && childCount == 0) return false
+        return shouldWaitForClear(viewId, className)
+    }
+
+    private fun matchesAnimationClass(className: CharSequence?): Boolean {
+        val name = className?.toString()?.lowercase() ?: return false
+        return name.contains("svga") || name.contains("lottie")
     }
 
     private fun matchesAnimationPattern(id: String): Boolean {
@@ -84,8 +107,10 @@ object SoulTransientOverlayPolicy {
         val lower = id.lowercase()
         return lower.contains("svga") ||
             lower.contains("lottie") ||
-            lower.endsWith("_anim") ||
-            lower.endsWith("_animation")
+            lower.contains("anim_") ||
+            lower.contains("_anim") ||
+            lower.contains("animation") ||
+            lower.contains("gift")
     }
 
     private fun localViewId(viewId: String?): String {

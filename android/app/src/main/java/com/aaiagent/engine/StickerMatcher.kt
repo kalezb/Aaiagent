@@ -221,7 +221,7 @@ object StickerMatcher {
 
     /**
      * 第三层：加强差异门槛检查，只有高置信度才确认。
-     * 当差距不明显或距离过大时拒绝硬猜，交由第四层安全兜底。
+     * 当差距不明显（存在歧义）或距离过大时拒绝硬猜，交由第四层安全兜底。
      */
     internal fun isConfidentTemplateMatch(
         bestDist: Double,
@@ -229,6 +229,7 @@ object StickerMatcher {
     ): Boolean {
         if (bestDist > MAX_TEMPLATE_DISTANCE) return false
         val gap = secondDist - bestDist
+        if (gap < MIN_AMBIGUITY_GAP) return false
         return bestDist <= STRONG_MATCH_DISTANCE || gap >= MIN_BEST_GAP
     }
 
@@ -488,6 +489,7 @@ object StickerMatcher {
     private const val MAX_TEMPLATE_DISTANCE = 20.0
     private const val STRONG_MATCH_DISTANCE = 10.0
     private const val MIN_BEST_GAP = 2.5
+    private const val MIN_AMBIGUITY_GAP = 0.8
 
     private const val SCREENSHOT_ATTEMPTS = 3
 

@@ -1916,15 +1916,25 @@ class MessageEngine(
         leaseToken: String,
         expectedPreview: String = "",
     ): List<PlatformAdapter.ChatMessage> {
+        var overlaySeen = false
+        var nonOverlayAttemptsAfterOverlay = 0
         repeat(READ_MESSAGE_RETRIES) { attempt ->
             if (!canContinue(leaseToken, null)) return emptyList()
             val svc = service ?: return emptyList()
             val root = svc.rootInActiveWindow ?: return emptyList()
             val hasOverlay = adapter.hasTransientOverlay(root)
+            if (hasOverlay) {
+                overlaySeen = true
+                nonOverlayAttemptsAfterOverlay = 0
+            }
             if (!adapter.isInChat(root)) {
-                if (!adapter.isInMessageList(root) &&
-                    ChatPageStabilityPolicy.shouldRecoverWrongPageOnAttempt(attempt, hasOverlay)
-                ) {
+                val shouldRecover = ChatPageStabilityPolicy.shouldRecoverWrongPage(
+                    attempt = attempt,
+                    hasTransientOverlay = hasOverlay,
+                    overlaySeen = overlaySeen,
+                    nonOverlayAttemptsAfterOverlay = nonOverlayAttemptsAfterOverlay,
+                )
+                if (!adapter.isInMessageList(root) && shouldRecover) {
                     val back = adapter.navigateToMessageList(
                         svc,
                         root,
@@ -1934,8 +1944,16 @@ class MessageEngine(
                         if (back) "已退回消息列表" else "退回失败",
                         "目标=$expectedContactName",
                     )
+                    if (back) return emptyList()
                 }
-                val delayMs = ChatPageStabilityPolicy.retryDelayMs(attempt, hasOverlay)
+                val delayMs = ChatPageStabilityPolicy.retryDelayMs(
+                    attempt = attempt,
+                    hasTransientOverlay = hasOverlay,
+                    overlayRecentlyCleared = overlaySeen && !hasOverlay && nonOverlayAttemptsAfterOverlay == 0,
+                )
+                if (!hasOverlay && overlaySeen) {
+                    nonOverlayAttemptsAfterOverlay++
+                }
                 if (delayMs > 0L) delay(delayMs)
                 return@repeat
             }
