@@ -6,48 +6,48 @@ describe("时空与天气代码守门员 & 半截话承接机制", () => {
   const sutangDrawers = defaultDrawersForPersona("female_sutang");
 
   describe("天气守门员 (Weather Gating)", () => {
-    it("晴天且用户未主动提雨时，绝不误触【阴雨连绵与颈背酸胀】卡片（防穿帮）", () => {
+    it("晴天且用户未主动提雨时，只命中后背酸痛，绝不出现下雨话术（防穿帮）", () => {
       const matched = matchActiveDrawers(sutangDrawers, "坐一天办公室 后背好酸", {
         weatherCondition: "晴",
         weatherTemp: 26,
         currentHour: 15,
       });
       const text = matched.join("\n");
-      expect(text).not.toContain("scene_14_rainy_neck");
+      expect(text).toContain("scene_14_rainy_neck");
+      expect(text).toContain("后背和颈椎酸得要命");
       expect(text).not.toContain("外面下雨路不好走");
     });
 
-    it("真在下雨（小雨/中雨/雷阵雨）时，用户提到酸痛能正常命中雨天卡片", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "后背好酸 坐了一整天", {
+    it("用户无论提下雨还是提后背，已删除雨季卡片，不会生成虚构的下雨场景", () => {
+      const matched = matchActiveDrawers(sutangDrawers, "外面下雨了 后背好酸 坐了一整天", {
         weatherCondition: "小雨",
         weatherTemp: 20,
         currentHour: 19,
       });
       const text = matched.join("\n");
       expect(text).toContain("scene_14_rainy_neck");
-      expect(text).toContain("外面下雨路不好走");
+      expect(text).not.toContain("外面下雨路不好走");
     });
 
-    it("即使天气数据不是雨天，但对方主动提起下雨时，尊重当前对话上下文允许命中", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "外面突然下暴雨了 我后背酸得不行", {
-        weatherCondition: "多云",
-        weatherTemp: 25,
-        currentHour: 18,
-      });
-      const text = matched.join("\n");
-      expect(text).toContain("scene_14_rainy_neck");
-    });
-
-    it("烈日高温（>=30度或天气为晴/热）时，命中夏日冷气续命卡片", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "外面好热 太阳晒死人了", {
+    it("烈日高温在白天时命中夏日冷气续命卡片，但在深夜（22点）绝不出太阳卡片", () => {
+      const dayMatched = matchActiveDrawers(sutangDrawers, "外面好热 太阳晒死人了", {
         weatherCondition: "晴",
         weatherTemp: 34,
         currentHour: 14,
       });
-      const text = matched.join("\n");
-      expect(text).toContain("scene_23_sunny_hot_summer");
-      expect(text).toContain("烈日大热与冷气续命");
-      expect(text).toContain("空调房里续命");
+      const dayText = dayMatched.join("\n");
+      expect(dayText).toContain("scene_23_sunny_hot_summer");
+      expect(dayText).toContain("烈日大热与冷气续命");
+      expect(dayText).toContain("空调房里续命");
+
+      const nightMatched = matchActiveDrawers(sutangDrawers, "外面好热 太阳晒死人了", {
+        weatherCondition: "晴",
+        weatherTemp: 34,
+        currentHour: 22,
+      });
+      const nightText = nightMatched.join("\n");
+      expect(nightText).not.toContain("scene_23_sunny_hot_summer");
+      expect(nightText).not.toContain("外面太阳晒得睁不开眼");
     });
 
     it("降温大风（<=10度或寒风天气）时，命中降温保暖卡片", () => {

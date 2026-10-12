@@ -2284,7 +2284,7 @@ describe("chat logic", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
     const systemMessage = payload.messages.find((m: { role: string }) => m.role === "system");
-    expect(systemMessage.content).toContain("【阴雨连绵与颈背酸胀】");
+    expect(systemMessage.content).toContain("【居家放松与颈背酸胀】");
   });
 
   it("only gives Sutang's default scene cards to Sutang", () => {
@@ -8655,7 +8655,7 @@ describe("monitoring sync and customer profile batching", () => {
     expect(invite).not.toContain("一句硬话回掉");
 
     const rainyNeck = matchActiveDrawers(drawers, "今晚下雨 后背酸得厉害").join("\n");
-    expect(rainyNeck).toContain("阴雨连绵与颈背酸胀");
+    expect(rainyNeck).toContain("居家放松与颈背酸胀");
     expect(rainyNeck).toContain("后背和颈椎酸得要命");
 
     expect(matchActiveDrawers(drawers, "今天吃什么了")).toEqual([]);

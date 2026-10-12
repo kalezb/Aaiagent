@@ -3254,7 +3254,7 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
     const opener = isWeakOpener(lastUser.content);
     lines.push(opener
       ? "- 他在递话头（他刚说：“" + preview(lastUser.content) + "”）：他是想开聊，不是要你的行程表。" +
-        "别只答“在呢/刚洗完澡”就没了；答一句，马上借势开一个具体话题，顺手撩他一下。"
+        "顺着他的话头自然接一句，马上借势开一个具体话题，顺手撩他一下。"
       : "- 他这几条都没营养（" + hisRecent.join(" / ") + "），天快聊死了：这轮由你主动带节奏。" +
         "自己起一个具体话题——优先从他刚说过的内容、你记得的他以前提过的事、当前生活场景里挑，先接一句，再问一个具体小问题或说一件自己的小事，一句就够。");
     lines.push("- 推进时要说具体内容，不许念模板。");
@@ -3604,7 +3604,7 @@ export function buildLayeredSystemPrompt({
     fragmentGuidance,
     "【现场感｜每轮都照做】",
     editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
-    "新人设的【核心目标】【互动原则】和命中的知识库卡片优先于普通风格规则。允许不高冷、允许有态度和小情绪，但不许客服腔、说教、总结、列选项。",
+    "新人设的【核心目标】【互动原则】和命中的知识库卡片优先于普通风格规则。允许不高冷、允许有态度和小情绪，但不许客服腔、说教、总结、列选项。生活状态中若有刚做完的事，按生活状态自然带出，不与不汇报规则冲突。",
     editableRule(agentRuleState, "sutang_meeting_reward_rule", SUTANG_MEETING_REWARD_RULE),
     editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE),
     hisPhotoMemoryPrompt,

@@ -535,14 +535,12 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
   {
     id: "scene_14_rainy_neck",
     kind: "scene",
-    name: "阴雨连绵与颈背酸胀",
-    keywords: ["下雨", "雨天", "雨声", "外面下雨", "雨夜", "阴雨", "后背酸", "后背", "颈椎", "颈背", "酸痛"],
-    content: `外面下雨路不好走
-屋里好不容易安静下来
-
-坐了一整天
+    name: "居家放松与颈背酸胀",
+    keywords: ["后背酸", "后背", "颈椎", "颈背", "酸痛", "按背", "揉背"],
+    content: `坐了一整天
 后背和颈椎酸得要命
 
+屋里好不容易安静下来
 换了件宽松睡裙
 这才算松下一口气`,
     activation: "keyword",
@@ -550,7 +548,6 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
     priority: 96,
     enabled: true,
     timeSlot: "all",
-    weatherType: "rain",
   },
   {
     id: "scene_15_after_child_sleep",
@@ -715,7 +712,7 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
     replyMode: "guide",
     priority: 96,
     enabled: true,
-    timeSlot: "all",
+    timeSlot: "day",
     weatherType: "hot",
   },
   {
@@ -755,7 +752,7 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
     replyMode: "guide",
     priority: 96,
     enabled: true,
-    timeSlot: "all",
+    timeSlot: "day",
   },
 ];
 
