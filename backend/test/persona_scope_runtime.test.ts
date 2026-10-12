@@ -38,4 +38,15 @@ describe("persona scope runtime", () => {
     expect(resolveContactConfig(env, false, facts, false, true).account).toBe("douban-device");
     expect(resolveContactConfig(env, false, facts, true, true).account).toBe("douban-device");
   });
+
+  it("falls back to default sutang Douban account when neither facts nor env has an account", () => {
+    expect(resolveContactConfig({}, false, null, false, true)).toEqual({
+      channel: "douban",
+      account: "sutang2026",
+    });
+    expect(resolveContactConfig({}, false, { contact_qq: "" }, false, true)).toEqual({
+      channel: "douban",
+      account: "sutang2026",
+    });
+  });
 });

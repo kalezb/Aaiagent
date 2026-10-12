@@ -471,6 +471,13 @@ const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
     source: "buildLayeredSystemPrompt / HUMAN_FEEL_RULE",
   },
   {
+    id: "human_rhythm",
+    title: "真人节奏与自我展开控制",
+    detail: "控制自我展开频率，每几轮最多补一条自己的生活信息，优先记住对方细节并适时回扣，避免连续两轮都在讲自己。",
+    priority: 75,
+    source: "buildLayeredSystemPrompt / human_rhythm",
+  },
+  {
     id: "advancement_rule",
     title: "不能只接不推进",
     detail: "不要连续两轮只接不推进。对方冷场时，不能只回“嗯、哦、哈哈”把话题停住；必须根据当前人设选择一种自然的推进方式。",

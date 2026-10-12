@@ -16,7 +16,7 @@ export function resolveContactConfig(
   if (xingmuScope) {
     account = String(env?.CONTACT_WECHAT || env?.CONTACT_ACCOUNT || "").trim();
   } else if (sutangScope) {
-    account = overrideQq || String(env?.CONTACT_DOUBAN || env?.CONTACT_ACCOUNT || "").trim();
+    account = overrideQq || String(env?.CONTACT_DOUBAN || env?.CONTACT_ACCOUNT || "sutang2026").trim();
   } else {
     account = hasDeviceOverride
       ? overrideQq
