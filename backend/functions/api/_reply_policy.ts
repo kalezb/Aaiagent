@@ -599,7 +599,10 @@ export function sanitizeContactDisclosure(value, {
   const cleaned = segments.join("").trim();
   if (!cleaned) return fallback;
   if (!containsDisclosure(cleaned) && CONTACT_CHANNEL_PATTERN.test(cleaned) && /(?:加|给|发|留|联系).{0,8}(?:我|你)/iu.test(cleaned)) {
-    return fallback;
+    const isConditionalOrRefusal = /(?:才考虑|聊得久|久一点|看能不能|以后再|先不|不给|不发|不留|不加|不方便|等等看|熟了再|合适再)/u.test(cleaned);
+    if (!isConditionalOrRefusal) {
+      return fallback;
+    }
   }
   return cleaned;
 }
