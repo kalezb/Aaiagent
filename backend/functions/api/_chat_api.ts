@@ -1562,14 +1562,14 @@ export async function handleChatRequest({ request, env, context, path, method })
         {
           rule: "product_leak",
           reason: "xingmu_product_leak",
-          apply: (value) => agentRuleState.isEnabled("business_scope", true)
+          apply: (value) => (starSoulScope && agentRuleState.isEnabled("business_scope", true))
             ? sanitizeXingmuProductLeak(value, starSoulScope)
             : value,
         },
         {
           rule: "new_contact_business",
           reason: "premature_business_disclosure",
-          apply: (value) => agentRuleState.isEnabled("no_sales_pressure", true)
+          apply: (value) => (starSoulScope && agentRuleState.isEnabled("no_sales_pressure", true))
             ? sanitizeNewContactBusinessReply(
                 value,
                 stage,
@@ -1635,7 +1635,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         {
           rule: "spouse_perspective",
           reason: "spouse_perspective_fixed",
-          apply: (value) => agentRuleState.isEnabled("spouse_perspective", true)
+          apply: (value) => (activePersonaScope === "sutang" && agentRuleState.isEnabled("spouse_perspective", true))
             ? fixSpousePerspective(value)
             : value,
         },
