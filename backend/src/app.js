@@ -1558,6 +1558,8 @@ async function loadDrawers() {
     document.querySelectorAll("[data-drawer-delete]").forEach(function (button) {
       button.addEventListener("click", function () { deleteDrawerCard(button.dataset.drawerDelete); });
     });
+    autoResizeDrawerTextareas();
+    window.requestAnimationFrame(autoResizeDrawerTextareas);
     var n = (data.cards || []).length;
     if ($("drawerCount")) $("drawerCount").textContent = n + " 个";
   } catch (e) {
@@ -1583,6 +1585,13 @@ async function loadKnowledge() {
   }
 }
 
+function autoResizeDrawerTextareas() {
+  document.querySelectorAll("[data-drawer-content]").forEach(function (el) {
+    el.style.height = "auto";
+    el.style.height = Math.max(80, el.scrollHeight + 4) + "px";
+  });
+}
+
 function renderKnowledgeCards(cards) {
   var host = $("drawerCards");
   if (host) host.innerHTML = renderDrawerList(cards);
@@ -1600,6 +1609,8 @@ function bindDrawerCardActions() {
   document.querySelectorAll("[data-drawer-delete]").forEach(function (button) {
     button.onclick = function () { deleteDrawerCard(button.dataset.drawerDelete); };
   });
+  autoResizeDrawerTextareas();
+  window.requestAnimationFrame(autoResizeDrawerTextareas);
 }
 
 function setSharedFactValue(id, value) {
@@ -2723,6 +2734,13 @@ $("saveProgramRulesButton").addEventListener("click", saveProgramRuleSettings);
 document.querySelectorAll("[data-rule-tab]").forEach(function (button) {
   button.addEventListener("click", function () { showRuleTab(button.dataset.ruleTab); });
 });
+document.addEventListener("input", function (e) {
+  if (e.target && e.target.matches && e.target.matches("[data-drawer-content]")) {
+    e.target.style.height = "auto";
+    e.target.style.height = Math.max(80, e.target.scrollHeight + 4) + "px";
+  }
+});
+window.addEventListener("resize", autoResizeDrawerTextareas);
 if ($("ruleConflictLevelFilter")) {
   $("ruleConflictLevelFilter").addEventListener("change", renderAgentRuleConflicts);
 }

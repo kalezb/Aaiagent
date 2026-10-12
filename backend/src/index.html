@@ -807,12 +807,15 @@ button[data-lib-toggle][data-lib-next="0"]:hover {
   min-height: 80px;
   padding: 8px 10px;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
   border-radius: var(--radius-sm);
   background: #f8fafc;
   border: 1px solid var(--line);
   color: var(--text);
   resize: vertical;
+  field-sizing: content;
+  overflow-y: hidden;
+  box-sizing: border-box;
 }
 .drawer-field textarea:focus {
   background: #ffffff;
