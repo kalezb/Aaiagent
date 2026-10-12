@@ -115,7 +115,7 @@ const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" | "enabl
     title: "不把时间标记发出去",
     scope: "全部模型",
     detail: "给模型看的历史时间标记不能在回复里复述给客户。",
-    source: "sanitizeHumanVoice / assistant sanitizer",
+    source: "assistant sanitizer",
     recommendation: "keep_default",
   },
   {

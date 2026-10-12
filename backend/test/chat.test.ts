@@ -20,12 +20,8 @@ import {
   avoidRepeatedAssistantReply,
   capReplyLength,
   fixSpousePerspective,
-  sanitizeHumanVoice,
-  softenReflexiveQuestioning,
   isSelfMediaOffer,
   owesReplyFromHistory,
-  detectLateReplyToOldQuestion,
-  dropBusyReportSegments,
   isPhotoAuthenticityChallenge,
   detectContactMaritalStatus,
   detectContactMaritalStatus,
@@ -36,10 +32,8 @@ import {
   translateStickerContent,
   buildSituationTimeline,
   dropPhotoAdmissionClauses,
-  dropLateExcuseSegments,
   dropBlameSegmentsWhenOwing,
   dropAcceptedSelfMediaSegments,
-  stripSleepTopic,
   stripLateReplyExcuse,
   extractSelfLeaveInstruction,
   hasEvaluationQuote,
@@ -8661,40 +8655,7 @@ describe("monitoring sync and customer profile batching", () => {
     expect(matchActiveDrawers(drawers, "今天吃什么了")).toEqual([]);
   });
 
-  it("softens reflexive questioning after two question turns", () => {
-    const asked = [
-      { role: "assistant", content: "你今天忙不忙" },
-      { role: "assistant", content: "那你平时喜欢干啥" },
-    ];
-    expect(softenReflexiveQuestioning("我也是 累一天了|||你平时几点睡呀", asked))
-      .toBe("我也是 累一天了");
-    // 最近没怎么问过，就保留
-    expect(softenReflexiveQuestioning("我也是 累一天了|||你平时几点睡呀", [
-      { role: "assistant", content: "带娃在家窝了一天" },
-    ])).toBe("我也是 累一天了|||你平时几点睡呀");
-    // 只剩一句反问时不删，避免发空
-    expect(softenReflexiveQuestioning("你平时几点睡呀", asked)).toBe("你平时几点睡呀");
-    // 知识卡要求的反问不许被降频护栏删掉。
-    expect(softenReflexiveQuestioning("你问这个干嘛 想上门啊", asked)).toBe("你问这个干嘛 想上门啊");
-    expect(softenReflexiveQuestioning("我也累一天了|||你问这个干嘛", asked)).toBe("我也累一天了|||你问这个干嘛");
-    expect(softenReflexiveQuestioning("你替谁问的呀", asked)).toBe("你替谁问的呀");
-  });
-
-  it("flags the case where he answers her old question hours later", () => {
-    // 真机（稀奇）：她昨天问“你咋也还不睡呀”，他今天 9:58 才回“睡了”，
-    // 她却接着昨天的半句讲自己昨晚洗澡——答的不是今天这句。
-    const now = 1_800_000_000;
-    const late = detectLateReplyToOldQuestion(
-      [{ role: "user", content: "睡了", created_at: now }],
-      [{ role: "assistant", content: "还没呢 磨蹭了一会儿 你咋也还不睡呀", created_at: now - 12 * 3600 }],
-    );
-    expect(late?.hours).toBe(12);
-    expect(late?.herQuestion).toContain("你咋也还不睡");
-    // 他隔很久才回时，纯汇报自己忙的段直接删（提示词压不稳，真机上反复出现）
-    expect(dropBusyReportSegments("今天忙了一整天 单子多 刚歇下来")).toBe("");
-    expect(dropBusyReportSegments("今天忙了一天 你呢")).toBe("你呢");
-    expect(dropBusyReportSegments("昨晚我发完消息也就睡了")).toBe("昨晚我发完消息也就睡了");
-    expect(dropBusyReportSegments("今天忙了一天|||昨晚我发完就睡了")).toBe("昨晚我发完就睡了");
+  it("detects photo authenticity challenge and strips admissions", () => {
     // 2026-10-06 真机：他说“这是网图吧”，模型顺手认了（“嗯 网上找的”）——等于当场露馅。
     expect(isPhotoAuthenticityChallenge("这是网图吧")).toBe(true);
     expect(isPhotoAuthenticityChallenge("这不是你吧")).toBe(true);
@@ -8702,14 +8663,6 @@ describe("monitoring sync and customer profile batching", () => {
     expect(dropPhotoAdmissionClauses("嗯 网上找的")).toBe("");
     expect(dropPhotoAdmissionClauses("我自己拍的呀 你这话我可记住了")).toBe("我自己拍的呀 你这话我可记住了");
     expect(dropPhotoAdmissionClauses("我自己拍的呀|||其实是网上找的")).toBe("我自己拍的呀");
-    // 解释自己为什么才回也删
-    expect(dropLateExcuseSegments("你这句是昨晚说的 现在才看到 别怪我呀")).toBe("你这句是昨晚说的");
-    expect(dropLateExcuseSegments("昨晚我发完就睡了")).toBe("昨晚我发完就睡了");
-    // 正常来回（几分钟内）不算“隔很久才回”
-    expect(detectLateReplyToOldQuestion(
-      [{ role: "user", content: "睡啦", created_at: now }],
-      [{ role: "assistant", content: "在吗", created_at: now - 60 }],
-    )).toBe(null);
   });
 
   it("never sends time markers back to the contact", async () => {
@@ -8858,20 +8811,6 @@ describe("monitoring sync and customer profile batching", () => {
     expect(dropAcceptedSelfMediaSegments("这么晚了还秀腹肌呀")).toBe("这么晚了还秀腹肌呀");
   });
 
-  it("drops robotic greeting and service-tone segments", () => {
-    // 真机（孤影揽清风）：对方问"AI？"——聊天中途重新打招呼、客服式让对方点单。
-    const prior = [{ role: "assistant", content: "还没呢，一集剧追得停不下来" }];
-    expect(sanitizeHumanVoice("你好呀|||还没呢，一集剧追得停不下来", "还没休息呀", prior))
-      .toBe("还没呢，一集剧追得停不下来");
-    expect(sanitizeHumanVoice("行呀，那你想我怎么还|||换点简单的，你提提看", "你想我怎么还", prior))
-      .toBe("行呀，那你想我怎么还");
-    // 只有这一段时不删，避免发空
-    expect(sanitizeHumanVoice("换点简单的，你提提看", "你想我怎么还", prior))
-      .toBe("换点简单的，你提提看");
-    // 全新对话（还没有我方消息）时，打招呼是正常的
-    expect(sanitizeHumanVoice("你好呀", "在吗", [])).toBe("你好呀");
-  });
-
   it("fixes the spouse perspective in replies", () => {
     // 真机（仙逆）：对方说"你老公"指的是苏棠的老公，模型跟着叫"你老公"却讲自己的事。
     expect(fixSpousePerspective("你老公天天跑渠道 估计没空管我聊什么？"))
@@ -8894,35 +8833,6 @@ describe("monitoring sync and customer profile batching", () => {
     expect(fixed).not.toBe("刚关了电脑 屋里就剩");
     expect(fixed).not.toMatch(/剩$/u);
     // 他这句只有 4 个字：只回一条完整的短句（不许是“刚关了电脑 屋里就剩”这种半句）。
-  });
-
-  it("strips the night-time sleep topic from replies", () => {
-    // 真机：半夜跟陌生人聊天，模型张口就是“这么晚还没睡呢”“你怎么还不睡”。
-    expect(stripSleepTopic("你好呀，这么晚还没睡呢", "你好呀")).toBe("你好呀");
-    expect(stripSleepTopic("晚上好呀，这么晚还没歇着呢", "在干嘛呢")).toBe("晚上好呀");
-    expect(stripSleepTopic("行呀 我正好也没睡意|||你咋这么晚还精神着呢", "聊会儿呗")).toBe("行呀");
-    expect(stripSleepTopic("怎么啦，忙一天了呀|||这个点还没歇，是刚忙完？", "今天好累啊"))
-      .toBe("怎么啦，忙一天了呀");
-    expect(stripSleepTopic("行呀|||你那边怎么也这么精神？", "聊会儿呗")).toBe("行呀");
-    // 线上第二次实测漏的两条
-    expect(stripSleepTopic("这会儿还没睡呀|||正好我屋里就剩这盏灯亮着呢", "聊会儿呗"))
-      .toBe("正好我屋里就剩这盏灯亮着呢");
-    expect(stripSleepTopic("还没定呢，看这剧能不能放我一马？|||你这么问，是想陪我熬呀", "你几点睡啊"))
-      .toBe("还没定呢，看这剧能不能放我一马？|||你这么问，是想陪我熬呀");
-    // 线上实测又漏了两条（空格分隔的尾巴）
-    expect(stripSleepTopic("你也好呀 这么晚还醒着", "你好呀")).toBe("你也好呀");
-    // 2026-10-06：全被删光时保留原文，不再顶一句莫名其妙的兜底话
-    // （真机出现过“对方说要睡了”却回“嗯，你说说看”）
-    expect(stripSleepTopic("这么晚还没歇着，是累在哪儿了呀", "今天好累啊"))
-      .toBe("这么晚还没歇着，是累在哪儿了呀");
-    // 对方自己说要睡了：整条不过滤，回“早点睡”这类是对的
-    expect(stripSleepTopic("那你早点睡 明晚见", "宝子你，先看吧。我就先睡觉了，明晚继续"))
-      .toBe("那你早点睡 明晚见");
-    // 对方先问睡，事实回答要留着
-    expect(stripSleepTopic("还没有呢 正窝着刷手机", "睡了吗")).toBe("还没有呢 正窝着刷手机");
-    // 别把正常句子误删
-    expect(stripSleepTopic("带娃在家窝了一天 哪也没去呢|||你呢 今天忙不忙", "今天干啥了"))
-      .toBe("带娃在家窝了一天 哪也没去呢|||你呢 今天忙不忙");
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {

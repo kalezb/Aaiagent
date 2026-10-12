@@ -1854,58 +1854,6 @@ export function sanitizeGroundingMismatch(value, incomingText, historyMessages =
     .trim();
 }
 
-/**
- * 2026-10-06：真人不会每轮都反问。最近两条我方回复里已经问过，这条又不带别的信息、
- * 纯粹是一句反问，就删掉；只剩这一句时保留（避免发空）。
- */
-export function softenReflexiveQuestioning(value, historyMessages = []) {
-  const text = String(value || "").trim();
-  if (!text) return text;
-  const recentAssistant = (Array.isArray(historyMessages) ? historyMessages : [])
-    .filter((message) => message && message.role === "assistant")
-    .map((message) => String(message.content || ""))
-    .slice(-3);
-  // 问句判定：句尾问号，或最后 6 个字里带疑问词（忙不忙、干啥、几点…）。
-  const looksLikeQuestion = (segment) => {
-    const text = String(segment || "").trim();
-    if (/[？?]\s*$/u.test(text)) return true;
-    return /(?:吗|嘛|么|呢|吧|不|没|没有|行不行|好不好|对不对|忙不忙|干啥|干嘛|做什么|咋样|怎么样|是不是|要不要|有没有|能不能|几岁|多大|什么|怎么|为什么|哪儿|哪里|多少|几点|多久)/u.test(text.slice(-6));
-  };
-  // 上一轮已经问过了，这一轮就不许再问（三四轮问一次的目标靠这条兜住）。
-  // 卡片要求的反问（他打探独处/婚姻/身体时"你问这个干嘛""想上门啊"）不能删，那是拿捏节奏的关键。
-  const cardQuestion = /(?:你问这个|想上门|你懂的|干嘛呀|问这么细|查户口|你倒是说说|你替谁问)/u;
-  const askedRecently = recentAssistant.slice(-2).filter(looksLikeQuestion).length >= 1;
-  if (!askedRecently) return text;
-  const segments = text.split("|||").map((segment) => segment.trim()).filter(Boolean);
-  const kept = segments.filter((segment) => !looksLikeQuestion(segment) || cardQuestion.test(segment));
-  if (!kept.length || kept.length === segments.length) return text;
-  return kept.join("|||");
-}
-
-const BARE_GREETING_SEGMENT =
-  /^(?:你好呀|你也好呀?|你好|您好|嗨|哈喽|在吗|在的呢|晚上好|早上好|中午好|下午好)[呀啊哦呢吧]?$/u;
-const SERVICE_TONE_SEGMENT =
-  /(?:你提提看|你提个|你说了算|你说吧|你安排|你决定就好|我听你的|都可以呀|你挑一个|换点简单的)/u;
-
-/**
- * 2026-10-06 真机（孤影揽清风）：对方直接问“AI？”。两个机器味特征：
- * 1) 聊天已经在进行了，她还重新“你好呀”打招呼；2) 客服式让对方“你提提看”点单。
- */
-export function sanitizeHumanVoice(value, incomingText = "", historyMessages = []) {
-  const text = String(value || "").trim();
-  if (!text) return text;
-  const hasPriorAssistant = (Array.isArray(historyMessages) ? historyMessages : [])
-    .some((message) => message && message.role === "assistant");
-  const segments = text.split("|||").map((segment) => segment.trim()).filter(Boolean);
-  const kept = segments.filter((segment) => {
-    if (hasPriorAssistant && BARE_GREETING_SEGMENT.test(segment)) return false;
-    if (SERVICE_TONE_SEGMENT.test(segment)) return false;
-    return true;
-  });
-  if (!kept.length || kept.length === segments.length) return text;
-  return kept.join("|||");
-}
-
 export function sanitizeXingmuIdentity(value, incomingText, xingmuScope = true, fixedAge = 0) {
   const reply = String(value || "").trim();
   if (!xingmuScope || !reply) return reply;
@@ -2038,62 +1986,7 @@ export function sanitizeAgeConsistency(value, incomingText, fixedAge = 0) {
     .filter((part) => part.length > 0)
     .join("")
     .trim();
-}
-
-/**
- * 2026-10-06 真机：半夜跟陌生人聊天，模型张口就是“这么晚还没睡呢”“你怎么还不睡”。
- * 提示词里已经写了“别拿睡觉当话题”，但模型照样问，所以这里做代码级兜底：
- * 按标点/空格拆小句，把“问对方睡不睡、说对方还没睡、劝睡、报自己几点睡”的小句删掉。
- * 对方先提睡觉时，只保留事实性回答（“还没有呢”），不删；全删光则保留原回复，避免空回复。
- */
-export function stripSleepTopic(value, incomingText = "") {
-  const text = String(value || "").trim();
-  if (!text) return text;
-  const incomingText2 = String(incomingText || "");
-  const incomingAboutSleep = /(睡|歇|困|晚安|熬夜|眯)/u.test(incomingText2);
-  // 2026-10-06 真机（善良的小香香）：他说“宝子你，先看吧。我就先睡觉了，明晚继续”，
-  // 回复被这条过滤器当成“睡话题”删光，顶上了一句莫名其妙的“嗯，你说说看”。
-  // 对方自己要睡/要休息时，回一句“早点睡/去吧”本来就是对的——整条不过滤。
-  // 注意只认“他要走了”的表述；他单纯问“睡了吗”不算（那种情况下照旧过滤反问）。
-  if (/(?:先睡|要睡|去睡|睡觉去|去睡了|我睡了|休息了|晚安|明晚|明天再聊|改天聊|不聊了|下线了)/u.test(incomingText2)) return text;
-  const segments = text.split("|||").map((part) => part.trim()).filter(Boolean);
-  const cleaned = [];
-  let dropped = false;
-  let factualAnswerUsed = false;
-  for (const segment of segments) {
-    const clauses = segment.split(/[，,。；;！!？?\s]+/u).map((part) => part.trim()).filter(Boolean);
-    // 命中的小句通常是一段话的引子，后面半句是它的尾巴（“这么晚还没歇，是刚忙完？”），
-    // 所以从命中那句开始整段尾巴一起删，避免留下“是刚忙完”这种断句。
-    let hitIndex = -1;
-    for (let index = 0; index < clauses.length; index += 1) {
-      if (!isSleepTopicClause(clauses[index], incomingAboutSleep)) continue;
-      // 对方先问睡时，允许留最前面那句短的事实回答（还没呢 / 睡了），其余照样删。
-      if (incomingAboutSleep && !factualAnswerUsed && index === 0 && isFactualSleepAnswer(clauses[index])) {
-        factualAnswerUsed = true;
-        continue;
-      }
-      hitIndex = index;
-      break;
-    }
-    if (hitIndex < 0) {
-      cleaned.push(segment);   // 这一段没问题就原样保留，不要重排它的标点
-      continue;
-    }
-    dropped = true;
-    const keptClauses = clauses.slice(0, hitIndex);
-    if (keptClauses.length) cleaned.push(keptClauses.join("，"));
-  }
-  // 什么都没删就原样返回：以前这里会无条件重新拼接，把“哈哈 先聊点别的”变成“哈哈，先聊点别的”。
-  if (!dropped) return text;
-  const result = cleaned.join("|||").replace(/^[，,。\s]+|[，,。\s]+$/gu, "");
-  if (result) return result;
-  // 2026-10-06：原来这里会顶一句中性的兜底话，真机上出现过“对方说要睡了”却回“嗯，你说说看”这种废句。
-  // 现在改成保留模型原本的回复——宁可留一句稍微带“睡”的话，也不要发一句驴唇不对马嘴的。
-  return text;
-}
-
-const NEUTRAL_SLEEP_FREE_FALLBACKS = ["在呢，你接着说", "嗯，你说说看", "那你接着说，我听着呢"];
-/** 整条回复都是以前说过的话时，用这些不重复的短句顶上（避免原样重发）。 */
+}/** 整条回复都是以前说过的话时，用这些不重复的短句顶上（避免原样重发）。 */
 const REPEAT_NEUTRAL_CONTINUATIONS = ["嗯 你接着说", "那你呢", "我在听呢", "然后呢"];
 
 function hashText(value) {
@@ -2103,28 +1996,6 @@ function hashText(value) {
     hash = (hash * 31 + text.charCodeAt(index)) | 0;
   }
   return hash;
-}
-
-function isFactualSleepAnswer(clause) {
-  const text = String(clause || "").replace(/\s+/gu, "");
-  if (/(?:你|您)/u.test(text)) return false;
-  return /^(?:还没|没呢|没睡|睡了|刚躺下|刚睡|正躺着|还在刷|还在看)/u.test(text);
-}
-
-function isSleepTopicClause(clause, incomingAboutSleep) {
-  const text = String(clause || "").replace(/\s+/gu, "");
-  if (!text) return false;
-  // 对方没提睡觉：只要这句带睡/歇/困/熬，一律删（“这会儿还没睡呀”也在这里被删掉）。
-  if (!incomingAboutSleep && /(?:睡|歇|困|熬夜|眯)/u.test(text)) return true;
-  // “这么晚还没睡呢 / 这个点还没歇 / 咋还这么精神”这一类，不管有没有“你”都要删。
-  if (/(?:这么晚|这个点|大半夜|这会儿|咋还|怎么还|怎么也|怎么这么|还不|还这么).{0,6}(?:精神|醒着|没睡|不睡|没歇|不歇|睡不着)/u.test(text)) {
-    return true;
-  }
-  if (/(?:你|您)/u.test(text) && /(?:睡|歇|困|熬夜|醒着)/u.test(text)) return true;
-  if (/(?:几点睡|睡了吗|睡没睡|睡不睡|早点睡|快去睡|该睡了|洗洗睡)/u.test(text)) return true;
-  if (!incomingAboutSleep && /(?:我|自己)/u.test(text) && /(?:睡|歇|困|没睡意|不想睡)/u.test(text)) return true;
-  if (!incomingAboutSleep && /(?:没睡意|准备睡|要睡了|先睡了)/u.test(text)) return true;
-  return false;
 }
 
 /**
@@ -2787,27 +2658,7 @@ export function buildDaypartRule(currentDatetime) {
   return "【时段约束】现在是" + part.label + "。问候只能用“" + part.greeting + "”这一类的说法；" + forbidden + "。";
 }
 
-/**
- * 2026-10-06 真机（稀奇）：她昨天问“你咋也还不睡呀”，他今天 9:58 才回一句“睡了”，
- * 她却接着昨天的半句讲自己“昨晚洗到一半就困得不行 倒头就睡了”——完全不是对今天这句的回应。
- * 这里判断“他隔了很久才回你上一句”，好在提示词里点名。
- */
-export function detectLateReplyToOldQuestion(messages, historyMessages = []) {
-  const list = [
-    ...(Array.isArray(historyMessages) ? historyMessages : []),
-    ...(Array.isArray(messages) ? messages : []),
-  ].filter((message) => message && String(message.content || "").trim());
-  if (list.length < 2) return null;
-  const incoming = list[list.length - 1];
-  const previous = list[list.length - 2];
-  if (incoming.role !== "user" || previous.role !== "assistant") return null;
-  const gapSeconds = Number(incoming.created_at || 0) - Number(previous.created_at || 0);
-  if (!(gapSeconds >= 3 * 60 * 60)) return null;
-  return {
-    hours: Math.max(1, Math.round(gapSeconds / 3600)),
-    herQuestion: String(previous.content || "").split("|||")[0].trim().slice(0, 24),
-  };
-}
+
 
 /**
  * 识别陌生人发送的“半截话”、断句、叹气或碎片词
@@ -2863,53 +2714,7 @@ export function buildFragmentedMessageGuidance(incomingText: string, historyMess
   return `【半截话承接（情商拉满）】对方发了没头没尾的半截话“${trimmed}”。绝对不要脑补猜测具体发生何事，用成熟姐姐的高位慵懒语气抓情绪推拉（例如“话讲一半 吊谁胃口呢？”、“打字手滑了？”、“叹什么气 谁惹你了？”、“想说什么直接说 吞吞吐吐的”）。`;
 }
 
-/**
- * 2026-10-06 稀奇：他隔夜回一句“睡了”，模型反复回“今天忙了一整天 单子多 刚歇下来”这类汇报。
- * 提示词写了也压不稳，所以命中“他隔很久才回”时，纯汇报自己忙的段直接删掉（只删不换）。
- */
-const BUSY_REPORT_PATTERN = /(?:今天忙|忙了一整天|忙一天|忙一天了|单子多|刚闲下来|刚歇下来|刚忙完|忙到现在|一直在忙|刚从店|刚下班|忙得脚不沾地)/u;
-// “才看到你这条 / 现在才看到 / 别怪我呀”也是解释自己为什么晚回，同样不该出现在他隔很久才回之后。
-export function dropLateExcuseSegments(value) {
-  return dropMatchingClauses(value, LATE_REPLY_EXCUSE);
-}
-/**
- * 按小句删：整段里只有“今天忙了一天”这种小句被删掉，剩下还能用的部分留着。
- * 2026-10-06：一开始整段删，结果他的“睡啦”被删光，回了一句“嗯 我在呢”，答非所问。
- */
-function dropMatchingClauses(value, pattern) {
-  const text = String(value || "").trim();
-  if (!text) return text;
-  const segments = text.split("|||").map((segment) => segment.trim()).filter(Boolean);
-  const keptSegments = [];
-  let changed = false;
-  for (const segment of segments) {
-    // 空格也算分隔（“今天忙了一天 你呢”），但空格本身不保留。
-    const clauses = segment.split(/([，,。；;！!？?])|\s+/u).filter((part) => part !== undefined);
-    const pieces = [];
-    let segmentHit = false;
-    for (const part of clauses) {
-      if (/^[，,。；;！!？?]$/u.test(part)) {
-        pieces.push(part);
-        continue;
-      }
-      if (pattern.test(part)) {
-        changed = true;
-        segmentHit = true;
-        continue;
-      }
-      pieces.push(part);
-    }
-    const cleaned = pieces.join("").replace(/^[，,。；;！!？?\s]+|[，,。；;！!？?\s]+$/gu, "").trim();
-    if (cleaned) keptSegments.push(cleaned);
-    else if (segmentHit) changed = true;
-  }
-  if (!changed) return text;
-  return keptSegments.join("|||");
-}
 
-export function dropBusyReportSegments(value) {
-  return dropMatchingClauses(value, BUSY_REPORT_PATTERN);
-}
 
 function messageEpochOf(message) {
   const value = Number(message?.created_at ?? message?.createdAt ?? 0);
