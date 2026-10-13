@@ -55,7 +55,6 @@ class MainActivity : ComponentActivity() {
     private var personaVerifyStatus by mutableStateOf("")
     private var tokenVerifyStatus by mutableStateOf("")
     private var platformSyncStatus by mutableStateOf("")
-    private var voiceTestStatus by mutableStateOf("")
 
     // 天气/时间感知
     private var weatherEnabled by mutableStateOf(true)
@@ -220,7 +219,6 @@ class MainActivity : ComponentActivity() {
                     personaVerifyStatus = personaVerifyStatus, onVerifyPersona = { verifyPersona() },
                     tokenVerifyStatus = tokenVerifyStatus, onVerifyToken = { verifyToken() },
                     platformSyncStatus = platformSyncStatus, onSyncPlatform = { syncPlatform(it) },
-                    voiceTestStatus = voiceTestStatus, onVoiceTest = { runVoiceTest() },
                     voiceReplyEnabled = voiceReplyEnabled, onVoiceReplyToggle = { toggleVoiceReply(it) },
                     voiceOutputMode = voiceOutputMode, onVoiceOutputChange = { changeVoiceOutputMode(it) },
                     selfNickname = selfNickname, onSelfNicknameChange = { changeSelfNickname(it) },
@@ -445,26 +443,6 @@ class MainActivity : ComponentActivity() {
             )
         }
         android.util.Log.d("AIA", "self nickname changed length=${normalized.length}")
-    }
-
-    /**
-     * 手动跑一次语音发送，用来在真机上验证"点录音 → 暂停 → 发语音"这条链路。
-     *
-     * 只发一条、不参与自动回复；接入配音和注入之前先靠它确认手脚能动。
-     * 按之前请先停在目标联系人的 Soul 聊天页。
-     */
-    private fun runVoiceTest() {
-        val engine = com.aaiagent.service.AssistantAccessibilityService.sharedEngine
-        if (engine == null) {
-            voiceTestStatus = "✗ 无障碍服务未启动"
-            return
-        }
-        voiceTestStatus = "正在合成配音…"
-        lifecycleScope.launch {
-            voiceTestStatus = withContext(Dispatchers.Main.immediate) {
-                engine.runVoiceSendTest()
-            }
-        }
     }
 
     private fun syncPlatform(platform: String) {

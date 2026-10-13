@@ -216,18 +216,21 @@ class DashboardUiPolicyTest {
     }
 
     @Test
-    fun `voice send test row stays in its own source file`() {
+    fun `voice send test entry is removed`() {
         val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
-        val row = readSource("src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt")
+        val main = readSource("src/main/java/com/aaiagent/MainActivity.kt")
+        val deletedFiles = listOf(
+            File("src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt"),
+            File("app/src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt"),
+            File("android/app/src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt"),
+        )
 
-        assertFalse(
-            "语音发送测试不能继续留在看板大文件里",
-            screen.contains("private fun VoiceSendTestRow("),
-        )
-        assertTrue(
-            "语音发送测试应该放在单独的小文件里",
-            row.contains("internal fun VoiceSendTestRow("),
-        )
+        assertFalse("看板里不能继续出现语音发送测试入口", screen.contains("VoiceSendTestRow"))
+        assertFalse("看板不能再传语音测试状态", screen.contains("voiceTestStatus"))
+        assertFalse("看板不能再传语音测试点击动作", screen.contains("onVoiceTest"))
+        assertFalse("手机端不能继续保存语音测试状态", main.contains("voiceTestStatus"))
+        assertFalse("手机端不能继续保留语音测试点击动作", main.contains("runVoiceTest"))
+        assertTrue("语音发送测试单独文件应该已经删掉", deletedFiles.none(File::exists))
     }
 
     private fun readSource(relative: String): String {

@@ -208,8 +208,6 @@ fun DashboardScreen(
     onVerifyToken: () -> Unit,
     platformSyncStatus: String,
     onSyncPlatform: (String) -> Unit,
-    voiceTestStatus: String,
-    onVoiceTest: () -> Unit,
     voiceReplyEnabled: Boolean,
     onVoiceReplyToggle: (Boolean) -> Unit,
     voiceOutputMode: String,
@@ -342,8 +340,6 @@ fun DashboardScreen(
             personaVerifyStatus = personaVerifyStatus,
             onVerifyPersona = onVerifyPersona,
             platformSyncStatus = platformSyncStatus,
-            voiceTestStatus = voiceTestStatus,
-            onVoiceTest = onVoiceTest,
             voiceReplyEnabled = voiceReplyEnabled,
             onVoiceReplyToggle = onVoiceReplyToggle,
             voiceOutputMode = voiceOutputMode,
@@ -945,8 +941,6 @@ private fun PlatformPersonaCard(
     personaVerifyStatus: String,
     onVerifyPersona: () -> Unit,
     platformSyncStatus: String,
-    voiceTestStatus: String,
-    onVoiceTest: () -> Unit,
     voiceReplyEnabled: Boolean,
     onVoiceReplyToggle: (Boolean) -> Unit,
     voiceOutputMode: String,
@@ -1046,12 +1040,6 @@ private fun PlatformPersonaCard(
             VoiceOutputRow(
                 mode = voiceOutputMode,
                 onModeChange = onVoiceOutputChange
-            )
-            RowDivider()
-            VoiceSendTestRow(
-                status = voiceTestStatus,
-                mode = voiceOutputMode,
-                onTest = onVoiceTest
             )
             RowDivider()
             SelfNicknameRow(
