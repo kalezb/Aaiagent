@@ -215,6 +215,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `voice send test row stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val row = readSource("src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt")
+
+        assertFalse(
+            "语音发送测试不能继续留在看板大文件里",
+            screen.contains("private fun VoiceSendTestRow("),
+        )
+        assertTrue(
+            "语音发送测试应该放在单独的小文件里",
+            row.contains("internal fun VoiceSendTestRow("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
