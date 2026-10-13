@@ -743,63 +743,6 @@ private fun StatCard(
 }
 
 @Composable
-private fun HostingModeSelector(
-    hostingMode: HostingMode,
-    onHostingModeChange: (HostingMode) -> Unit
-) {
-    val modes = listOf(
-        Triple(HostingMode.FULL_AUTO, DashboardUiPolicy.hostingModeLabel(HostingMode.FULL_AUTO), Icons.Default.Bolt),
-        Triple(HostingMode.SEMI_AUTO, DashboardUiPolicy.hostingModeLabel(HostingMode.SEMI_AUTO), Icons.Default.EditNote),
-        Triple(HostingMode.MONITOR_ONLY, DashboardUiPolicy.hostingModeLabel(HostingMode.MONITOR_ONLY), Icons.Default.Visibility)
-    )
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(17.dp),
-        color = SkySurfaceRaised,
-        border = BorderStroke(1.dp, SkyLine)
-    ) {
-        Row(
-            Modifier.padding(5.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            modes.forEach { (mode, label, icon) ->
-                val selected = hostingMode == mode
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onHostingModeChange(mode) },
-                    shape = RoundedCornerShape(13.dp),
-                    color = if (selected) SkySurface else Color.Transparent,
-                    border = if (selected) BorderStroke(1.dp, SkyBlue.copy(alpha = 0.28f)) else null
-                ) {
-                    Column(
-                        Modifier.padding(vertical = 13.dp, horizontal = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = if (selected) SkyBlue else SkyTextMuted,
-                            modifier = Modifier.size(21.dp)
-                        )
-                        Spacer(Modifier.height(5.dp))
-                        Text(
-                            text = label,
-                            color = if (selected) SkyBlue else SkyTextSecondary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun QuickManagement(
     permissions: PermissionStatus,
     context: Context,

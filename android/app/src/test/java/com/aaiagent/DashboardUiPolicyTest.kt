@@ -245,6 +245,21 @@ class DashboardUiPolicyTest {
         assertFalse("没人用的地址输入小块不能继续留在看板里", screen.contains("private fun AddressField("))
     }
 
+    @Test
+    fun `hosting mode selector stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val selector = readSource("src/main/java/com/aaiagent/ui/screens/DashboardHostingModeSelector.kt")
+
+        assertFalse(
+            "托管方式选择器不能继续留在看板大文件里",
+            screen.contains("private fun HostingModeSelector("),
+        )
+        assertTrue(
+            "托管方式选择器应该放在单独的小文件里",
+            selector.contains("internal fun HostingModeSelector("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
