@@ -5377,6 +5377,7 @@ describe("customer dashboard and cross-platform memory", () => {
   it("ships the clean customer dashboard layout and profile panel", () => {
     const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
     const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const utils = readFileSync(new URL("../src/dashboard-utils.js", import.meta.url), "utf8");
     expect(html).toMatch(/grid-template-columns: (?:320px minmax\(420px, 1fr\) 300px|280px 1fr 280px)/);
     expect(html).toMatch(/--(?:green|blue): #(?:22c55e|0ea5e9)/);
     expect(html).toContain('id="profilePlatformLinks"');
@@ -5384,11 +5385,11 @@ describe("customer dashboard and cross-platform memory", () => {
     expect(html).toContain('id="mobileProfileButton"');
     expect(html).toContain("不同平台的同一个人会合在一起");
     expect(source).toContain("function renderProfilePanel(group)");
-    expect(source).toContain('class="pf ${active.has(platform.id)');
+    expect(utils).toContain('class="pf ${active.has(platform.id)');
     // 2026-10-07 学 LinkPilot 的两样：时间来源标签 + 非文字消息语义标签。
-    expect(source).toContain("function kindLabel(timeKind)");
+    expect(utils).toContain("function kindLabel(timeKind)");
     expect(source).toContain("function messageBody(message)");
-    expect(source).toContain("first_observed: \"读到\"");
+    expect(utils).toContain("first_observed: \"读到\"");
     expect(source).toContain("content-chip");
     expect(html).toContain(".kind-label");
     expect(html).toContain(".content-chip");
