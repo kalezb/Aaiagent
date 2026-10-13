@@ -192,6 +192,29 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `toggle row and switch stay in their own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val row = readSource("src/main/java/com/aaiagent/ui/screens/DashboardToggleRow.kt")
+
+        assertFalse(
+            "开关设置行不能继续留在看板大文件里",
+            screen.contains("private fun ToggleRow("),
+        )
+        assertFalse(
+            "小开关不能继续留在看板大文件里",
+            screen.contains("private fun SkySwitch("),
+        )
+        assertTrue(
+            "开关设置行应该放在单独的小文件里",
+            row.contains("internal fun ToggleRow("),
+        )
+        assertTrue(
+            "小开关应该和开关设置行放在一起",
+            row.contains("internal fun SkySwitch("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),

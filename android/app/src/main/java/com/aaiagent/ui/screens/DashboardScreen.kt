@@ -908,35 +908,6 @@ private fun QuickManagement(
 }
 
 @Composable
-private fun ToggleRow(
-    icon: ImageVector,
-    title: String,
-    checked: Boolean,
-    accent: Color,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        QuickIcon(icon, accent)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = SkyText,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        SkySwitch(checked = checked, onCheckedChange = null)
-    }
-}
-
-@Composable
 internal fun QuickIcon(icon: ImageVector, accent: Color) {    Surface(
         modifier = Modifier.size(40.dp),
         shape = RoundedCornerShape(12.dp),
@@ -1467,51 +1438,6 @@ internal fun StyledTextField(
                 modifier = Modifier.fillMaxWidth()
             )
         }
-    }
-}
-
-@Composable
-private fun SkySwitch(
-    checked: Boolean,
-    onCheckedChange: ((Boolean) -> Unit)?,
-    darkBackground: Boolean = false
-) {
-    val trackColor by animateColorAsState(
-        targetValue = if (checked) {
-            if (darkBackground) Color.White.copy(alpha = 0.28f) else SkyBlue
-        } else {
-            SkyLineStrong
-        },
-        animationSpec = tween(180),
-        label = "track"
-    )
-    val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 20.dp else 2.dp,
-        animationSpec = tween(180),
-        label = "thumb"
-    )
-    val clickableModifier = if (onCheckedChange == null) {
-        Modifier
-    } else {
-        Modifier.clickable { onCheckedChange(!checked) }
-    }
-
-    Box(
-        modifier = Modifier
-            .then(clickableModifier)
-            .width(46.dp)
-            .height(26.dp)
-            .clip(CircleShape)
-            .background(trackColor),
-        contentAlignment = Alignment.CenterStart
-    ) {
-        Box(
-            Modifier
-                .offset(x = thumbOffset)
-                .size(20.dp)
-                .clip(CircleShape)
-                .background(Color.White)
-        )
     }
 }
 
