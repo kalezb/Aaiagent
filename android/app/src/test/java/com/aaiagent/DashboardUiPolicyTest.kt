@@ -324,6 +324,29 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `quick management stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val management = readSource("src/main/java/com/aaiagent/ui/screens/DashboardQuickManagement.kt")
+
+        assertFalse(
+            "快捷管理不能继续留在看板大文件里",
+            screen.contains("private fun QuickManagement("),
+        )
+        assertFalse(
+            "快捷管理用的分隔线不能继续留在看板大文件里",
+            screen.contains("private fun RowDivider("),
+        )
+        assertTrue(
+            "快捷管理应该放在单独的小文件里",
+            management.contains("internal fun QuickManagement("),
+        )
+        assertTrue(
+            "快捷管理需要一起搬走的线路切换应该在同一个文件里",
+            management.contains("private fun LineSwitchRow("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),

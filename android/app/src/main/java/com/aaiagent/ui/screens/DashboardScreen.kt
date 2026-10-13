@@ -146,7 +146,6 @@ private enum class ContactKind {
     WHITELIST,
     BLACKLIST
 }
-
 fun checkPermissionStatus(context: Context): PermissionStatus {
     val accessibility = runCatching {
         Settings.Secure.getString(
@@ -415,110 +414,6 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun QuickManagement(
-    permissions: PermissionStatus,
-    context: Context,
-    weatherEnabled: Boolean,
-    onWeatherToggle: (Boolean) -> Unit,
-    timeEnabled: Boolean,
-    onTimeToggle: (Boolean) -> Unit,
-    lineA: Boolean,
-    onLineChange: (Boolean) -> Unit,
-    lineHealthA: ModelLineHealthState,
-    lineHealthB: ModelLineHealthState,
-    lineHealthMessage: String
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = SkySurfaceRaised,
-        border = BorderStroke(1.dp, SkyLine)
-    ) {
-        Column {
-            PermissionRow(
-                icon = Icons.Default.AccessibilityNew,
-                title = "无障碍服务",
-                granted = permissions.accessibility,
-                accent = SkyCyan,
-                onClick = {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-            )
-            RowDivider()
-            PermissionRow(
-                icon = Icons.Default.Notifications,
-                title = "通知监听",
-                granted = permissions.notification,
-                accent = SkyBlue,
-                onClick = {
-                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                }
-            )
-            RowDivider()
-            PermissionRow(
-                icon = Icons.Default.BatteryChargingFull,
-                title = "电池优化",
-                granted = permissions.batteryOptimization,
-                accent = SkyWarm,
-                onClick = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                        )
-                    }
-                }
-            )
-            RowDivider()
-            PermissionRow(
-                icon = Icons.Default.PictureInPictureAlt,
-                title = "悬浮窗权限",
-                granted = permissions.overlay,
-                accent = SkyGreen,
-                onClick = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                        )
-                    }
-                }
-            )
-            RowDivider()
-            ToggleRow(
-                icon = Icons.Default.Cloud,
-                title = "天气感知",
-                checked = weatherEnabled,
-                accent = SkyBlue,
-                onCheckedChange = onWeatherToggle
-            )
-            RowDivider()
-            ToggleRow(
-                icon = Icons.Default.Schedule,
-                title = "时间感知",
-                checked = timeEnabled,
-                accent = SkyCyan,
-                onCheckedChange = onTimeToggle
-            )
-            RowDivider()
-            LineSwitchRow(
-                lineA = lineA,
-                onLineChange = onLineChange,
-                healthA = lineHealthA,
-                healthB = lineHealthB,
-                statusMessage = lineHealthMessage
-            )
-        }
-    }
-}
-
-@Composable
 internal fun QuickIcon(icon: ImageVector, accent: Color) {    Surface(
         modifier = Modifier.size(40.dp),
         shape = RoundedCornerShape(12.dp),
@@ -533,16 +428,6 @@ internal fun QuickIcon(icon: ImageVector, accent: Color) {    Surface(
             )
         }
     }
-}
-
-@Composable
-private fun RowDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 64.dp)            .height(1.dp)
-            .background(SkyLine)
-    )
 }
 
 @Composable
@@ -910,89 +795,6 @@ internal fun StyledTextField(
                 ),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-@Composable
-private fun modelLineHealthColor(state: ModelLineHealthState): Color = when (state) {
-    ModelLineHealthState.CONNECTED -> SkyGreen
-    ModelLineHealthState.FAILED -> SkyDanger
-    ModelLineHealthState.CHECKING,
-    ModelLineHealthState.UNKNOWN -> SkyWarm
-}
-
-@Composable
-private fun LineSwitchRow(
-    lineA: Boolean,
-    onLineChange: (Boolean) -> Unit,
-    healthA: ModelLineHealthState,
-    healthB: ModelLineHealthState,
-    statusMessage: String
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.SwapHoriz,
-                contentDescription = null,
-                tint = SkyCyan,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = "线路切换",
-                color = SkyText,
-                fontSize = 15.sp,
-                modifier = Modifier.weight(1f)
-            )
-            listOf(
-                Triple(true, "线路A", healthA),
-                Triple(false, "线路B", healthB)
-            ).forEach { (value, label, health) ->
-                val selected = lineA == value
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (selected) SkyBlue else SkySurface,
-                    border = BorderStroke(1.dp, if (selected) SkyBlue else SkyLineStrong),
-                    modifier = Modifier
-                        .padding(start = 6.dp)
-                        .clickable { onLineChange(value) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(modelLineHealthColor(health))
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = label,
-                            color = if (selected) Color.White else SkyTextMuted,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            }
-        }
-        if (statusMessage.isNotBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = statusMessage,
-                color = when {
-                    statusMessage.startsWith("✓") -> SkyGreen
-                    statusMessage.startsWith("✗") -> SkyDanger
-                    else -> SkyWarm
-                },
-                fontSize = 12.sp
             )
         }
     }
