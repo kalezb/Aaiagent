@@ -9,7 +9,10 @@ describe("structure size guard", () => {
       ["../functions/api/_emoji_pragmatics_data.ts", 700],
       ["../functions/api/_persona_drawers_data.ts", 850],
       ["../functions/api/_agent_rule_inventory_data.ts", 750],
-      ["../src/app.js", 2950],
+      ["../src/app.js", 1200],
+      ["../src/dashboard-library.js", 320],
+      ["../src/dashboard-rules.js", 1150],
+      ["../src/dashboard-init.js", 400],
       ["chat-core.test.ts", 1200],
       ["chat-boundaries.test.ts", 1550],
       ["chat-history-reply.test.ts", 1550],
@@ -31,6 +34,14 @@ describe("structure size guard", () => {
 
     expect(replyPolicy).not.toMatch(/from "\.\/(?:_chat_api|_chat_confirm_api|route)"/u);
     expect(chatConfirm).not.toMatch(/from "\.\/(?:_chat_api|route)"/u);
-    expect(dashboardHtml.indexOf("dashboard-utils.js")).toBeLessThan(dashboardHtml.indexOf("app.js"));
+    const utilsIndex = dashboardHtml.indexOf("dashboard-utils.js");
+    const appIndex = dashboardHtml.indexOf("app.js");
+    const libraryIndex = dashboardHtml.indexOf("dashboard-library.js");
+    const rulesIndex = dashboardHtml.indexOf("dashboard-rules.js");
+    const initIndex = dashboardHtml.indexOf("dashboard-init.js");
+    expect(utilsIndex).toBeLessThan(appIndex);
+    expect(appIndex).toBeLessThan(libraryIndex);
+    expect(libraryIndex).toBeLessThan(rulesIndex);
+    expect(rulesIndex).toBeLessThan(initIndex);
   });
 });

@@ -10,6 +10,7 @@ import {
   MockD1,
   MockKV,
 } from "./chat-test-helpers";
+import { readDashboardScript } from "./dashboard-source";
 
 describe("customer dashboard and cross-platform memory", () => {
   it("returns unified customers and marks every bound platform", async () => {
@@ -218,7 +219,7 @@ describe("customer dashboard and cross-platform memory", () => {
   });
 
   it("does not bind filtered dashboard rows by list index", () => {
-    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const source = readDashboardScript();
     expect(source).not.toContain("data-bind-index");
     expect(source).toContain("data-contact-id");
     expect(source).toContain("replace_aliases: true");
@@ -226,7 +227,7 @@ describe("customer dashboard and cross-platform memory", () => {
 
   it("ships the clean customer dashboard layout and profile panel", () => {
     const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
-    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const source = readDashboardScript();
     const utils = readFileSync(new URL("../src/dashboard-utils.js", import.meta.url), "utf8");
     expect(html).toMatch(/grid-template-columns: (?:320px minmax\(420px, 1fr\) 300px|280px 1fr 280px)/);
     expect(html).toMatch(/--(?:green|blue): #(?:22c55e|0ea5e9)/);

@@ -46,6 +46,7 @@ import {
   MockKV,
   mockChatSequence,
 } from "./chat-test-helpers";
+import { readDashboardScript } from "./dashboard-source";
 
 describe("monitoring sync and customer profile batching", () => {
   it("deduplicates synced messages and preserves the original source", async () => {
@@ -750,7 +751,7 @@ describe("monitoring sync and customer profile batching", () => {
   });
 
   it("ships dashboard black-box feedback and incident details", () => {
-    const appSource = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const appSource = readDashboardScript();
     const htmlSource = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
     expect(appSource).toContain('"/dashboard-incidents"');
     expect(appSource).toContain("data-incident-view");
@@ -1072,7 +1073,7 @@ describe("monitoring sync and customer profile batching", () => {
   });
 
   it("shows nav pages for gallery drawers kb and settings", () => {
-    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const source = readDashboardScript();
     const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
     expect(html).toContain('id="pageNav"');
     expect(html).toContain('id="page-library"');
@@ -1133,7 +1134,7 @@ describe("monitoring sync and customer profile batching", () => {
   });
 
   it("hides the reply state on the profile panel and lets the operator restore it", () => {
-    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const source = readDashboardScript();
     const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
     expect(source).toContain("function renderContactFlags(group)");
     expect(source).toContain("已婚不回");
@@ -1198,7 +1199,7 @@ describe("monitoring sync and customer profile batching", () => {
   });
 
   it("keeps cloudflare polling inside the free-plan request budget", () => {
-    const source = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+    const source = readDashboardScript();
     // 2026-10-08：看板刷新从 10 秒改成 30 秒，并且页面不在前台时不刷（用户实测：托管没开也把 D1 额度吃爆）。
     expect(source).toContain("}, 30000);");
     expect(source).toContain("document.visibilityState");
