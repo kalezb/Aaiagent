@@ -16,4 +16,14 @@ describe("structure size guard", () => {
       expect(lineCount, `${relative} should stay at or below ${limit} lines`).toBeLessThanOrEqual(limit);
     }
   });
+
+  it("keeps backend dependency direction clear", () => {
+    const replyPolicy = readFileSync(new URL("../functions/api/_reply_policy.ts", import.meta.url), "utf8");
+    const chatConfirm = readFileSync(new URL("../functions/api/_chat_confirm_api.ts", import.meta.url), "utf8");
+    const dashboardHtml = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
+
+    expect(replyPolicy).not.toMatch(/from "\.\/(?:_chat_api|_chat_confirm_api|route)"/u);
+    expect(chatConfirm).not.toMatch(/from "\.\/(?:_chat_api|route)"/u);
+    expect(dashboardHtml.indexOf("dashboard-utils.js")).toBeLessThan(dashboardHtml.indexOf("app.js"));
+  });
 });

@@ -1,6 +1,7 @@
 package com.aaiagent
 
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.File
 
@@ -20,6 +21,15 @@ class StructureGuardTest {
                 lineCount <= limit,
             )
         }
+    }
+
+    @Test
+    fun `core automation code does not depend on dashboard UI`() {
+        val engine = readSource("src/main/java/com/aaiagent/engine/MessageEngine.kt")
+        val soulAdapter = readSource("src/main/java/com/aaiagent/adapter/SoulAdapter.kt")
+
+        assertFalse("托管引擎不能反向依赖手机看板界面", engine.contains("import com.aaiagent.ui."))
+        assertFalse("平台识别不能反向依赖手机看板界面", soulAdapter.contains("import com.aaiagent.ui."))
     }
 
     private fun readSource(relative: String): String {
