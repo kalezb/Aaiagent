@@ -43,13 +43,8 @@ import {
   isCheapTalkGenerosity,
   isQualifiedGenerosity,
 } from "./_profile_runtime";
-
-export function latestIncomingText(messages) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "user") return String(messages[index]?.content || "").trim();
-  }
-  return "";
-}
+import { compactQuestionText, latestIncomingText } from "./_message_text";
+export { latestIncomingText };
 
 export const XINGMU_FIXED_AGE = 29;
 
@@ -104,10 +99,6 @@ function isBatchFactQuestion(value) {
   return false;
 }
 const SELF_AGE_QUESTION = /^(?:请问)?(?:你|您)(?:自己|本人)?(?:是)?(?:的)?(?:现在|今年|目前)?(?:多大(?:了|年纪|岁数)?|几岁(?:了)?|多少岁|年龄(?:呢|是多少|多大)?|哪年生的|哪年生)(?:呀|啊|嘛|呢)?[。.！!？?]?$/u;
-
-function compactQuestionText(value) {
-  return String(value || "").replace(/\s+/gu, "");
-}
 
 function isReferredPersonQuestion(value, topicPattern) {
   const text = compactQuestionText(value);
