@@ -7,7 +7,11 @@ describe("structure size guard", () => {
       ["../functions/api/_reply_policy.ts", 2900],
       ["../functions/api/_chat_api.ts", 1820],
       ["../src/app.js", 2950],
-      ["chat.test.ts", 8200],
+      ["chat-core.test.ts", 1200],
+      ["chat-boundaries.test.ts", 1550],
+      ["chat-history-reply.test.ts", 1550],
+      ["monitoring-sync.test.ts", 2800],
+      ["chat-test-helpers.ts", 900],
     ] as const;
 
     for (const [relative, limit] of limits) {
