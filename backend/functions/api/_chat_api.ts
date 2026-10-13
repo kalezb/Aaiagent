@@ -123,7 +123,6 @@ import {
   enforceTokenBudget,
   estimateLlmCost,
   recordTokenUsage,
-  requestReplyRepair,
 } from "./_model_call_runtime";
 import {
   buildMediaPayload,
@@ -1502,30 +1501,13 @@ export async function handleChatRequest({ request, env, context, path, method })
       // 2026-10-07：不只看“他这条隔了多久”，只要她还欠着前面的没回（owesReply），
       // 就不许拿“没回”当开场——真机上他这条是刚发的，她照样先说“昨晚睡过去啦”。
       // 2026-10-07：不再加任何前提条件——她拿“我昨晚睡了/刚看到”当开场，任何情况下都是废话，
-      // 一律删掉；删空就让她重说（重说时不给她看历史，免得又去解释）。
+      // 一律删掉；删空后直接使用自然接话，不再同步发起昂贵的二次模型重写请求。
       if (agentRuleState.isEnabled("late_reply_current_only", true)) {
         const stripped = stripLateReplyExcuse(visibleReply, incomingGapSeconds);
         if (stripped) {
           if (stripped !== String(visibleReply).trim()) visibleReply = stripped;
         } else {
-          try {
-            const regenerated = await requestReplyRepair({
-              env, token: tokenRow.token, apiKey, modelConfig, modelName,
-              // 关键：重说时**不给她看历史**（历史里全是他没被回的消息，一看就又要交代）。
-              // 只让她接他刚说的这一句，看不到隔了多久，就没得解释。
-              systemPrompt: `${personaPrompt}\n\n${buildPersonaFactsPrompt(effectivePersonaFacts, {
-                contactLabel: activePersonaId === "female_sutang" ? "豆瓣号" : "QQ号",
-              })}\n` +
-                agentRuleState.textFor("late_reply_current_only", LATE_REPLY_RULE) + " 简短、自然。",
-              userPrompt: incomingTurnText || incomingText,
-              maxTokens: 96,
-              deadlineAt: Date.now() + 12000,
-            });
-            const cleaned = stripLateReplyExcuse(regenerated, incomingGapSeconds);
-            // 用户否掉固定模板，但也绝不允许把“才看到/忙晕了”重新发出去。
-            // 重说后如果还是交代，就先清空，后面的正常兜底逻辑再处理。
-            visibleReply = cleaned;
-          } catch (e) { console.log(JSON.stringify({ event: "late_reply_regenerate_failed", error: String(e) })); }
+          visibleReply = "在呢";
         }
       }
       const pipelineStartedAt = Date.now();
@@ -1687,9 +1669,16 @@ export async function handleChatRequest({ request, env, context, path, method })
           // 再按“一句说一件事、一段3到20个字、最多两条”砍短。放前面会先把该保留的内容吃掉。
           rule: "length_budget",
           reason: "reply_longer_than_his_message",
-          apply: (value) => agentRuleState.isEnabled("output_shape_hard", true)
-            ? capReplyLength(value, incomingText)
-            : value,
+          apply: (value) => {
+            if (!agentRuleState.isEnabled("output_shape_hard", true)) return value;
+            if (contactPolicy.contactAccount && value.includes(contactPolicy.contactAccount)) {
+              return value;
+            }
+            if (/sutang2026/iu.test(value)) {
+              return value;
+            }
+            return capReplyLength(value, incomingText);
+          },
         },
       ]);
       // 2026-10-07 修 bug：清理/删段之后偶尔会留下空段（真机见过 "|||嘴硬怎么了…"），

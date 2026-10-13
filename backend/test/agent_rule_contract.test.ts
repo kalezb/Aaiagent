@@ -47,6 +47,19 @@ describe("agent rule and model contract", () => {
     expect(state.textFor("not_seeded_yet", "默认内容")).toBe("默认内容");
   });
 
+  it("strictly disables soft-deleted rules and never falls back to code defaults", () => {
+    const state = buildAgentRuleState([
+      rule("married_excluded", {
+        deleted_at: 1729699200,
+        detail: "已删除的规则内容",
+      }),
+    ], "female");
+
+    expect(state.isEnabled("married_excluded", true)).toBe(false);
+    expect(state.textFor("married_excluded", "默认内容")).toBe("");
+    expect(state.rules.some((r) => r.legacy_rule_id === "married_excluded")).toBe(false);
+  });
+
   it("sorts editable prompt rules by priority and exposes the priority to the model", () => {
     const state = buildAgentRuleState([
       rule("custom_low", {

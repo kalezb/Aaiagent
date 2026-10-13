@@ -92,6 +92,7 @@ export async function loadAgentRuleState(
     enabled: Number(row.enabled || 0) === 1,
     priority: Number(row.priority || 50),
     sort_order: Number(row.sort_order || 0),
+    deleted_at: Number(row.deleted_at || 0),
   })) as ActiveAgentRule[];
   return buildAgentRuleState(rules, personaId);
 }

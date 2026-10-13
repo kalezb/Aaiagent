@@ -9,6 +9,7 @@ export interface ActiveAgentRule {
   enabled: boolean;
   sort_order: number;
   source: string;
+  deleted_at?: number;
 }
 
 export interface AgentRuleState {
@@ -144,12 +145,19 @@ export function buildAgentRuleState(
   personaId = "",
 ): AgentRuleState {
   const allRules = normalizedRuleList(rules);
-  const knownLegacyIds = new Set(
+  const deletedLegacyIds = new Set(
     allRules
+      .filter((rule) => Number(rule.deleted_at || 0) > 0)
       .map((rule) => String(rule.legacy_rule_id || "").trim())
       .filter(Boolean),
   );
-  const applicable = allRules.filter((rule) => ruleMatchesPersona(rule, personaId));
+  const activeRules = allRules.filter((rule) => Number(rule.deleted_at || 0) === 0);
+  const knownLegacyIds = new Set(
+    activeRules
+      .map((rule) => String(rule.legacy_rule_id || "").trim())
+      .filter(Boolean),
+  );
+  const applicable = activeRules.filter((rule) => ruleMatchesPersona(rule, personaId));
   const applicableByLegacyId = new Map(
     applicable
       .filter((rule) => String(rule.legacy_rule_id || "").trim())
@@ -161,12 +169,14 @@ export function buildAgentRuleState(
     rules: applicable,
     isEnabled: (legacyRuleId, fallback = true) => {
       const id = String(legacyRuleId || "").trim();
+      if (deletedLegacyIds.has(id)) return false;
       const rule = applicableByLegacyId.get(id);
       if (rule) return rule.enabled !== false;
       return knownLegacyIds.has(id) ? false : fallback;
     },
     textFor: (legacyRuleId, fallback = "") => {
       const id = String(legacyRuleId || "").trim();
+      if (deletedLegacyIds.has(id)) return "";
       const rule = applicableByLegacyId.get(id);
       if (rule) {
         if (rule.enabled === false) return "";
@@ -176,6 +186,7 @@ export function buildAgentRuleState(
     },
     priorityFor: (legacyRuleId, fallback = 50) => {
       const id = String(legacyRuleId || "").trim();
+      if (deletedLegacyIds.has(id)) return fallback;
       return applicableByLegacyId.get(id)?.priority ?? fallback;
     },
   };

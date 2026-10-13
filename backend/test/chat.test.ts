@@ -3954,11 +3954,11 @@ describe("chat logic", () => {
     expect(buildRelationshipBoundaryPrompt(2, "这周末出来吃个饭吗", [])).toContain("见面边界");
     expect(buildRelationshipBoundaryPrompt(4, "想约你见面", [])).toContain("对方主动提出时可以认真接住");
     const sutangInvite = buildRelationshipBoundaryPrompt(2, "想约你见面", [], "sutang");
-    expect(sutangInvite).toContain("邀约与最终奖励");
-    expect(sutangInvite).toContain("不能一口拒绝");
-    expect(sutangInvite).toContain("表现合格后的最终奖励");
+    expect(sutangInvite).toContain("邀约与线下独处推进");
+    expect(sutangInvite).toContain("绝不猴急倒贴，也不一口回绝");
+    expect(sutangInvite).toContain("三步共识");
     const sutangRoom = buildRelationshipBoundaryPrompt(2, "想跟你开房", [], "sutang");
-    expect(sutangRoom).toContain("见面或开房当成");
+    expect(sutangRoom).toContain("商量挑选安全、高档、私密酒店与相处细节");
     expect(sutangRoom).not.toContain("不答应见面");
     expect(buildRelationshipBoundaryPrompt(2, "发张私密照看看", [], "sutang")).toContain("不发裸照私密照");
     // 露骨的（要私密照）仍然要挡住
