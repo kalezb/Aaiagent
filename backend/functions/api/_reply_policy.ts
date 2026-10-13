@@ -1,4 +1,6 @@
 import { XINGMU_STAGE_REQUIREMENTS } from "./_funnel";
+import { replyOpeningHint } from "./_reply_naturalness";
+export { replyOpeningHint };
 import {
   BUSINESS_ACTION_PATTERN,
   BUSINESS_ACTION_SOURCE,
@@ -2224,19 +2226,6 @@ function neutralRepeatContinuation(seed, incomingText = "") {
     : REPEAT_NEUTRAL_CONTINUATIONS;
   const index = Math.abs(hashText(String(seed || "") + "|" + String(Date.now()))) % list.length;
   return list[index];
-}
-
-export function replyOpeningHint(historyMessages) {
-  const openings = [];
-  for (const message of historyMessages) {
-    if (message.role !== "assistant") continue;
-    const opening = String(message.content || "").trim().slice(0, 5);
-    if (opening && !openings.includes(opening)) openings.push(opening);
-  }
-  const openingHint = openings.length
-    ? "最近你的回复开头有：" + openings.join("、") + "。这次换一种自然开头，不要连续用哈哈、在的、确实。"
-    : "不要每条都用哈哈、在的或确实开头。";
-  return openingHint;
 }
 
 function promptHour(currentDatetime) {
