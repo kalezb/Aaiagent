@@ -237,6 +237,14 @@ class DashboardUiPolicyTest {
         assertTrue("语音发送测试单独文件应该已经删掉", deletedFiles.none(File::exists))
     }
 
+    @Test
+    fun `unused dashboard choice and address helpers stay removed`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+
+        assertFalse("没人用的选项按钮小块不能继续留在看板里", screen.contains("private fun ChoiceChips("))
+        assertFalse("没人用的地址输入小块不能继续留在看板里", screen.contains("private fun AddressField("))
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
