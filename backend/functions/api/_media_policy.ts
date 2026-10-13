@@ -48,6 +48,13 @@ function compact(value: string): string {
   return String(value || "").replace(/\s+/gu, "").toLocaleLowerCase();
 }
 
+function recentCompactTexts(value: string | string[]): string[] {
+  return (Array.isArray(value) ? value : [value])
+    .map((item) => compact(item))
+    .filter(Boolean)
+    .slice(-3);
+}
+
 const MEDIA_NEGATION = /(?:不想看|不要发|别发|不用发|不发|别给我发|不要给我发)/u;
 const NON_PERSONAL_MEDIA_OBJECT = /(?:机器|设备|手机|电脑|平板|屏幕|截图|界面|房间|宿舍|家里|办公室|车子|汽车|车|物品|东西|物件|藏品|手办|宠物|猫|狗)/u;
 const EXPLICIT_MEDIA_REQUEST = /(?:想看|想看看|想看一下|看看|看一下|看下|发张|发一张|发个|发一下|发我|给我发|给我看|让我看|能发|可以发|能不能发|给张|给一张|给个|给一下|给我|来张|来一张|来一下).{0,12}(?:照片|照|图片|本人|长相|长什么样|长啥样|日常照|身材照|身材|腿|腰)/u;
@@ -130,10 +137,7 @@ export function isExplicitBodyMediaRequest(value: string): boolean {
 }
 
 export function shouldClassifyPersonalPhotoIntent(value: string | string[]): boolean {
-  return (Array.isArray(value) ? value : [value])
-    .map((item) => compact(item))
-    .filter(Boolean)
-    .slice(-3)
+  return recentCompactTexts(value)
     .some((text) => PHOTO_INTENT_CUE.test(text));
 }
 
@@ -148,10 +152,7 @@ export function normalizePersonalPhotoIntent(value: string): PersonalPhotoIntent
 }
 
 export function hasNonPersonalMediaContext(value: string | string[]): boolean {
-  const texts = (Array.isArray(value) ? value : [value])
-    .map((item) => compact(item))
-    .filter(Boolean)
-    .slice(-3);
+  const texts = recentCompactTexts(value);
   if (!texts.length) return false;
 
   const current = texts[texts.length - 1];
@@ -161,10 +162,7 @@ export function hasNonPersonalMediaContext(value: string | string[]): boolean {
 }
 
 export function hasContextualMediaRequest(value: string | string[]): boolean {
-  const texts = (Array.isArray(value) ? value : [value])
-    .map((item) => compact(item))
-    .filter(Boolean)
-    .slice(-3);
+  const texts = recentCompactTexts(value);
   if (!texts.length) return false;
 
   const current = texts[texts.length - 1];
@@ -174,10 +172,7 @@ export function hasContextualMediaRequest(value: string | string[]): boolean {
 }
 
 export function hasExplicitBodyMediaContext(value: string | string[]): boolean {
-  const texts = (Array.isArray(value) ? value : [value])
-    .map((item) => compact(item))
-    .filter(Boolean)
-    .slice(-3);
+  const texts = recentCompactTexts(value);
   if (!texts.length) return false;
 
   const current = texts[texts.length - 1];
