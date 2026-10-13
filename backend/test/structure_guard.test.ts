@@ -18,7 +18,12 @@ describe("structure size guard", () => {
       ["chat-core.test.ts", 1200],
       ["chat-boundaries.test.ts", 1550],
       ["chat-history-reply.test.ts", 1550],
-      ["monitoring-sync.test.ts", 2800],
+      ["monitoring-sync-core.test.ts", 500],
+      ["monitoring-agent-rules.test.ts", 650],
+      ["monitoring-dashboard-settings.test.ts", 650],
+      ["monitoring-media-selection.test.ts", 750],
+      ["monitoring-media-semantics.test.ts", 600],
+      ["monitoring-media-runtime.test.ts", 400],
       ["chat-test-helpers.ts", 900],
     ] as const;
 
