@@ -7,7 +7,10 @@ import com.aaiagent.ui.screens.ModelLineHealthState
 import com.aaiagent.ui.screens.PersonaItem
 import com.aaiagent.ui.screens.PersonaPresentation
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class DashboardUiPolicyTest {
     @Test
@@ -108,5 +111,31 @@ class DashboardUiPolicyTest {
         assertEquals("星", PersonaPresentation.avatarLabel(persona))
         assertEquals("星暮", PersonaPresentation.name(persona))
         assertEquals("自然亲切", PersonaPresentation.roleDetail(persona))
+    }
+
+    @Test
+    fun `device security card stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val card = readSource("src/main/java/com/aaiagent/ui/screens/DashboardDeviceSecurityCard.kt")
+
+        assertFalse(
+            "设备钥匙卡片不能继续留在看板大文件里",
+            screen.contains("private fun DeviceSecurityCard("),
+        )
+        assertTrue(
+            "设备钥匙卡片应该放在单独的小文件里",
+            card.contains("internal fun DeviceSecurityCard("),
+        )
+    }
+
+    private fun readSource(relative: String): String {
+        val candidates = listOf(
+            File(relative),
+            File("app/$relative"),
+            File("android/app/$relative"),
+        )
+        val file = candidates.firstOrNull(File::isFile)
+            ?: error("找不到源文件 $relative，试过: ${candidates.map(File::getAbsolutePath)}")
+        return file.readText()
     }
 }
