@@ -19,6 +19,7 @@ import {
   detectAgentConfigConflicts,
 } from "./_persona_audit";
 import {
+  type PersonaDrawerItem,
   defaultDrawersForPersona,
   parsePersonaDrawers,
 } from "./_persona_drawers";
@@ -32,6 +33,21 @@ import {
   normalizeDrawerKind,
   normalizeDrawerReplyMode,
 } from "./_persona_runtime";
+
+function drawersForStorage(list: PersonaDrawerItem[] = []): PersonaDrawerItem[] {
+  return list.map((item) => ({
+    id: item.id,
+    name: item.name,
+    keywords: item.keywords || [],
+    content: item.content || "",
+    kind: item.kind || "lore",
+    activation: item.activation || "keyword",
+    replyMode: normalizeDrawerReplyMode(item.replyMode, "guide"),
+    priority: Number(item.priority || 0),
+    enabled: item.enabled !== false,
+    deleted: item.deleted === true,
+  }));
+}
 
 export async function handlePersonaManagementRequest({
   request,
@@ -329,22 +345,10 @@ export async function handlePersonaManagementRequest({
     if (!found) return json({ error: "unknown drawer id" }, 400);
     const claim = await claimSharedPersonaVersion(env.DB, personaId, body.expected_version);
     if (!claim.ok) return sharedPersonaConflict(claim.currentVersion);
-    const forStorage = (list) => list.map((item) => ({
-      id: item.id,
-      name: item.name,
-      keywords: item.keywords || [],
-      content: item.content || "",
-      kind: item.kind || "lore",
-      activation: item.activation || "keyword",
-      replyMode: normalizeDrawerReplyMode(item.replyMode, "guide"),
-      priority: Number(item.priority || 0),
-      enabled: item.enabled !== false,
-      deleted: item.deleted === true,
-    }));
     await env.KV.put(key, JSON.stringify({
-      topics: forStorage(base.topics),
-      counters: forStorage(base.counters),
-      custom: forStorage(base.custom),
+      topics: drawersForStorage(base.topics),
+      counters: drawersForStorage(base.counters),
+      custom: drawersForStorage(base.custom),
     }));
     return json({
       success: true,
@@ -385,22 +389,10 @@ export async function handlePersonaManagementRequest({
     const defaults = defaultDrawersForPersona(personaId);
     const topics = mergeDrawerCards(defaults.topics || [], stored.topics, "topic", { includeUnknown: false });
     const counters = mergeDrawerCards(defaults.counters || [], stored.counters, "counter", { includeUnknown: false });
-    const forStorage = (list) => list.map((item) => ({
-      id: item.id,
-      name: item.name,
-      keywords: item.keywords || [],
-      content: item.content || "",
-      kind: item.kind || "lore",
-      activation: item.activation || "keyword",
-      replyMode: normalizeDrawerReplyMode(item.replyMode, "guide"),
-      priority: Number(item.priority || 0),
-      enabled: item.enabled !== false,
-      deleted: item.deleted === true,
-    }));
     await env.KV.put(key, JSON.stringify({
-      topics: forStorage(topics),
-      counters: forStorage(counters),
-      custom: forStorage([...custom, card]),
+      topics: drawersForStorage(topics),
+      counters: drawersForStorage(counters),
+      custom: drawersForStorage([...custom, card]),
     }));
     return json({ success: true, card, shared_version: claim.version }, 201);
   }
@@ -429,22 +421,10 @@ export async function handlePersonaManagementRequest({
     if (!found) return json({ error: "卡片不存在" }, 404);
     const claim = await claimSharedPersonaVersion(env.DB, personaId, body.expected_version);
     if (!claim.ok) return sharedPersonaConflict(claim.currentVersion);
-    const forStorage = (list) => list.map((item) => ({
-      id: item.id,
-      name: item.name,
-      keywords: item.keywords || [],
-      content: item.content || "",
-      kind: item.kind || "lore",
-      activation: item.activation || "keyword",
-      replyMode: normalizeDrawerReplyMode(item.replyMode, "guide"),
-      priority: Number(item.priority || 0),
-      enabled: item.enabled !== false,
-      deleted: item.deleted === true,
-    }));
     await env.KV.put(key, JSON.stringify({
-      topics: forStorage(topics),
-      counters: forStorage(counters),
-      custom: forStorage(custom),
+      topics: drawersForStorage(topics),
+      counters: drawersForStorage(counters),
+      custom: drawersForStorage(custom),
     }));
     return json({ success: true, id, shared_version: claim.version });
   }
