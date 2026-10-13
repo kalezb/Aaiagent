@@ -3698,7 +3698,7 @@ describe("chat logic", () => {
       sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toBe("豆瓣知道吧|||sutang2026");
+    expect(allowed.reply).toBe("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026");
   });
 
   it("uses structured device Douban facts as the only contact source", () => {

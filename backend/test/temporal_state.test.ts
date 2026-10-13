@@ -482,7 +482,7 @@ describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
           sutangScope: true,
         });
         expect(policy.allowed).toBe(true);
-        expect(policy.reply).toBe("豆瓣知道吧|||sutang2026");
+        expect(policy.reply).toBe("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026");
       });
     });
   });

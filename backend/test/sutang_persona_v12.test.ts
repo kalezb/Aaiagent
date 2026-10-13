@@ -125,7 +125,7 @@ describe("Su Tang v13 persona", () => {
       sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toBe("豆瓣知道吧|||sutang2026");
+    expect(allowed.reply).toBe("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026");
 
     expect(sanitizeContactDisclosure("豆瓣知道吧|||sutang2026", {
       allowed: true,
@@ -302,7 +302,7 @@ describe("Su Tang v13 persona", () => {
       customerProfile: { relationship: { generosity_status: "qualified" } },
     });
     expect(qualifiedPolicy.allowed).toBe(true);
-    expect(qualifiedPolicy.reply).toBe("豆瓣知道吧|||sutang2026");
+    expect(qualifiedPolicy.reply).toBe("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026");
 
     // 6. 大方男 (qualified) 未主动要号 (requestCount: 0)，聊到深入走心时，允许苏棠主动送钥匙
     const proactivePolicy = resolveContactRequestPolicy({
@@ -318,15 +318,15 @@ describe("Su Tang v13 persona", () => {
     expect(proactivePolicy.isRequest).toBe(false);
     expect(proactivePolicy.allowed).toBe(true);
     // 允许模型以私密专属姿态输出钥匙，不被过滤器打回
-    expect(sanitizeContactDisclosure("这上面消息太吵太杂了，我平时写私密心事的地方，就带你一个人去看看|||豆瓣知道吧|||sutang2026", {
+    expect(sanitizeContactDisclosure("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026", {
       allowed: proactivePolicy.allowed,
       contactChannel: "douban",
       contactAccount: "sutang2026",
       sutangScope: true,
-    })).toBe("这上面消息太吵太杂了，我平时写私密心事的地方，就带你一个人去看看|||豆瓣知道吧|||sutang2026");
+    })).toBe("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026");
 
     // 7. 口嗨男未达标时，即便模型误输出也会被严格拦截号码
-    const blockedOutput = sanitizeContactDisclosure("这上面消息太吵太杂了，我平时写私密心事的地方，就带你一个人去看看|||豆瓣知道吧|||sutang2026", {
+    const blockedOutput = sanitizeContactDisclosure("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026", {
       allowed: false,
       contactChannel: "douban",
       contactAccount: "sutang2026",
@@ -336,8 +336,8 @@ describe("Su Tang v13 persona", () => {
     expect(blockedOutput).toContain("联系方式先不发了 在这儿聊就行");
 
     // 8. 即使对方发来一两字的超短消息，放号气泡也绝不被长度收口（capReplyLength）腰斩切断号码
-    const capped = capReplyLength("这上面消息太吵太杂了，我平时写私密心事的地方，就带你一个人去看看|||豆瓣知道吧|||sutang2026", "好的");
-    expect(capped).toBe("这上面消息太吵太杂了，我平时写私密心事的地方，就带你一个人去看看|||豆瓣知道吧|||sutang2026");
+    const capped = capReplyLength("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026", "好的");
+    expect(capped).toBe("微信是我现实生活，我不想生活被打扰，懂我的顾虑吗？前阵子在豆瓣查电影评分，无意中发现居然也能私聊，清清静静没熟人|||sutang2026");
 
     // 9. 线下邀约提示词与三步共识对齐，绝不出现“门槛放回线上/表现够了再说/不答应去酒店”的冲突阻断
     const meetingPrompt = buildRelationshipBoundaryPrompt(2, "我们周末去高档酒店开房喝茶吧", [], "sutang");
