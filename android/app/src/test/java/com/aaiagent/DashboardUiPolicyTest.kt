@@ -422,6 +422,17 @@ class DashboardUiPolicyTest {
         assertTrue("共享人设资料数据应该放在单独的小文件里", models.contains("data class PersonaFactsUiState("))
     }
 
+    @Test
+    fun `dashboard platform and permission helpers stay in their own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val helpers = readSource("src/main/java/com/aaiagent/ui/screens/DashboardPlatformAndPermissions.kt")
+
+        assertFalse("权限检查不能继续留在看板大文件里", screen.contains("fun checkPermissionStatus("))
+        assertFalse("平台名字转换不能继续留在看板大文件里", screen.contains("fun platformDisplayName("))
+        assertTrue("权限检查应该放在单独的小文件里", helpers.contains("fun checkPermissionStatus("))
+        assertTrue("平台名字转换应该放在单独的小文件里", helpers.contains("fun platformDisplayName("))
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
