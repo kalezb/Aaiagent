@@ -9,6 +9,7 @@ import {
   buildMediaPayload,
   loadScopedMediaGroups,
 } from "./_media_runtime";
+import { serveMediaImage } from "./_media_image_response";
 import {
   chooseMediaAsset,
 } from "./_media_policy";
@@ -100,54 +101,21 @@ export async function handleEntryMediaRequest({ request, env, path, method }) {
     const asset = await env.DB.prepare(
       "SELECT id, file_name, content_type, source_url, storage_key FROM media_assets WHERE id = ? LIMIT 1"
     ).bind(assetId).first();
-    const fileName = String(asset?.file_name || assetId + ".jpg").replace(/[^\w.\-]+/gu, "_");
-    const storedType = String(asset?.content_type || "image/jpeg").trim();
-    const contentType = storedType.startsWith("image/") ? storedType : "image/jpeg";
-    const storageKey = String(asset?.storage_key || "").trim();
-    if (storageKey) {
-      if (!env.KV || typeof env.KV.get !== "function") {
-        return json({ error: "image_storage_unavailable" }, 503);
-      }
-      const stored = await env.KV.get(storageKey, "arrayBuffer");
-      if (!stored || typeof stored.byteLength !== "number" || stored.byteLength < 1) {
-        return json({ error: "image_not_found" }, 404);
-      }
-      if (stored.byteLength > 12 * 1024 * 1024) return json({ error: "image_too_large" }, 413);
-      return new Response(stored, {
-        status: 200,
-        headers: {
-          "Content-Type": contentType,
-          "Content-Disposition": "inline; filename=\"" + fileName + "\"",
-          "Cache-Control": "private, max-age=300",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    }
-    if (!asset?.source_url) return json({ error: "图片不存在" }, 404);
-    let sourceUrl = "";
-    try {
-      const parsed = new URL(String(asset.source_url));
-      if (parsed.protocol !== "https:") return json({ error: "图片地址不安全" }, 400);
-      sourceUrl = parsed.toString();
-    } catch (_) {
-      return json({ error: "图片地址无效" }, 400);
-    }
-
-    const upstream = await fetch(sourceUrl, { redirect: "follow" });
-    if (!upstream.ok) return json({ error: "图片下载失败" }, 502);
-    const declaredLength = Number(upstream.headers.get("Content-Length") || 0);
-    if (declaredLength > 12 * 1024 * 1024) return json({ error: "图片过大" }, 413);
-    const body = await upstream.arrayBuffer();
-    if (body.byteLength > 12 * 1024 * 1024) return json({ error: "图片过大" }, 413);
-    const headerType = String(upstream.headers.get("Content-Type") || "").split(";")[0].trim();
-    const proxyType = headerType.startsWith("image/") ? headerType : contentType;
-    return new Response(body, {
-      status: 200,
-      headers: {
-        "Content-Type": proxyType,
-        "Content-Disposition": "inline; filename=\"" + fileName + "\"",
-        "Cache-Control": "private, max-age=300",
-        "Access-Control-Allow-Origin": "*",
+    return serveMediaImage({
+      env,
+      asset,
+      assetId,
+      options: {
+        missingError: "图片不存在",
+        missingStorageError: "image_not_found",
+        storageUnavailableError: "image_storage_unavailable",
+        maxStorageBytes: 12 * 1024 * 1024,
+        storageTooLargeError: "image_too_large",
+        maxProxyBytes: 12 * 1024 * 1024,
+        proxyTooLargeError: "图片过大",
+        checkProxyContentLength: true,
+        preferUpstreamContentType: true,
+        includeCors: true,
       },
     });
   }

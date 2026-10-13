@@ -2,6 +2,7 @@ import { isDashboardAuthorized } from "./_access_runtime";
 import { normalizePlatform } from "./_chat_input";
 import { decodeDashboardImage } from "./_dashboard_media_input";
 import { json, parseJsonBody } from "./_http_runtime";
+import { serveMediaImage } from "./_media_image_response";
 
 export async function handleMediaLibraryRequest({ request, env, path, method }) {
   // GET /api/media-library/assets/:id - dashboard-authenticated image preview
@@ -17,44 +18,18 @@ export async function handleMediaLibraryRequest({ request, env, path, method }) 
     const asset = await env.DB.prepare(
       "SELECT id, file_name, content_type, source_url, storage_key FROM media_assets WHERE id = ? LIMIT 1"
     ).bind(assetId).first();
-    if (!asset) return json({ error: "图片不存在" }, 404);
-    const storedType = String(asset.content_type || "image/jpeg").trim();
-    const contentType = storedType.startsWith("image/") ? storedType : "image/jpeg";
-    const fileName = String(asset.file_name || assetId + ".jpg").replace(/[^\w.\-]+/gu, "_");
-    const storageKey = String(asset.storage_key || "").trim();
-    if (storageKey) {
-      const stored = await env.KV.get(storageKey, "arrayBuffer");
-      if (!stored || typeof stored.byteLength !== "number" || stored.byteLength < 1) {
-        return json({ error: "图片不存在" }, 404);
-      }
-      return new Response(stored, {
-        status: 200,
-        headers: {
-          "Content-Type": contentType,
-          "Content-Disposition": "inline; filename=\"" + fileName + "\"",
-          "Cache-Control": "private, max-age=300",
-        },
-      });
-    }
-    if (!asset.source_url) return json({ error: "图片不存在" }, 404);
-    let sourceUrl = "";
-    try {
-      const parsed = new URL(String(asset.source_url));
-      if (parsed.protocol !== "https:") return json({ error: "图片地址不安全" }, 400);
-      sourceUrl = parsed.toString();
-    } catch (_) {
-      return json({ error: "图片地址无效" }, 400);
-    }
-    const upstream = await fetch(sourceUrl, { redirect: "follow" });
-    if (!upstream.ok) return json({ error: "图片下载失败" }, 502);
-    const body = await upstream.arrayBuffer();
-    if (body.byteLength > 12 * 1024 * 1024) return json({ error: "图片过大" }, 413);
-    return new Response(body, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": "inline; filename=\"" + fileName + "\"",
-        "Cache-Control": "private, max-age=300",
+    return serveMediaImage({
+      env,
+      asset,
+      assetId,
+      options: {
+        missingError: "图片不存在",
+        missingStorageError: "图片不存在",
+        maxProxyBytes: 12 * 1024 * 1024,
+        proxyTooLargeError: "图片过大",
+        checkProxyContentLength: false,
+        preferUpstreamContentType: false,
+        includeCors: false,
       },
     });
   }
