@@ -4017,87 +4017,6 @@ class MessageEngine(
 
     fun currentState(): EngineState = state
 
-    /**
-     * 手动跑一次语音发送（真机验证用，不参与自动回复）。
-     *
-     * 第 1 步先用它确认"点录音 → 暂停 → 发语音"这条链路在 Soul 上真能走通，
-     * 等注入和配音都接上之后，再统一收进正常回复流程。
-     * 返回一句直接显示给人看的结果。
-     */
-    suspend fun runVoiceSendTest(): String {
-        return AutomationActionGate.withPermit(
-            owner = "voice-test:${currentPlatform.ifBlank { "unknown" }}",
-            waitMs = 3_000L,
-        ) {
-            runVoiceSendTestLocked()
-        } ?: "正在处理其他页面动作，请稍后再试"
-    }
-
-    private suspend fun runVoiceSendTestLocked(): String {
-        val svc = service ?: return publishVoiceTest("✗ 无障碍服务未启动")
-        val adapter = adapterRegistry?.getByPlatform("soul")
-        if (adapter !is SoulAdapter) return publishVoiceTest("✗ Soul 适配器不可用")
-
-        // 1) 先合成配音、把 PCM 交给注入通道 —— **必须在开录音之前完成**。
-        //    注入模块每 400ms 轮询一次，后面"切前台 + 等聊天页"的时间正好够它加载。
-        val audio = withContext(Dispatchers.IO) { prepareVoiceAudio(VOICE_TEST_SPOKEN_TEXT) }
-        if (audio is VoiceAudioResult.Failed) return publishVoiceTest("✗ ${audio.message}")
-
-        // 2) 点这个按钮时前台是 AiaAgent 自己的界面，Soul 在后台。
-        //    直接读 rootInActiveWindow 只会读到 AiaAgent 自己，isInChat 必然为 false。
-        //    所以先把 Soul 切到前台，再等它的聊天页出现。
-        adapter.bringToForeground(svc)
-        val root = awaitSoulChatPage(adapter, VOICE_TEST_CHAT_WAIT_MS)
-        if (root == null || !adapter.isInChat(root)) {
-            return publishVoiceTest("✗ 没等到 Soul 的聊天页（请打开目标会话再试）")
-        }
-
-        val ready = audio as VoiceAudioResult.Ready
-        // 语音测试入口也走同一套判断：root 手机注入、没 root 的走外放。
-        val output = resolveVoiceOutput()
-        prepareInjectChannel(output)
-        if (output == VoiceOutput.SPEAKER && !speakerVolumeIsUsable()) {
-            return publishVoiceTest(
-                "✗ 媒体音量太低（低于 ${VoiceSpeakerPlayback.UNUSABLE_VOLUME_PERCENT}%），" +
-                    "外放会录出一段没声音的语音。请先把音量调大再试（音量不自动调整）"
-            )
-        }
-        val result = adapter.recordAndSendVoice(
-            audioDurationMs = if (output == VoiceOutput.SPEAKER) {
-                VoiceOutputMode.speakerRecordDurationMs(ready.durationMs)
-            } else {
-                ready.durationMs
-            },
-            spokenText = VOICE_TEST_SPOKEN_TEXT,
-            playback = if (output == VoiceOutput.SPEAKER) {
-                {
-                    scope.launch(Dispatchers.IO) {
-                        val played = VoiceSpeakerPlayback.play(
-                            pcm = ready.pcm,
-                            sampleRate = AudioPcmPreparer.CANONICAL_RATE,
-                            channelCount = AudioPcmPreparer.CANONICAL_CHANNELS,
-                            audioManager = service?.getSystemService(android.content.Context.AUDIO_SERVICE)
-                                as? android.media.AudioManager,
-                            canProceed = { true }
-                        )
-                        android.util.Log.d("AIA", "外放播放结束 completed=$played")
-                    }
-                }
-            } else {
-                null
-            }
-        )
-        val seconds = result.recordedSeconds?.let { "${it}秒" } ?: "未知时长"
-        val message = when (result.status) {
-            SoulVoiceDelivery.Status.SENT ->
-                "✓ 已发出（配音 ${ready.durationMs / 1000} 秒，录到 $seconds）"
-            SoulVoiceDelivery.Status.CANCELLED -> "✗ 已取消（$seconds）：${result.reason}"
-            SoulVoiceDelivery.Status.STOPPED -> "✗ 被中断：${result.reason}"
-            SoulVoiceDelivery.Status.FAILED -> "✗ 失败：${result.reason}"
-        }
-        return publishVoiceTest(message)
-    }
-
     private sealed class VoiceAudioResult {
         /**
          * 配音已就绪。
@@ -4110,14 +4029,10 @@ class MessageEngine(
         data class Failed(val message: String) : VoiceAudioResult()
     }
 
-    /**
-     * 把 [VOICE_TEST_SPOKEN_TEXT] 合成成配音，解码成规范 PCM 并发布给注入通道。
-     *
-     * 全程在 IO 线程上跑（网络 + 解码 + 写文件）。
-     */
+    /** 把文本合成成配音，解码成规范 PCM 并交给注入通道。 */
     private suspend fun prepareVoiceAudio(
         text: String,
-        conversationKey: String = VOICE_TEST_CONVERSATION_KEY
+        conversationKey: String
     ): VoiceAudioResult {
         val context = service?.applicationContext
             ?: return VoiceAudioResult.Failed("无障碍服务未启动")
@@ -4267,7 +4182,7 @@ class MessageEngine(
     /**
      * 把这条回复用语音发出去。
      *
-     * 顺序和测试入口一致：**先合成配音、发布 PCM，再去开录音** ——
+     * 顺序是：**先合成配音、发布 PCM，再去开录音** ——
      * 注入模块每 400ms 轮询一次，先发布才能保证录音开始时配音已经就绪。
      *
      * 注意这条路径**不复用文字的"分段投递"**：一条语音就是一个整体，
@@ -4300,7 +4215,7 @@ class MessageEngine(
         if (!canContinue(leaseToken, interactionEpoch)) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, 0, 1)
         }
-        val root = awaitSoulChatPage(soulAdapter, VOICE_TEST_CHAT_WAIT_MS)
+        val root = awaitSoulChatPage(soulAdapter, SOUL_CHAT_WAIT_MS)
         if (root == null || !soulAdapter.isInChat(root)) {
             // 没停在聊天页就先退回文字，由文字流程负责导航。
             return ReplyDeliveryResult(ReplyDeliveryStatus.FAILED, 0, 1)
@@ -4467,17 +4382,6 @@ class MessageEngine(
         )
     }
 
-    /**
-     * 语音测试的结果除了显示在界面上，也写一行日志。
-     *
-     * 因为测试期间用户被切到 Soul 那边去了，看不到 AiaAgent 的界面，
-     * 靠这行日志就能直接确认结果，不用来回切应用。
-     */
-    private fun publishVoiceTest(message: String): String {
-        android.util.Log.d("AIA", "voice test result: $message")
-        return message
-    }
-
     /** 等 Soul 的聊天页真正出现在前台。 */
     private suspend fun awaitSoulChatPage(
         adapter: SoulAdapter,
@@ -4488,7 +4392,7 @@ class MessageEngine(
         while (System.currentTimeMillis() <= deadline) {
             val root = svc.rootInActiveWindow
             if (root != null && adapter.isInChat(root)) return root
-            delay(VOICE_TEST_CHAT_POLL_MS)
+            delay(SOUL_CHAT_POLL_MS)
         }
         return null
     }
@@ -4626,17 +4530,9 @@ class MessageEngine(
         // User browsing only needs to win for a moment. 60s used to stall every
         // scheduled click for a full minute after a single touch.
         const val USER_NAVIGATION_GRACE_MS = 20_000L
-        /** 语音发送测试：把 Soul 切到前台后，等它的聊天页出现多久。 */
-        const val VOICE_TEST_CHAT_WAIT_MS = 20_000L
-        const val VOICE_TEST_CHAT_POLL_MS = 400L
-        /**
-         * 语音发送测试时"这条语音说了什么"。
-         * 现在还没接配音，先写一句明确的话，用来验证"自己发的语音能被记住内容"这条链路。
-         */
-        const val VOICE_TEST_SPOKEN_TEXT = "语音发送测试：这段话应该出现在上下文里"
-
-        /** 测试入口用的会话键（测试不针对具体联系人，情绪单独记一条）。 */
-        const val VOICE_TEST_CONVERSATION_KEY = "voice-test"
+        /** 把 Soul 切到前台后，等它的聊天页出现多久。 */
+        const val SOUL_CHAT_WAIT_MS = 20_000L
+        const val SOUL_CHAT_POLL_MS = 400L
 
         /** Fish 音色 ID 的配置项。留空就用下面这个默认值。 */
         const val FISH_VOICE_ID_KEY = "fish_voice_id"

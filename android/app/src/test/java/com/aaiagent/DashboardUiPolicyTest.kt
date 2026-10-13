@@ -219,6 +219,7 @@ class DashboardUiPolicyTest {
     fun `voice send test entry is removed`() {
         val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
         val main = readSource("src/main/java/com/aaiagent/MainActivity.kt")
+        val engine = readSource("src/main/java/com/aaiagent/engine/MessageEngine.kt")
         val deletedFiles = listOf(
             File("src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt"),
             File("app/src/main/java/com/aaiagent/ui/screens/DashboardVoiceSendTestRow.kt"),
@@ -230,6 +231,9 @@ class DashboardUiPolicyTest {
         assertFalse("看板不能再传语音测试点击动作", screen.contains("onVoiceTest"))
         assertFalse("手机端不能继续保存语音测试状态", main.contains("voiceTestStatus"))
         assertFalse("手机端不能继续保留语音测试点击动作", main.contains("runVoiceTest"))
+        assertFalse("底层不能继续保留语音测试动作", engine.contains("runVoiceSendTest"))
+        assertFalse("底层不能继续保留语音测试内容", engine.contains("VOICE_TEST"))
+        assertFalse("底层不能继续保留语音测试结果日志", engine.contains("publishVoiceTest"))
         assertTrue("语音发送测试单独文件应该已经删掉", deletedFiles.none(File::exists))
     }
 
