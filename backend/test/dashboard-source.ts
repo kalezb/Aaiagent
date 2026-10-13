@@ -7,7 +7,9 @@ const dashboardScripts = [
   "dashboard-operations.js",
   "dashboard-settings.js",
   "dashboard-library.js",
-  "dashboard-rules.js",
+  "dashboard-knowledge.js",
+  "dashboard-program-rules.js",
+  "dashboard-rule-center.js",
   "dashboard-init.js",
 ];
 

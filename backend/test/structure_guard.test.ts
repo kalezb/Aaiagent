@@ -18,10 +18,12 @@ describe("structure size guard", () => {
       ["../src/dashboard-chat.js", 450],
       ["../src/dashboard-operations.js", 150],
       ["../src/dashboard-settings.js", 180],
+      ["../src/dashboard-knowledge.js", 260],
+      ["../src/dashboard-program-rules.js", 320],
+      ["../src/dashboard-rule-center.js", 650],
       ["../src/index.html", 1050],
       ["../src/dashboard.css", 950],
       ["../src/dashboard-library.js", 320],
-      ["../src/dashboard-rules.js", 1150],
       ["../src/dashboard-init.js", 400],
       ["chat-core.test.ts", 1200],
       ["chat-boundaries.test.ts", 1550],
@@ -57,7 +59,9 @@ describe("structure size guard", () => {
     const operationsIndex = dashboardHtml.indexOf("dashboard-operations.js");
     const settingsIndex = dashboardHtml.indexOf("dashboard-settings.js");
     const libraryIndex = dashboardHtml.indexOf("dashboard-library.js");
-    const rulesIndex = dashboardHtml.indexOf("dashboard-rules.js");
+    const knowledgeIndex = dashboardHtml.indexOf("dashboard-knowledge.js");
+    const programRulesIndex = dashboardHtml.indexOf("dashboard-program-rules.js");
+    const ruleCenterIndex = dashboardHtml.indexOf("dashboard-rule-center.js");
     const initIndex = dashboardHtml.indexOf("dashboard-init.js");
     expect(cssIndex).toBeGreaterThan(0);
     expect(cssIndex).toBeLessThan(utilsIndex);
@@ -67,7 +71,9 @@ describe("structure size guard", () => {
     expect(chatIndex).toBeLessThan(operationsIndex);
     expect(operationsIndex).toBeLessThan(settingsIndex);
     expect(settingsIndex).toBeLessThan(libraryIndex);
-    expect(libraryIndex).toBeLessThan(rulesIndex);
-    expect(rulesIndex).toBeLessThan(initIndex);
+    expect(libraryIndex).toBeLessThan(knowledgeIndex);
+    expect(knowledgeIndex).toBeLessThan(programRulesIndex);
+    expect(programRulesIndex).toBeLessThan(ruleCenterIndex);
+    expect(ruleCenterIndex).toBeLessThan(initIndex);
   });
 });
