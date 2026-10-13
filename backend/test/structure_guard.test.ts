@@ -6,6 +6,9 @@ describe("structure size guard", () => {
     const limits = [
       ["../functions/api/_reply_policy.ts", 2900],
       ["../functions/api/_chat_api.ts", 1820],
+      ["../functions/api/_emoji_pragmatics_data.ts", 700],
+      ["../functions/api/_persona_drawers_data.ts", 850],
+      ["../functions/api/_agent_rule_inventory_data.ts", 750],
       ["../src/app.js", 2950],
       ["chat-core.test.ts", 1200],
       ["chat-boundaries.test.ts", 1550],
