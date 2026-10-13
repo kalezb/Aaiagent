@@ -3014,13 +3014,24 @@ class MessageEngine(
                 reason = "contact=${context.contactName} part=${index + 1}",
                 transactionId = sendTransactionId,
             )
-            val result = adapter.fillAndSend(
-                service = svc,
-                root = root,
-                text = part,
-                expectedContactName = context.contactName,
-                canProceed = { canContinue(leaseToken, interactionEpoch) }
-            )
+            val visibleBeforeSend = runCatching { adapter.readMessages(root) }
+                .getOrDefault(emptyList())
+            val alreadyVisible = OutgoingEchoPolicy.shouldSkipSend(part, visibleBeforeSend)
+            val result = if (alreadyVisible) {
+                android.util.Log.w(
+                    "AIA",
+                    "send skipped: identical outgoing already visible contact=${context.contactName}"
+                )
+                PlatformAdapter.SendResult.SUCCESS
+            } else {
+                adapter.fillAndSend(
+                    service = svc,
+                    root = root,
+                    text = part,
+                    expectedContactName = context.contactName,
+                    canProceed = { canContinue(leaseToken, interactionEpoch) }
+                )
+            }
             val observedRoot = service?.rootInActiveWindow
             val observedPage = observedRoot?.let(adapter::observePage)?.kind
                 ?: AutomationPageKind.UNKNOWN

@@ -1498,17 +1498,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 return SendResult.NOT_VERIFIED
             }
 
-        val beforeMessages = readMessages(currentRoot)
-        // 2026-10-07 真机：上一次其实发出去了、只是没验证到，几秒后待处理回复又发一遍 → 同一句重复。
-        // 发之前先看最近两条自己发的话里有没有这一句；有就当成已发送，不再发。
-        if (com.aaiagent.engine.OutgoingEchoPolicy.alreadyJustSent(
-                text = text,
-                recentSelfMessages = beforeMessages.filter { it.sender == "self" }.map { it.content },
-            )
-        ) {
-            android.util.Log.w("AIA", "send skipped: identical outgoing already in chat expect=$expectedContactName")
-            return SendResult.SUCCESS
-        }
         findEditableInput(currentRoot) ?: return SendResult.TIMEOUT
         if (!setTextAndVerify(text, canProceed)) {
             return if (canProceed()) SendResult.NOT_VERIFIED else SendResult.STOPPED

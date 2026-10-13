@@ -1,5 +1,7 @@
 package com.aaiagent.engine
 
+import com.aaiagent.adapter.PlatformAdapter
+
 /**
  * 2026-10-07 真机（稳重的神盾局特工）：同一条回复发了两遍——
  * 第一次其实已经发出去了，但发送验证没在可见消息里看到它（新消息还在屏幕下方），
@@ -21,6 +23,19 @@ object OutgoingEchoPolicy {
         return recentSelfMessages
             .takeLast(RECENT_SELF_WINDOW)
             .any { compact(it) == expected }
+    }
+
+    /** 所有平台共用的发送前判断：只看当前聊天里最近两条自己发出的内容。 */
+    fun shouldSkipSend(
+        text: String,
+        visibleMessages: List<PlatformAdapter.ChatMessage>,
+    ): Boolean {
+        return alreadyJustSent(
+            text = text,
+            recentSelfMessages = visibleMessages
+                .filter { it.sender == "self" }
+                .map { it.content },
+        )
     }
 
     private fun compact(value: String?): String =

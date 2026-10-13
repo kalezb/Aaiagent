@@ -1,5 +1,6 @@
 package com.aaiagent
 
+import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 import com.aaiagent.engine.OutgoingEchoPolicy
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -44,5 +45,29 @@ class OutgoingEchoPolicyTest {
             )
         )
         assertFalse(OutgoingEchoPolicy.alreadyJustSent(text = "", recentSelfMessages = listOf("随便")))
+    }
+
+    @Test
+    fun `central send gate only checks recent outgoing chat bubbles`() {
+        val visibleMessages = listOf(
+            ChatMessage(sender = "self", content = "很早以前说过的话"),
+            ChatMessage(sender = "peer", content = "后面聊别的了"),
+            ChatMessage(sender = "self", content = "在的 刚忙完"),
+            ChatMessage(sender = "peer", content = "怎么不说话"),
+            ChatMessage(sender = "self", content = "这会儿在忙"),
+        )
+
+        assertTrue(
+            OutgoingEchoPolicy.shouldSkipSend(
+                text = " 这会儿在忙 ",
+                visibleMessages = visibleMessages,
+            )
+        )
+        assertFalse(
+            OutgoingEchoPolicy.shouldSkipSend(
+                text = "很早以前说过的话",
+                visibleMessages = visibleMessages,
+            )
+        )
     }
 }
