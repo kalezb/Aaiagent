@@ -409,6 +409,19 @@ class DashboardUiPolicyTest {
         assertTrue("通用输入框应该放在公共小文件里", common.contains("internal fun StyledTextField("))
     }
 
+    @Test
+    fun `dashboard ui models stay in their own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val models = readSource("src/main/java/com/aaiagent/ui/screens/DashboardUiModels.kt")
+
+        assertFalse("权限状态数据不能继续留在看板大文件里", screen.contains("data class PermissionStatus("))
+        assertFalse("客服选项数据不能继续留在看板大文件里", screen.contains("data class PersonaItem("))
+        assertFalse("共享人设资料数据不能继续留在看板大文件里", screen.contains("data class PersonaFactsUiState("))
+        assertTrue("权限状态数据应该放在单独的小文件里", models.contains("data class PermissionStatus("))
+        assertTrue("客服选项数据应该放在单独的小文件里", models.contains("data class PersonaItem("))
+        assertTrue("共享人设资料数据应该放在单独的小文件里", models.contains("data class PersonaFactsUiState("))
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
