@@ -294,6 +294,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `hosting hero stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val hero = readSource("src/main/java/com/aaiagent/ui/screens/DashboardHostingHero.kt")
+
+        assertFalse(
+            "AI 托管主开关不能继续留在看板大文件里",
+            screen.contains("private fun HostingHero("),
+        )
+        assertTrue(
+            "AI 托管主开关应该放在单独的小文件里",
+            hero.contains("internal fun HostingHero("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
