@@ -309,6 +309,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `incident feedback card stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val feedback = readSource("src/main/java/com/aaiagent/ui/screens/DashboardIncidentFeedbackCard.kt")
+
+        assertFalse(
+            "问题反馈卡片不能继续留在看板大文件里",
+            screen.contains("private fun IncidentFeedbackCard("),
+        )
+        assertTrue(
+            "问题反馈卡片应该放在单独的小文件里",
+            feedback.contains("internal fun IncidentFeedbackCard("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
