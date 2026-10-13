@@ -4002,8 +4002,7 @@ class MessageEngine(
 
     private fun canContinue(leaseToken: String, interactionEpoch: Long?): Boolean {
         if (!hostingEnabled || !lease.renew(leaseToken)) return false
-        if (interactionEpoch != null && GestureMonitor.interactionEpoch() != interactionEpoch) return false
-        return !GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)
+        return GestureMonitor.canAutomationContinue(interactionEpoch)
     }
 
     private suspend fun captureIncidentScreenshot(stage: String) {
@@ -4537,7 +4536,7 @@ class MessageEngine(
         const val CONTENT_CHANGE_WAKE_INTERVAL_MS = 1_000L
         const val LEASE_HEARTBEAT_INTERVAL_MS = 5_000L
         const val BACKEND_TASK_POLL_INTERVAL_MS = 30_000L
-        const val USER_PAUSE_MS = 5_000L
+        const val USER_PAUSE_MS = GestureMonitor.USER_PAUSE_MS
         // User browsing only needs to win for a moment. 60s used to stall every
         // scheduled click for a full minute after a single touch.
         const val USER_NAVIGATION_GRACE_MS = 20_000L

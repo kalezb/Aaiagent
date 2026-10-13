@@ -38,8 +38,15 @@ class UserInteractionGate(
         return true
     }
 
+    /** 确认来自用户本人操作的触摸。悬浮窗等自己控件的触摸不受自动化保护时间影响。 */
     @Synchronized
-    fun shouldPause(windowMs: Long): Boolean {
+    fun onManualInteraction() {
+        lastManualInteractionAtMs = clock()
+        interactionEpochValue++
+    }
+
+    @Synchronized
+    fun shouldPause(windowMs: Long = USER_PAUSE_MS): Boolean {
         if (lastManualInteractionAtMs == 0L) return false
         return clock() - lastManualInteractionAtMs < windowMs
     }
@@ -56,12 +63,20 @@ class UserInteractionGate(
         automationProtectedUntilMs = 0L
         interactionEpochValue = 0L
     }
+
+    companion object {
+        const val USER_PAUSE_MS = 5_000L
+    }
 }
 
 object GestureMonitor {
     private val gate = UserInteractionGate()
 
+    const val USER_PAUSE_MS = UserInteractionGate.USER_PAUSE_MS
+
     fun onTouchDetected(): Boolean = gate.onAccessibilityInteraction()
+
+    fun onManualInteraction() = gate.onManualInteraction()
 
     fun onAutomationActionStarted(protectionMs: Long = 1_500L) {
         gate.onAutomationActionStarted(protectionMs)
@@ -71,11 +86,16 @@ object GestureMonitor {
         gate.onAutomationActionFinished(graceMs)
     }
 
-    fun isUserTouchingRecently(windowMs: Long): Boolean = gate.shouldPause(windowMs)
+    fun isUserTouchingRecently(windowMs: Long = USER_PAUSE_MS): Boolean = gate.shouldPause(windowMs)
 
     fun isAutomationActionActive(): Boolean = gate.isAutomationActionActive()
 
     fun interactionEpoch(): Long = gate.interactionEpoch()
+
+    fun canAutomationContinue(expectedEpoch: Long? = null): Boolean {
+        if (expectedEpoch != null && interactionEpoch() != expectedEpoch) return false
+        return !isUserTouchingRecently()
+    }
 
     fun reset() = gate.reset()
 }

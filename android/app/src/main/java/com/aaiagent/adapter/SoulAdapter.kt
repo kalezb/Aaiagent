@@ -1373,7 +1373,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     private fun automationMayContinue(): Boolean {
-        return !GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)
+        return GestureMonitor.canAutomationContinue()
     }
 
     private fun findLatestIncomingVisualItem(
@@ -3534,7 +3534,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         // bottom tab bar exists; navigation must outlast the splash.
         private const val NAVIGATION_ATTEMPTS = 20
 
-        private const val USER_PAUSE_MS = 5_000L
     // 条目数不超过这个值时不做内容形态校验（新会话通常 1-3 条，都是真消息）。
     private const val MIN_ITEMS_FOR_STRICT_CHECK = 3
     // 媒体气泡本体：文字容器不存在时（语音、表情、图片）用它判断左右。

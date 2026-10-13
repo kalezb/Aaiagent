@@ -3,6 +3,7 @@ package com.aaiagent
 import com.aaiagent.engine.HostingReplyAction
 import com.aaiagent.engine.AutomationLease
 import com.aaiagent.engine.BackendTaskPollPolicy
+import com.aaiagent.engine.GestureMonitor
 import com.aaiagent.adapter.PlatformAdapter.VoiceTranscriptionResult
 import com.aaiagent.engine.ConversationContext
 import com.aaiagent.engine.ConversationIdentity
@@ -218,6 +219,21 @@ class MessageEngineTest {
     }
 
     @Test
+    fun `trusted manual touch pauses automation even during automation protection`() {
+        var now = 1_000L
+        val gate = UserInteractionGate(clock = { now })
+
+        gate.onAutomationActionStarted(protectionMs = 1_000L)
+        gate.onManualInteraction()
+
+        assertEquals(1L, gate.interactionEpoch())
+        assertTrue(gate.shouldPause())
+
+        now += 5_001L
+        assertFalse(gate.shouldPause())
+    }
+
+    @Test
     fun `conversation identity accepts safe title variations`() {
         assertTrue(ConversationIdentity.matches("星暮", "星暮"))
         assertTrue(ConversationIdentity.matches("小明同学", "小明同学 在线"))
@@ -400,6 +416,7 @@ class MessageEngineTest {
         // Regression: a single touch blocked every scheduled click for 60s.
         assertTrue(MessageEngine.USER_NAVIGATION_GRACE_MS in 5_000L..30_000L)
         assertTrue(MessageEngine.USER_PAUSE_MS <= MessageEngine.USER_NAVIGATION_GRACE_MS)
+        assertEquals(GestureMonitor.USER_PAUSE_MS, MessageEngine.USER_PAUSE_MS)
     }
 
 

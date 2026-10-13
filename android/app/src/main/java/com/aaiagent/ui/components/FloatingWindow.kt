@@ -16,6 +16,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.aaiagent.R
+import com.aaiagent.engine.GestureMonitor
 import kotlin.math.abs
 
 class FloatingWindow(private val context: Context) {
@@ -198,6 +199,7 @@ class FloatingWindow(private val context: Context) {
         root.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    GestureMonitor.onManualInteraction()
                     val current = params ?: return@setOnTouchListener false
                     initialX = current.x
                     initialY = current.y
