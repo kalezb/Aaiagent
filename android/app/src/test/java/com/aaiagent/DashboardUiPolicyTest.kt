@@ -347,6 +347,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `platform option stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val option = readSource("src/main/java/com/aaiagent/ui/screens/DashboardPlatformOption.kt")
+
+        assertFalse(
+            "平台选项按钮不能继续留在看板大文件里",
+            screen.contains("private fun PlatformOption("),
+        )
+        assertTrue(
+            "平台选项按钮应该放在单独的小文件里",
+            option.contains("internal fun PlatformOption("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),

@@ -551,66 +551,6 @@ private fun PlatformPersonaCard(
 }
 
 @Composable
-private fun PlatformOption(
-    platform: String,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(13.dp),
-        color = if (selected) SkyBlueSoft else SkySurface,
-        border = BorderStroke(1.dp, if (selected) SkyBlue else SkyLine)
-    ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(36.dp),
-                shape = RoundedCornerShape(10.dp),
-                color = if (selected) SkyText else SkyBlueSoft
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = platformDisplayName(platform).take(1),
-                        color = if (selected) Color.White else SkyBlue,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                }
-            }
-            Spacer(Modifier.width(7.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = platformDisplayName(platform),
-                    color = SkyText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            if (selected) {
-                Box(
-                    Modifier
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(SkyBlue),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "✓",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun PersonaSelector(
     personas: List<PersonaItem>,
     activePersona: PersonaItem?,
