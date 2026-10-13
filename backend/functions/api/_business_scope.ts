@@ -10,3 +10,10 @@ export const BUSINESS_ACTION_SOURCE =
 
 export const BUSINESS_DEVICE_PATTERN = new RegExp(BUSINESS_DEVICE_SOURCE, "iu");
 export const BUSINESS_ACTION_PATTERN = new RegExp(BUSINESS_ACTION_SOURCE, "iu");
+
+export function isExplicitBusinessIntent(value) {
+  const text = String(value || "").replace(/\s+/gu, "");
+  const explicit = /(?:回收|上门.{0,6}(?:收|取)|换机|闲置(?:设备|数码)|(?:旧)?数码.{0,6}(?:卖|出|处理)|(?:咨询|问问).{0,8}(?:回收|收旧))/u.test(text);
+  const deviceIntent = BUSINESS_DEVICE_PATTERN.test(text) && BUSINESS_ACTION_PATTERN.test(text);
+  return explicit || deviceIntent;
+}
