@@ -10,6 +10,8 @@ describe("structure size guard", () => {
       ["../functions/api/_persona_drawers_data.ts", 850],
       ["../functions/api/_agent_rule_inventory_data.ts", 750],
       ["../src/app.js", 1200],
+      ["../src/index.html", 1050],
+      ["../src/dashboard.css", 950],
       ["../src/dashboard-library.js", 320],
       ["../src/dashboard-rules.js", 1150],
       ["../src/dashboard-init.js", 400],
@@ -35,10 +37,13 @@ describe("structure size guard", () => {
     expect(replyPolicy).not.toMatch(/from "\.\/(?:_chat_api|_chat_confirm_api|route)"/u);
     expect(chatConfirm).not.toMatch(/from "\.\/(?:_chat_api|route)"/u);
     const utilsIndex = dashboardHtml.indexOf("dashboard-utils.js");
+    const cssIndex = dashboardHtml.indexOf("dashboard.css");
     const appIndex = dashboardHtml.indexOf("app.js");
     const libraryIndex = dashboardHtml.indexOf("dashboard-library.js");
     const rulesIndex = dashboardHtml.indexOf("dashboard-rules.js");
     const initIndex = dashboardHtml.indexOf("dashboard-init.js");
+    expect(cssIndex).toBeGreaterThan(0);
+    expect(cssIndex).toBeLessThan(utilsIndex);
     expect(utilsIndex).toBeLessThan(appIndex);
     expect(appIndex).toBeLessThan(libraryIndex);
     expect(libraryIndex).toBeLessThan(rulesIndex);

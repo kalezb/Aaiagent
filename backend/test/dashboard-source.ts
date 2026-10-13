@@ -12,3 +12,7 @@ export function readDashboardScript(): string {
     .map((name) => readFileSync(new URL(`../src/${name}`, import.meta.url), "utf8"))
     .join("\n");
 }
+
+export function readDashboardStyles(): string {
+  return readFileSync(new URL("../src/dashboard.css", import.meta.url), "utf8");
+}

@@ -10,7 +10,7 @@ import {
   MockD1,
   MockKV,
 } from "./chat-test-helpers";
-import { readDashboardScript } from "./dashboard-source";
+import { readDashboardScript, readDashboardStyles } from "./dashboard-source";
 
 describe("customer dashboard and cross-platform memory", () => {
   it("returns unified customers and marks every bound platform", async () => {
@@ -228,9 +228,10 @@ describe("customer dashboard and cross-platform memory", () => {
   it("ships the clean customer dashboard layout and profile panel", () => {
     const html = readFileSync(new URL("../src/index.html", import.meta.url), "utf8");
     const source = readDashboardScript();
+    const styles = readDashboardStyles();
     const utils = readFileSync(new URL("../src/dashboard-utils.js", import.meta.url), "utf8");
-    expect(html).toMatch(/grid-template-columns: (?:320px minmax\(420px, 1fr\) 300px|280px 1fr 280px)/);
-    expect(html).toMatch(/--(?:green|blue): #(?:22c55e|0ea5e9)/);
+    expect(styles).toMatch(/grid-template-columns: (?:320px minmax\(420px, 1fr\) 300px|280px 1fr 280px)/);
+    expect(styles).toMatch(/--(?:green|blue): #(?:22c55e|0ea5e9)/);
     expect(html).toContain('id="profilePlatformLinks"');
     expect(html).toContain('id="mobileSidebarButton"');
     expect(html).toContain('id="mobileProfileButton"');
@@ -242,7 +243,7 @@ describe("customer dashboard and cross-platform memory", () => {
     expect(source).toContain("function messageBody(message)");
     expect(utils).toContain("first_observed: \"读到\"");
     expect(source).toContain("content-chip");
-    expect(html).toContain(".kind-label");
-    expect(html).toContain(".content-chip");
+    expect(styles).toContain(".kind-label");
+    expect(styles).toContain(".content-chip");
   });
 });
