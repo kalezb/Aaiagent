@@ -44,6 +44,8 @@ logs/
 /backend/db/seed_*.sql
 /backend/replay/
 /backend/dist-func/
+/archive/
+/research/
 
 # Local device captures and test artifacts
 /ceshibao/
