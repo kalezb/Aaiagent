@@ -396,6 +396,19 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `dashboard common ui stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val common = readSource("src/main/java/com/aaiagent/ui/screens/DashboardCommonUi.kt")
+
+        assertFalse("通用章节标题不能继续留在看板大文件里", screen.contains("private fun SectionHeader("))
+        assertFalse("通用小图标底座不能继续留在看板大文件里", screen.contains("internal fun QuickIcon("))
+        assertFalse("通用输入框不能继续留在看板大文件里", screen.contains("internal fun StyledTextField("))
+        assertTrue("通用章节标题应该放在公共小文件里", common.contains("internal fun SectionHeader("))
+        assertTrue("通用小图标底座应该放在公共小文件里", common.contains("internal fun QuickIcon("))
+        assertTrue("通用输入框应该放在公共小文件里", common.contains("internal fun StyledTextField("))
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
