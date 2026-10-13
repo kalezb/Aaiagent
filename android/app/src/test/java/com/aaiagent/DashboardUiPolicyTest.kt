@@ -362,6 +362,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `persona selector stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val selector = readSource("src/main/java/com/aaiagent/ui/screens/DashboardPersonaSelector.kt")
+
+        assertFalse(
+            "客服选择器不能继续留在看板大文件里",
+            screen.contains("private fun PersonaSelector("),
+        )
+        assertTrue(
+            "客服选择器应该放在单独的小文件里",
+            selector.contains("internal fun PersonaSelector("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
