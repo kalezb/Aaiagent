@@ -39,7 +39,7 @@ export function emptyCustomerProfile() {
     education: { school: "", major: "", degree: "" },
     work: { company: "", role: "", industry: "" },
     family: { marital_status: "", children: "", notes: "" },
-    relationship: { status: "", preferences: "" },
+    relationship: { status: "", preferences: "", generosity_status: "" },
     preferences: { likes: [], dislikes: [], hobbies: [] },
     life: { habits: "", schedule: "" },
     recent: { goals: [], events: [] },
@@ -71,24 +71,42 @@ export function mergeCustomerProfile(existing, incoming) {
   return mergeProfileValue(current, parseJsonObject(incoming, {}));
 }
 
+export function isQualifiedGenerosity(text) {
+  const compact = String(text || "").replace(/\s+/gu, "");
+  if (!compact) return false;
+  const negation = /(?:不(?:可能|想|会|用)?请|凭什么|没钱|我不买|我不出|我不来|不买单)/u.test(compact);
+  if (negation) return false;
+  return /(?:(?:我|俺|本人)(?:来)?(?:买单|请客|付钱|出钱|安排|订房|订酒店)|我请(?:你)?|开销我来|费用我(?:包|出)|不用你(?:掏|出|花|买|操心)|不会让你(?:掏|出|花|买|操心)|挑个好点的|找个高档|环境好点|体面点)/u.test(compact);
+}
+
+export function isCheapTalkGenerosity(text) {
+  const compact = String(text || "").replace(/\s+/gu, "");
+  if (!compact) return false;
+  return /(?:(?:我们|咱|出来)?(?:AA制?|各付各|各掏各)|随便找个(?:几十|小旅馆|小宾馆|招待所|破宾馆)|几十一晚|太贵了去不起|(?:等我以后|下次带你|以后送你|等我|以后|下次).{0,12}(?:发财|有钱|发大财|买跑车|开豪车|买车|买房|买别墅|送你车|送你跑车)|白嫖)/u.test(compact);
+}
+
 export function profileCandidateText(value) {
   const text = String(value || "").trim();
   return text.length >= 2 &&
     text.length <= 240 &&
-    /(我叫|我是|姓名|名字|年龄|多大|住在|我在|家住|老家|家乡|城市|地址|[\u4e00-\u9fa5A-Za-z0-9]{2,12}(?:区|县|镇|街道)|学校|大学|专业|公司|上班|工作|职业|行业|结婚|离婚|已婚|单身|单身汉|未婚|没结过婚|没结婚|老婆|老公|孩子|娃|儿子|女儿|没娃|没有娃|没孩子|没有孩子|男朋友|女朋友|爱好|习惯|最近|打算|准备|计划|目标|生日|毕业|认识|见过|喜欢|不喜欢)/.test(text);
+    /(我叫|我是|姓名|名字|年龄|多大|住在|我在|家住|老家|家乡|城市|地址|[\u4e00-\u9fa5A-Za-z0-9]{2,12}(?:区|县|镇|街道)|学校|大学|专业|公司|上班|工作|职业|行业|结婚|离婚|已婚|单身|单身汉|未婚|没结过婚|没结婚|老婆|老公|孩子|娃|儿子|女儿|没娃|没有娃|没孩子|没有孩子|男朋友|女朋友|爱好|习惯|最近|打算|准备|计划|目标|生日|毕业|认识|见过|喜欢|不喜欢|买单|请客|费用|开销|我来安排|AA)/.test(text);
 }
 
 export function extractExplicitCustomerFacts(value) {
   const text = String(value || "").replace(/\s+/gu, " ").trim();
   if (!text || text.length > 240) return {};
   const compact = text.replace(/\s+/gu, "");
+  const generositySignal =
+    /(?:AA制?|各付各|各掏各|小旅馆|小宾馆|招待所|几十一晚|买单|请客|费用|开销|不会让你|不用你|我来安排|好点的酒店|高档)/u.test(compact);
   const aboutOther =
     /(?:你|您|他|她|他们|她们)/u.test(compact) &&
-    !/(?:我|本人|俺)/u.test(compact);
+    !/(?:我|本人|俺)/u.test(compact) &&
+    !generositySignal;
   if (aboutOther) return {};
 
   const selfMarker =
     /(?:我|本人|俺)/u.test(compact) ||
+    generositySignal ||
     /^(?:单身|单身汉|未婚|已婚|离异|离婚|没孩子|没有孩子|没娃|没有娃)(?:的|了|啊|呀|哦|撒|哈|哇|嘛)?[。！？!?]*$/u.test(compact) ||
     /(?:肯定|确实|就是|真的|本来|一直)(?:是)?(?:单身|单身汉|未婚|已婚|离异|离婚)/u.test(compact);
   if (!selfMarker) return {};
@@ -102,6 +120,13 @@ export function extractExplicitCustomerFacts(value) {
   const family = {};
   const location = {};
   const basic = {};
+  const relationship = {};
+
+  if (isCheapTalkGenerosity(compact)) {
+    relationship.generosity_status = "cheap_talk";
+  } else if (isQualifiedGenerosity(compact)) {
+    relationship.generosity_status = "qualified";
+  }
 
   const singleDeclared =
     /(?:(?:我|本人|俺)(?:是)?(?:单身汉|单身)|(?:我|本人|俺)(?:还)?没结过婚|(?:我|本人|俺)没有结过婚|(?:我|本人|俺)没结婚|(?:我|本人|俺)没有结婚|^(?:单身汉|单身)$|(?:肯定|确实|就是|真的|本来|一直)(?:是)?(?:单身汉|单身))/u.test(compact) &&
@@ -158,6 +183,7 @@ export function extractExplicitCustomerFacts(value) {
   if (Object.keys(basic).length) result.basic = basic;
   if (Object.keys(location).length) result.location = location;
   if (Object.keys(family).length) result.family = family;
+  if (Object.keys(relationship).length) result.relationship = relationship;
   return result;
 }
 

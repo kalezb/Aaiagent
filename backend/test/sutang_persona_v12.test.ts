@@ -14,6 +14,11 @@ import {
   sanitizeContactDisclosure,
 } from "../functions/api/_reply_policy";
 import {
+  extractExplicitCustomerFacts,
+  isCheapTalkGenerosity,
+  isQualifiedGenerosity,
+} from "../functions/api/_profile_runtime";
+import {
   buildPersonaFactsPrompt,
   normalizePersonaFacts,
 } from "../functions/api/_persona_facts";
@@ -234,5 +239,98 @@ describe("Su Tang v13 persona", () => {
       allowIntimateDetails: true,
     });
     expect(filteredVulgar).toBe("");
+  });
+
+  it("考核男方诚意与态度：口嗨白嫖AA问几次都不给，大方主动承担开销才放行，走心时允许从容主动送钥匙", () => {
+    // 1. 态度词识别
+    expect(isQualifiedGenerosity("周末我来安排，找个好点的环境不会让你花钱")).toBe(true);
+    expect(isQualifiedGenerosity("我请客，挑个舒服的私房菜")).toBe(true);
+    expect(isCheapTalkGenerosity("出来AA吧，各付各的")).toBe(true);
+    expect(isCheapTalkGenerosity("随便找个几十块钱的小旅馆")).toBe(true);
+    expect(isCheapTalkGenerosity("等我以后发大财给你买跑车")).toBe(true);
+
+    // 2. 事实抽取沉淀进资料
+    const cheapFacts = extractExplicitCustomerFacts("出来AA吧各付各的");
+    expect(cheapFacts.relationship?.generosity_status).toBe("cheap_talk");
+    const qualFacts = extractExplicitCustomerFacts("周末我来安排，不会让你花钱");
+    expect(qualFacts.relationship?.generosity_status).toBe("qualified");
+
+    // 3. 口嗨男 (cheap_talk)：问再多次联系方式也坚决不给
+    const cheapPolicy = resolveContactRequestPolicy({
+      requestCount: 3,
+      stage: 2,
+      activity: { totalExchanges: 20 },
+      incomingText: "加个联系方式呗",
+      messages: [{ role: "user", content: "加个联系方式呗" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+      customerProfile: { relationship: { generosity_status: "cheap_talk" } },
+    });
+    expect(cheapPolicy.allowed).toBe(false);
+    expect(cheapPolicy.reply).not.toContain("sutang2026");
+
+    // 4. 观察中男 (observing)：虽无口嗨但未表达大方诚意，同样扣留不放
+    const observingPolicy = resolveContactRequestPolicy({
+      requestCount: 2,
+      stage: 2,
+      activity: { totalExchanges: 16 },
+      incomingText: "加个豆瓣",
+      messages: [{ role: "user", content: "加个豆瓣" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+      customerProfile: { relationship: { generosity_status: "observing" } },
+    });
+    expect(observingPolicy.allowed).toBe(false);
+
+    // 5. 大方男 (qualified)：要了2次号且互动充分，顺理成章放行
+    const qualifiedPolicy = resolveContactRequestPolicy({
+      requestCount: 2,
+      stage: 2,
+      activity: { totalExchanges: 16 },
+      incomingText: "加个豆瓣聊",
+      messages: [{ role: "user", content: "加个豆瓣聊" }],
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+      customerProfile: { relationship: { generosity_status: "qualified" } },
+    });
+    expect(qualifiedPolicy.allowed).toBe(true);
+    expect(qualifiedPolicy.reply).toBe("豆瓣知道吧|||sutang2026");
+
+    // 6. 大方男 (qualified) 未主动要号 (requestCount: 0)，聊到深入走心时，允许苏棠主动送钥匙
+    const proactivePolicy = resolveContactRequestPolicy({
+      requestCount: 0,
+      stage: 2,
+      activity: { totalExchanges: 16 },
+      contactChannel: "douban",
+      contactQq: "sutang2026",
+      xingmuScope: false,
+      sutangScope: true,
+      customerProfile: { relationship: { generosity_status: "qualified" } },
+    });
+    expect(proactivePolicy.isRequest).toBe(false);
+    expect(proactivePolicy.allowed).toBe(true);
+    // 允许模型以松弛姿态输出钥匙，不被过滤器打回
+    expect(sanitizeContactDisclosure("这上面太吵太杂，看你说话挺有分寸，把我自留地分你个位置呗|||豆瓣知道吧|||sutang2026", {
+      allowed: proactivePolicy.allowed,
+      contactChannel: "douban",
+      contactAccount: "sutang2026",
+      sutangScope: true,
+    })).toBe("这上面太吵太杂，看你说话挺有分寸，把我自留地分你个位置呗|||豆瓣知道吧|||sutang2026");
+
+    // 7. 口嗨男未达标时，即便模型误输出也会被严格拦截号码
+    const blockedOutput = sanitizeContactDisclosure("这上面太吵太杂，看你说话挺有分寸，把我自留地分你个位置呗|||豆瓣知道吧|||sutang2026", {
+      allowed: false,
+      contactChannel: "douban",
+      contactAccount: "sutang2026",
+      sutangScope: true,
+    });
+    expect(blockedOutput).not.toContain("sutang2026");
+    expect(blockedOutput).toContain("联系方式先不发了 在这儿聊就行");
   });
 });

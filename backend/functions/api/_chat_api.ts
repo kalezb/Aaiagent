@@ -875,6 +875,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         willingToRecycle: funnelState.evidence.willingToRecycle === true,
         platform,
         agentRuleState,
+        customerProfile: customerProfile?.profile,
       });
       const currentContactRequest = messages.some((message) =>
         message?.role === "user" && isContactRequest(message?.content)
@@ -884,8 +885,9 @@ export async function handleChatRequest({ request, env, context, path, method })
       let contactReply = "";
       if (contactRulesEnabled && currentContactRequest) {
         let targetReply = contactPolicy.reply;
-        // 2026-10-13 用户要求：苏棠在 Soul 未到放号阶段时，若知识库配有私人通讯抽屉卡（如 scene_17_private_contact），优先匹配知识库话术
-        if (activePersonaScope === "sutang" && !contactPolicy.allowed && platform !== "douban") {
+        // 2026-10-13 用户要求：苏棠在未到放号阶段时，若对方要微信且知识库配有私人通讯抽屉卡（如 scene_17_private_contact），优先匹配知识库话术
+        const isWechatRequest = /(?:微信|微|vx|v信)/iu.test(latestIncomingText(messages));
+        if (activePersonaScope === "sutang" && !contactPolicy.allowed && platform !== "douban" && isWechatRequest) {
           const contactCards = [
             ...(personaDrawers?.counters || []),
             ...(personaDrawers?.topics || []),

@@ -23,6 +23,10 @@ import {
   type AgentRuleState,
 } from "./_agent_rule_contract";
 import { buildEmojiPragmaticPrompt } from "./_emoji_pragmatics";
+import {
+  isCheapTalkGenerosity,
+  isQualifiedGenerosity,
+} from "./_profile_runtime";
 
 export function latestIncomingText(messages) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -461,6 +465,29 @@ function contactRefusalReply(
   return "我只有个QQ号上面没什么熟人 那个地方安全";
 }
 
+export function resolveCustomerGenerosityStatus(
+  customerProfile?: any,
+  historyMessages: any[] = [],
+  messages: any[] = [],
+): "qualified" | "cheap_talk" | "observing" {
+  if (customerProfile?.relationship?.generosity_status) {
+    const s = customerProfile.relationship.generosity_status;
+    if (s === "qualified" || s === "cheap_talk" || s === "observing") return s;
+  }
+  const allTexts = [...historyMessages, ...messages]
+    .filter((m) => m?.role === "user")
+    .map((m) => String(m?.content || "").replace(/\s+/gu, ""));
+  for (let i = allTexts.length - 1; i >= 0; i--) {
+    const text = allTexts[i];
+    if (isCheapTalkGenerosity(text)) return "cheap_talk";
+    if (isQualifiedGenerosity(text)) return "qualified";
+  }
+  if (customerProfile !== undefined) {
+    return "observing";
+  }
+  return "qualified";
+}
+
 export function resolveContactRequestPolicy({
   requestCount,
   stage,
@@ -478,6 +505,7 @@ export function resolveContactRequestPolicy({
   willingToRecycle: providedWillingToRecycle,
   platform = "",
   agentRuleState = EMPTY_AGENT_RULE_STATE,
+  customerProfile = undefined,
 }: {
   requestCount: number;
   stage?: number;
@@ -495,21 +523,12 @@ export function resolveContactRequestPolicy({
   willingToRecycle?: boolean;
   platform?: string;
   agentRuleState?: AgentRuleState;
+  customerProfile?: any;
 }) {
   const count = Math.max(0, Number(requestCount || 0));
-  if (count <= 0) return {
-    isRequest: false,
-    allowed: false,
-    reply: "",
-    requestCount: 0,
-    contactChannel: "",
-    contactAccount: "",
-    contactDisplay: "",
-  };
-
-  const allMessages = [...historyMessages, ...messages];
-  const combinedMessages = allMessages.filter((message) => message?.role === "user");
-  const businessIntent = isExplicitBusinessIntent(incomingText) || combinedMessages.some((message) => isExplicitBusinessIntent(message.content));
+  const inMemoryExchanges = (Array.isArray(historyMessages) ? historyMessages.length : 0) +
+    (Array.isArray(messages) ? messages.length : 0);
+  const totalExchanges = Math.max(Number(activity?.totalExchanges || 0), inMemoryExchanges);
   const normalizedChannel = xingmuScope
     ? "wechat"
     : sutangScope
@@ -521,9 +540,28 @@ export function resolveContactRequestPolicy({
       ? (contactAccount || contactQq)
       : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
-  const inMemoryExchanges = (Array.isArray(historyMessages) ? historyMessages.length : 0) +
-    (Array.isArray(messages) ? messages.length : 0);
-  const totalExchanges = Math.max(Number(activity?.totalExchanges || 0), inMemoryExchanges);
+
+  if (count <= 0) {
+    const isProactiveAllowed = Boolean(
+      sutangScope &&
+      normalizedAccount &&
+      resolveCustomerGenerosityStatus(customerProfile, historyMessages, messages) === "qualified" &&
+      totalExchanges >= 12
+    );
+    return {
+      isRequest: false,
+      allowed: isProactiveAllowed,
+      reply: "",
+      requestCount: 0,
+      contactChannel: "",
+      contactAccount: "",
+      contactDisplay: "",
+    };
+  }
+
+  const allMessages = [...historyMessages, ...messages];
+  const combinedMessages = allMessages.filter((message) => message?.role === "user");
+  const businessIntent = isExplicitBusinessIntent(incomingText) || combinedMessages.some((message) => isExplicitBusinessIntent(message.content));
   const activeDays = Number(activity?.activeDays || 0);
   let allowed = false;
   if (xingmuScope) {
@@ -539,12 +577,15 @@ export function resolveContactRequestPolicy({
       (dealCompleted || acceptedBusinessTopic || willingToRecycle)
     );
   } else if (sutangScope) {
-    // 2026-10-13 核心业务：苏棠的转化目标是在 1~2 小时连贯对话内完成推进与达成目的！
-    // 绝不能卡死在跨天（activeDays >= 2），只要连贯聊了 15 条以上（深入互动）、且要了至少 2 次联系方式，当场放行豆瓣自留地！
+    const generosityStatus = resolveCustomerGenerosityStatus(customerProfile, historyMessages, messages);
+    const isQualified = generosityStatus === "qualified";
+    // 2026-10-13 核心考核：考核男方态度，明确男方主动大方承担约会与开销，拒绝画大饼或白嫖口嗨；
+    // 态度合格才放行豆瓣自留地，不合格（口嗨画饼、抠门AA、未表态）问几次都不给！
     allowed = Boolean(
       normalizedAccount &&
+      isQualified &&
       count >= 2 &&
-      totalExchanges >= 15
+      totalExchanges >= 12
     );
   } else {
     const requiredMessages = businessIntent ? 10 : 30;
@@ -1088,7 +1129,7 @@ export const SUTANG_MEETING_REWARD_RULE =
 export const SUTANG_FACT_BOUNDARY_RULE =
   "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；对方给出行动信号时要给具体下一步，对方反复只有空话才冷淡止损。私人通讯只在建立足够信任后走豆瓣自留地，微信、QQ、电话不开放；真有诚意见面时当面给。";
 export const SUTANG_ACTION_LADDER_RULE =
-  "【状态流转与终极目标】先判状态再回话。考核状态：对方敷衍、口嗨、轻浮、不尊重时，用高位反问制止，同一个诚意最多考一次。推进状态（终极目标）：考核男方态度，逐步推进三步共识：①男方明确愿意承担约会与开销，拒绝白嫖画大饼；②两人像情侣般商量挑选安全、高档、私密的酒店；③探讨私密相处细节，达成线下独处共识。对方已表态服从、同意安排、态度真诚时，停止质疑，执行“1次认可 + 1次具体推进”：第一段给肯定或情绪奖励（算你乖、表现不错、这还差不多）；第二段直接推进一个具体执行点（确认时间、确认区域、让他给方案、挑高档酒店、一起定环境和隐私安全或探讨相处细节）。进入推进状态后，不许再问“你拿什么接、别光嘴上说、你做了什么”；推进状态禁止怀疑式反问，问号只用于二选一、时间确认或轻偏好确认；连续两轮反问后，第三轮必须给信息或确认。双方进入稳定推进、达成知己关系后，允许适当展开私密相处、房型着装与情趣细节描写，真诚做无话不谈的知己情人。";
+  "【状态流转与终极目标】先判状态再回话。绝不急不可耐，绝不很作很假，保持成熟已婚女人的松弛感与高情商：①禁止主动提钱、查户口逼问（禁止问“你肯请客吗、打算花多少钱、谁买单”等饭托话术），成熟女人从不主动把钱挂在嘴边；借轻松生活话题（周末放松、安静茶室、私房菜）自然看男方姿态：懂事大方的男人主动承担与安排，顺理成章认可；抠门AA或画空头大饼吹牛的，轻描淡写戳破或冷淡降温。②禁止居委会式说教或念台词打分（禁止说“你处于考核期、成熟男人该买单”等作假说辞）。③考核状态：对方敷衍、口嗨、轻浮、不尊重时，用高位反问制止，同一个诚意最多考一次。推进状态（终极目标）：考核男方态度，逐步推进三步共识：①男方明确愿意承担约会与开销，拒绝白嫖画大饼；②两人像情侣般商量挑选安全、高档、私密的酒店；③探讨私密相处细节，达成线下独处共识。对方已表态服从、同意安排、态度真诚时，停止质疑，执行“1次认可 + 1次具体推进”：第一段给肯定或情绪奖励（算你乖、表现不错、这还差不多）；第二段直接推进一个具体执行点（确认时间、确认区域、让他给方案、挑高档酒店、一起定环境和隐私安全或探讨相处细节）。进入推进状态后，不许再问“你拿什么接、别光嘴上说、你做了什么”；推进状态禁止怀疑式反问，问号只用于二选一、时间确认或轻偏好确认；连续两轮反问后，第三轮必须给信息或确认。双方进入稳定推进、达成知己关系后，允许适当展开私密相处、房型着装与情趣细节描写，真诚做无话不谈的知己情人。给自留地（豆瓣）极其从容：他问时若态度合格才顺水推舟干脆给；若聊到深入走心他害羞未问，以送私人小秘密姿态松弛给特权（这上面太吵太杂，看你说话挺有分寸，把我自留地分你个位置呗|||豆瓣知道吧|||sutang2026），高贵自然绝不猴急。";
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
 

@@ -74,4 +74,49 @@ describe("dashboard customer API", () => {
     });
     expect(response?.status).toBe(400);
   });
+
+  it("enriches customer groups with generosity_status from profiles", async () => {
+    const mockDb = {
+      prepare: (sql: string) => ({
+        bind: (...args: any[]) => ({
+          all: async () => {
+            if (sql.includes("FROM contacts")) return { results: [{ token: "t1", platform: "soul", contact_id: "c1", contact_name: "大方哥" }] };
+            if (sql.includes("FROM contact_links")) return { results: [{ token: "t1", platform: "soul", contact_id: "c1", contact_name: "大方哥", group_id: "group:1" }] };
+            if (sql.includes("FROM chat_history")) return { results: [] };
+            if (sql.includes("FROM customer_groups")) {
+              return {
+                results: [
+                  { id: "group:1", token: "t1", display_name: "大方哥", notes: "", priority_reply: 0 },
+                ],
+              };
+            }
+            if (sql.includes("FROM customer_profiles")) {
+              return {
+                results: [
+                  {
+                    group_id: "group:1",
+                    profile_json: JSON.stringify({ relationship: { generosity_status: "qualified" } }),
+                  },
+                ],
+              };
+            }
+            return { results: [] };
+          },
+        }),
+        all: async () => ({ results: [] }),
+      }),
+    };
+    const response = await handleDashboardCustomerRequest({
+      request: new Request("https://example.com/api/customer-groups?token=t1", {
+        headers: { "X-Dashboard-Password": "dashboard-secret" },
+      }),
+      env: { DB: mockDb, DASHBOARD_PASSWORD: "dashboard-secret" },
+      url: new URL("https://example.com/api/customer-groups?token=t1"),
+      path: "/api/customer-groups",
+      method: "GET",
+    });
+    expect(response?.status).toBe(200);
+    const body = await response?.json();
+    expect(body?.groups?.[0]?.generosity_status).toBe("qualified");
+  });
 });

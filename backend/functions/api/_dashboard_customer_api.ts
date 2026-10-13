@@ -156,7 +156,25 @@ export async function handleDashboardCustomerRequest({
     const platform = url.searchParams.get("platform") || "";
     const query = url.searchParams.get("q") || "";
     const groups = await listCustomerGroups(env.DB, token, platform, query);
-    return json({ groups });
+    const profileRows = token
+      ? await env.DB.prepare("SELECT group_id, profile_json FROM customer_profiles WHERE token = ?").bind(token).all()
+      : await env.DB.prepare("SELECT group_id, profile_json FROM customer_profiles").all();
+    const profileMap = new Map((profileRows?.results || []).map((row) => [row.group_id, row.profile_json]));
+    const enrichedGroups = groups.map((group) => {
+      const raw = profileMap.get(group.id);
+      let generosity_status = "observing";
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          generosity_status = parsed?.relationship?.generosity_status || "observing";
+        } catch (_) {}
+      }
+      return {
+        ...group,
+        generosity_status,
+      };
+    });
+    return json({ groups: enrichedGroups });
   }
 
   // POST /api/customer-groups/bind - bind multiple platform accounts to one person
