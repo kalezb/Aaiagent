@@ -27,18 +27,20 @@ class SharedHttpClientGuardTest {
     @Test
     fun `手机端不能再保存共享人设资料`() {
         val activity = readSource("src/main/java/com/aaiagent/MainActivity.kt")
-        val dashboard = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val sharedFacts = readSource(
+            "src/main/java/com/aaiagent/ui/screens/DashboardSharedPersonaFactsCard.kt",
+        )
         assertFalse(
             "手机端不能再调用旧的本机覆盖保存动作",
             activity.contains("save_persona_facts"),
         )
         assertTrue(
             "共享资料卡片要明确告诉用户手机端只读",
-            dashboard.contains("所有设备共用同一套资料，手机端只读"),
+            sharedFacts.contains("所有设备共用同一套资料，手机端只读"),
         )
         assertTrue(
             "共享资料卡片要指向客户看板修改",
-            dashboard.contains("请到客户看板"),
+            sharedFacts.contains("请到客户看板"),
         )
     }
 

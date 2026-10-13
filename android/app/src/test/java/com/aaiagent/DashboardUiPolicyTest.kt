@@ -128,6 +128,25 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `shared persona facts card stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val card = readSource("src/main/java/com/aaiagent/ui/screens/DashboardSharedPersonaFactsCard.kt")
+
+        assertFalse(
+            "共享人设资料卡片不能继续留在看板大文件里",
+            screen.contains("private fun SharedPersonaFactsCard("),
+        )
+        assertTrue(
+            "共享人设资料卡片应该放在单独的小文件里",
+            card.contains("internal fun SharedPersonaFactsCard("),
+        )
+        assertTrue(
+            "共享人设资料的行组件应该跟着卡片一起搬走",
+            card.contains("private fun SharedFactRow("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
