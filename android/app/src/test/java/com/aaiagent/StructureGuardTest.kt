@@ -9,9 +9,9 @@ class StructureGuardTest {
     @Test
     fun `core Android files stay within their current size ceilings`() {
         val limits = mapOf(
-            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4700,
-            "src/main/java/com/aaiagent/adapter/SoulAdapter.kt" to 3800,
-            "src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt" to 500,
+            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4550,
+            "src/main/java/com/aaiagent/adapter/SoulAdapter.kt" to 3700,
+            "src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt" to 400,
         )
 
         for ((relative, limit) in limits) {

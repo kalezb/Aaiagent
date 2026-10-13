@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 describe("structure size guard", () => {
   it("keeps the largest backend files from growing again", () => {
     const limits = [
-      ["../functions/api/_reply_policy.ts", 3250],
-      ["../functions/api/_chat_api.ts", 1850],
-      ["../src/app.js", 3000],
+      ["../functions/api/_reply_policy.ts", 2900],
+      ["../functions/api/_chat_api.ts", 1820],
+      ["../src/app.js", 2950],
       ["chat.test.ts", 8200],
     ] as const;
 
