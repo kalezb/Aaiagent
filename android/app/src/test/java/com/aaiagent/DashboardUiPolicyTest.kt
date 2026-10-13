@@ -177,6 +177,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `permission row stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val row = readSource("src/main/java/com/aaiagent/ui/screens/DashboardPermissionRow.kt")
+
+        assertFalse(
+            "权限状态行不能继续留在看板大文件里",
+            screen.contains("private fun PermissionRow("),
+        )
+        assertTrue(
+            "权限状态行应该放在单独的小文件里",
+            row.contains("internal fun PermissionRow("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),

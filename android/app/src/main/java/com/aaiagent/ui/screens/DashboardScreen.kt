@@ -908,47 +908,6 @@ private fun QuickManagement(
 }
 
 @Composable
-private fun PermissionRow(
-    icon: ImageVector,
-    title: String,
-    granted: Boolean,
-    accent: Color,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        QuickIcon(icon, accent)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = SkyText,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-        Text(
-            text = if (granted) "已开启" else "去设置",
-            color = if (granted) SkyBlue else SkyWarm,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.width(4.dp))
-        Icon(
-            Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = SkyLineStrong,
-            modifier = Modifier.size(17.dp)
-        )
-    }
-}
-
-@Composable
 private fun ToggleRow(
     icon: ImageVector,
     title: String,
