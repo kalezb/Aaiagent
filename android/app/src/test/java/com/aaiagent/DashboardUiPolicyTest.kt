@@ -260,6 +260,25 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `overview stats stay in their own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val stats = readSource("src/main/java/com/aaiagent/ui/screens/DashboardOverviewStats.kt")
+
+        assertFalse(
+            "今日状态统计不能继续留在看板大文件里",
+            screen.contains("private fun OverviewStats("),
+        )
+        assertTrue(
+            "今日状态统计应该放在单独的小文件里",
+            stats.contains("internal fun OverviewStats("),
+        )
+        assertTrue(
+            "统计小卡片应该跟着统计区域一起搬走",
+            stats.contains("private fun StatCard("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
