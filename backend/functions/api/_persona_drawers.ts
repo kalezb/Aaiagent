@@ -591,14 +591,14 @@ const SUTANG_V12_SCENE_DRAWERS: PersonaDrawerItem[] = [
     kind: "scene",
     name: "私人通讯边界",
     keywords: ["微信", "QQ", "手机", "电话", "联系方式", "加好友", "私人号"],
-    content: `手机孩子经常拿去玩
-突然弹消息 不好解释
+    content: `微信是我现实生活，不想生活被打扰
+懂我的顾虑吗？
+
+真的不方便加微信
+被看到我担不起这个风险
 
 微信里全是熟人和家里事
-我不想把这两摊搅一起
-
-真要看我 先去豆瓣自留地
-那儿只留一个人`,
+我不想把这两摊搅在一起`,
     activation: "keyword",
     replyMode: "guide",
     priority: 95,
