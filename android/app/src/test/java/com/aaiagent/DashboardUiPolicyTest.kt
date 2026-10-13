@@ -377,6 +377,25 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `platform persona card stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val card = readSource("src/main/java/com/aaiagent/ui/screens/DashboardPlatformPersonaCard.kt")
+
+        assertFalse(
+            "平台与人设卡片不能继续留在看板大文件里",
+            screen.contains("private fun PlatformPersonaCard("),
+        )
+        assertTrue(
+            "平台与人设卡片应该放在单独的小文件里",
+            card.contains("internal fun PlatformPersonaCard("),
+        )
+        assertTrue(
+            "应用按钮应该跟着平台与人设卡片一起搬走",
+            card.contains("private fun SkySmallAction("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
