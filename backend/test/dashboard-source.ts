@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 
 const dashboardScripts = [
-  "app.js",
+  "dashboard-core.js",
+  "dashboard-session.js",
+  "dashboard-settings.js",
   "dashboard-library.js",
   "dashboard-rules.js",
   "dashboard-init.js",

@@ -12,7 +12,9 @@ describe("structure size guard", () => {
       ["../functions/api/_fish_audio.ts", 420],
       ["../functions/api/_fish_audio_shared.ts", 320],
       ["../functions/api/_fish_audio_payloads.ts", 180],
-      ["../src/app.js", 1200],
+      ["../src/dashboard-core.js", 300],
+      ["../src/dashboard-session.js", 900],
+      ["../src/dashboard-settings.js", 180],
       ["../src/index.html", 1050],
       ["../src/dashboard.css", 950],
       ["../src/dashboard-library.js", 320],
@@ -46,14 +48,18 @@ describe("structure size guard", () => {
     expect(chatConfirm).not.toMatch(/from "\.\/(?:_chat_api|route)"/u);
     const utilsIndex = dashboardHtml.indexOf("dashboard-utils.js");
     const cssIndex = dashboardHtml.indexOf("dashboard.css");
-    const appIndex = dashboardHtml.indexOf("app.js");
+    const coreIndex = dashboardHtml.indexOf("dashboard-core.js");
+    const sessionIndex = dashboardHtml.indexOf("dashboard-session.js");
+    const settingsIndex = dashboardHtml.indexOf("dashboard-settings.js");
     const libraryIndex = dashboardHtml.indexOf("dashboard-library.js");
     const rulesIndex = dashboardHtml.indexOf("dashboard-rules.js");
     const initIndex = dashboardHtml.indexOf("dashboard-init.js");
     expect(cssIndex).toBeGreaterThan(0);
     expect(cssIndex).toBeLessThan(utilsIndex);
-    expect(utilsIndex).toBeLessThan(appIndex);
-    expect(appIndex).toBeLessThan(libraryIndex);
+    expect(utilsIndex).toBeLessThan(coreIndex);
+    expect(coreIndex).toBeLessThan(sessionIndex);
+    expect(sessionIndex).toBeLessThan(settingsIndex);
+    expect(settingsIndex).toBeLessThan(libraryIndex);
     expect(libraryIndex).toBeLessThan(rulesIndex);
     expect(rulesIndex).toBeLessThan(initIndex);
   });
