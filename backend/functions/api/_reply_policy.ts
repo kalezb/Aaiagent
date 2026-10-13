@@ -30,6 +30,8 @@ import {
   buildProgramRulesPrompt,
   type ProgramRulesConfig,
 } from "./_program_rules";
+import { fixSpousePerspective } from "./_assistant_output";
+export { fixSpousePerspective };
 import {
   EMPTY_AGENT_RULE_STATE,
   buildAgentRuleStagePrompt,
@@ -1966,34 +1968,6 @@ export function sanitizeAgeConsistency(value, incomingText, fixedAge = 0) {
     .join("")
     .trim();
 }
-/**
- * 2026-10-06 真机（仙逆）：对方说“你老公不打死我”指的是苏棠的老公，
- * 模型跟着叫“你老公”，却用第一人称讲自己的事（“你老公天天跑渠道…管我聊什么”），视角混乱。
- * 她自己提老公时必须说“我老公”。反问对方老公的情况不算错，保留。
- */
-export function fixSpousePerspective(value) {
-  const text = String(value || "");
-  let changed = false;
-  const fixed = text.split("|||").map((segment) => {
-    // 2026-10-06：原来只处理“你老公”。真机里“娃娃”也出过同样的问题（对方说“娃娃”指的是苏棠的娃）。
-    // 同族词一起处理：老公/老婆/孩子/娃/儿子/女儿/家里——她自己提这些必须用“我”。
-    const ownTerms = ["老公", "老婆", "孩子", "娃", "儿子", "女儿"];
-    return ownTerms.reduce((current, term) => {
-      const wrong = "你" + term;
-      if (!current.includes(wrong)) return current;
-      // 反问对方的情况不算错（你老公呢、你孩子多大了…）
-      // 只有明显是在“反问他”的才放过（你老公呢/你孩子怎么没人带）。
-      // 刻意不放“多大/几岁”：他自己孩子在几岁不是苏棠该问的（话题边界里本来就不许问），
-      // 而“你娃多大了”十有八九是把自己的娃说成了“你娃”。
-      const question = new RegExp(wrong + "(?:呢|吗|怎么|在哪|是做什么|对你好不好|管你)", "u");
-      if (question.test(current)) return current;
-      changed = true;
-      return current.split(wrong).join("我" + term);
-    }, segment);
-  });
-  return changed ? fixed.join("|||") : text;
-}
-
 function promptHour(currentDatetime) {
   const match = String(currentDatetime || "").match(/(?:^|\s)(\d{1,2}):/u);
   const hour = Number(match?.[1]);
