@@ -147,6 +147,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `voice output row stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val row = readSource("src/main/java/com/aaiagent/ui/screens/DashboardVoiceOutputRow.kt")
+
+        assertFalse(
+            "配音方式不能继续留在看板大文件里",
+            screen.contains("private fun VoiceOutputRow("),
+        )
+        assertTrue(
+            "配音方式应该放在单独的小文件里",
+            row.contains("internal fun VoiceOutputRow("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
