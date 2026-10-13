@@ -279,6 +279,21 @@ class DashboardUiPolicyTest {
         )
     }
 
+    @Test
+    fun `dashboard header stays in its own source file`() {
+        val screen = readSource("src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt")
+        val header = readSource("src/main/java/com/aaiagent/ui/screens/DashboardHeader.kt")
+
+        assertFalse(
+            "看板顶部标题区不能继续留在看板大文件里",
+            screen.contains("private fun DashboardHeader("),
+        )
+        assertTrue(
+            "看板顶部标题区应该放在单独的小文件里",
+            header.contains("internal fun DashboardHeader("),
+        )
+    }
+
     private fun readSource(relative: String): String {
         val candidates = listOf(
             File(relative),
