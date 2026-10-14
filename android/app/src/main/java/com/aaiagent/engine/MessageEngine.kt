@@ -81,7 +81,9 @@ class MessageEngine(
     private val conversationTaskGate = ConversationTaskGate()
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     private val contextStore = ConversationContextStore()
-    private val handledConversationIds = mutableSetOf<String>()
+    private val handledConversations = HandledConversationRegistry(
+        currentPlatform = { currentPlatform },
+    )
     private val staleRetryQueue = StaleConversationRetryQueue()
     private var hostingJob: Job? = null
     private val contactSyncScheduler = ContactSyncScheduler(
@@ -196,7 +198,7 @@ class MessageEngine(
         backendReplyTaskPoller.clear()
         activeContext = null
         automationOwnedChatKey = null
-        handledConversationIds.clear()
+        handledConversations.clear()
         staleRetryQueue.clear()
         contextStore.all().forEach(::clearPendingReply)
         clearInputField()
@@ -290,7 +292,7 @@ class MessageEngine(
                     // 这个集合只用于防止同一次扫描里重复处理。处理成功时下面会
                     // continue，若只清在循环尾部，联系人会被永久记成“已处理”，
                     // 运行数小时后所有老联系人都会漏掉。
-                    handledConversationIds.clear()
+                    handledConversations.clear()
                 }
 
                 if (processedConversation) continue
@@ -482,10 +484,10 @@ class MessageEngine(
                     return false
                 }
                 if (contactAccess.allows(title, title)) {
-                    markHandled(title)
+                    handledConversations.mark(title)
                     processVerifiedChat(adapter, preparedChat.root, title, title, leaseToken)
                 } else {
-                    markHandled(title)
+                    handledConversations.mark(title)
                     returnToMessageList(adapter, leaseToken, "contact filtered")
                 }
                 return false
@@ -564,7 +566,7 @@ class MessageEngine(
             fallbackRoot,
             shouldClick = true,
             contactFilter = { contactName, contactId ->
-                !isHandled(contactId) &&
+                !handledConversations.contains(contactId) &&
                     !contactCooldown.isCoolingDown(contactName, contactId) &&
                     contactAccess.allows(contactName, contactId)
             }
@@ -577,7 +579,7 @@ class MessageEngine(
 
         val verifiedChat = waitForVerifiedChat(svc, adapter, info.contactName, leaseToken)
         if (verifiedChat == null) {
-            markHandled(info.contactId)
+            handledConversations.mark(info.contactId)
             state = EngineState.Idle
             return true
         }
@@ -591,7 +593,7 @@ class MessageEngine(
             latestListPreview = info.preview,
             relationshipOrigin = info.relationshipOrigin,
         )
-        markHandled(info.contactId)
+        handledConversations.mark(info.contactId)
         return true
     }
 
@@ -613,7 +615,7 @@ class MessageEngine(
             maxEntries = SOUL_ENTRY_MAX_ENTRIES,
             candidateFilter = { identity ->
                 val contactId = identity.displayName
-                !isHandled(contactId) &&
+                !handledConversations.contains(contactId) &&
                     !contactCooldown.isCoolingDown(contactId, contactId) &&
                     contactAccess.allows(contactId, contactId)
             },
@@ -637,7 +639,7 @@ class MessageEngine(
                         returnToMessageList(adapter, leaseToken, "soul entry blocked")
                         true
                     } else {
-                        markHandled(contactId)
+                        handledConversations.mark(contactId)
                         RuntimeJournal.clickConversation(contactId, true)
                         val origin = runCatching {
                             RelationshipOrigin.valueOf(identity.origin.uppercase())
@@ -3056,15 +3058,6 @@ class MessageEngine(
 
     private fun conversationKey(contactId: String): String = "$currentPlatform:$contactId"
 
-    private fun markHandled(contactId: String) {
-        if (contactId.isBlank()) return
-        handledConversationIds.add(conversationKey(contactId))
-    }
-
-    private fun isHandled(contactId: String): Boolean {
-        return contactId.isNotBlank() && conversationKey(contactId) in handledConversationIds
-    }
-
     private suspend fun enqueueSnapshot(
         context: ConversationContext,
         messages: List<PlatformAdapter.ChatMessage>,
@@ -3418,7 +3411,7 @@ class MessageEngine(
             }
             clearInputField()
         }
-        handledConversationIds.clear()
+        handledConversations.clear()
         state = EngineState.Paused
     }
 
