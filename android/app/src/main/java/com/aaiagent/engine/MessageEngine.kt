@@ -104,7 +104,7 @@ class MessageEngine(
         canAcceptTask = { leaseToken -> hostingEnabled && lease.owns(leaseToken) },
     )
     /** 2026-10-06：最近发出去的话（用于拦住“把 A 的话发给 B”这种串台）。 */
-    private val recentOutgoingSends = mutableListOf<CrossContactSendGuard.Sent>()
+    private val recentOutgoingSends = RecentOutgoingSendMemory()
     private var nextConversationScanAtMs: Long = 0L
     private var lastContentChangeWakeAtMs: Long = 0L
     private var contentChangeJob: Job? = null
@@ -2750,13 +2750,7 @@ class MessageEngine(
             val root = svc.rootInActiveWindow ?: break
             // 2026-10-06 用户报的现象（刚给 A 回的话又出现在 B 的会话）：
             // 发送前再拦一道——同一段长话短时间内在别的联系人那儿出现过，就不发。
-            if (CrossContactSendGuard.isCrossContactRepeat(
-                    text = part,
-                    contactId = context.contactId,
-                    recent = synchronized(recentOutgoingSends) { recentOutgoingSends.toList() },
-                    nowMs = System.currentTimeMillis(),
-                )
-            ) {
+            if (recentOutgoingSends.isCrossContactRepeat(part, context.contactId)) {
                 android.util.Log.w("AIA", "cross-contact duplicate blocked contact=${context.contactName}")
                 RuntimeJournal.messageSent(false, "同一句话刚发给过别的联系人，已拦下: $part")
                 break
@@ -2842,14 +2836,7 @@ class MessageEngine(
                 break
             }
             sentCount++
-            synchronized(recentOutgoingSends) {
-                CrossContactSendGuard.remember(
-                    recent = recentOutgoingSends,
-                    text = part,
-                    contactId = context.contactId,
-                    nowMs = System.currentTimeMillis(),
-                )
-            }
+            recentOutgoingSends.remember(part, context.contactId)
             val visibleAfterSend = verifyOutgoingPartVisible(
                 adapter = adapter,
                 context = context,
