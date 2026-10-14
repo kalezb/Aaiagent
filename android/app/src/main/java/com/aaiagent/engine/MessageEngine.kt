@@ -84,7 +84,13 @@ class MessageEngine(
     private val handledConversationIds = mutableSetOf<String>()
     private val staleRetryQueue = StaleConversationRetryQueue()
     private var hostingJob: Job? = null
-    private val contactSyncTimes = mutableMapOf<String, Long>()
+    private val contactSyncScheduler = ContactSyncScheduler(
+        scope = scope,
+        currentPlatform = { currentPlatform },
+        registerContact = { api, token, platform, contactId, contactName ->
+            api.registerContact(token, platform, contactId, contactName)
+        },
+    )
     private val conversationRecovery = ConversationRecoveryPersistence(repository)
     private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
     private val messageSyncOutbox = MessageSyncOutboxQueue(repository, scope)
@@ -2088,7 +2094,7 @@ class MessageEngine(
                 result = "waiting",
             )
         )
-        scheduleContactSync(api, token, context.contactId, context.contactName)
+        contactSyncScheduler.schedule(api, token, context.contactId, context.contactName)
 
         // 2026-10-05 真机（谭波）：新鲜窗口原来从“进会话”就开始算，读页面花了 10 秒，
         // 模型回完已经 17 秒 > 8 秒窗口，回复被当过期丢掉 → 重新进会话重来，用户看到“不回复还退出”。
@@ -3049,28 +3055,6 @@ class MessageEngine(
     }
 
     private fun conversationKey(contactId: String): String = "$currentPlatform:$contactId"
-
-    private fun scheduleContactSync(
-        api: ApiService,
-        token: String,
-        contactId: String,
-        contactName: String
-    ) {
-        val key = conversationKey(contactId)
-        val now = System.currentTimeMillis()
-        synchronized(contactSyncTimes) {
-            val lastSyncedAt = contactSyncTimes[key] ?: 0L
-            if (now - lastSyncedAt < CONTACT_SYNC_THROTTLE_MS) return
-            contactSyncTimes[key] = now
-        }
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                api.registerContact(token, currentPlatform, contactId, contactName)
-            }
-                .onSuccess { android.util.Log.d("AIA", "contact sync result=$it contact=$contactName") }
-                .onFailure { android.util.Log.w("AIA", "contact sync failed: ${it.message}", it) }
-        }
-    }
 
     private fun markHandled(contactId: String) {
         if (contactId.isBlank()) return
@@ -4095,6 +4079,5 @@ class MessageEngine(
         const val STALE_REPLY_COOLDOWN_MS = 1_000L
         const val STALE_RETRY_DELAY_MS = 350L
         const val MAX_STALE_RETRIES = 3
-        const val CONTACT_SYNC_THROTTLE_MS = 15 * 60 * 1000L
     }
 }
