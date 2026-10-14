@@ -80,7 +80,7 @@ class MessageEngine(
     private val lease = AutomationLease()
     private val conversationTaskGate = ConversationTaskGate()
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
-    private val contexts = mutableMapOf<String, ConversationContext>()
+    private val contextStore = ConversationContextStore()
     private val handledConversationIds = mutableSetOf<String>()
     private val staleRetryQueue = StaleConversationRetryQueue()
     private var hostingJob: Job? = null
@@ -192,7 +192,7 @@ class MessageEngine(
         automationOwnedChatKey = null
         handledConversationIds.clear()
         staleRetryQueue.clear()
-        contexts.values.forEach(::clearPendingReply)
+        contextStore.all().forEach(::clearPendingReply)
         clearInputField()
         state = EngineState.Idle
     }
@@ -207,7 +207,7 @@ class MessageEngine(
         if (recoverable.isEmpty()) return
 
         for (record in recoverable) {
-            val context = getOrCreateContext(record.platform, record.contactId)
+            val context = contextStore.getOrCreate(record.platform, record.contactId)
             synchronized(context) {
                 context.contactName = record.contactName
                 context.pendingReplyParts.clear()
@@ -752,7 +752,7 @@ class MessageEngine(
                 leaseToken = leaseToken,
                 latestListPreview = "",
             )
-            val context = getOrCreateContext(currentPlatform, retry.contactId)
+            val context = contextStore.getOrCreate(currentPlatform, retry.contactId)
             val stillPending = synchronized(context) {
                 context.pendingReplyParts.isNotEmpty() || context.pendingReplyId.isNotBlank()
             }
@@ -778,7 +778,7 @@ class MessageEngine(
         val contactName = adapter.readChatTitle(chatRoot)?.trim().orEmpty()
         if (contactName.isBlank() || !contactAccess.allows(contactName, contactName)) return
 
-        val context = getOrCreateContext(currentPlatform, contactName).also {
+        val context = contextStore.getOrCreate(currentPlatform, contactName).also {
             it.contactName = contactName
             activeContext = it
         }
@@ -867,8 +867,8 @@ class MessageEngine(
         replyTaskReporter.report(task.taskId, status, error)
         RuntimeJournal.messageSent(status == "sent", "后台人工消息 ${conversation.contactName}")
         if (status == "sent") {
-            synchronized(getOrCreateContext(currentPlatform, conversation.contactId)) {
-                getOrCreateContext(currentPlatform, conversation.contactId).rememberAutomatedReply(content)
+            synchronized(contextStore.getOrCreate(currentPlatform, conversation.contactId)) {
+                contextStore.getOrCreate(currentPlatform, conversation.contactId).rememberAutomatedReply(content)
             }
             returnToMessageList(adapter, leaseToken, "manual reply sent")
         }
@@ -915,7 +915,7 @@ class MessageEngine(
             returnToMessageList(adapter, leaseToken, "contact filtered")
             return
         }
-        val context = getOrCreateContext(currentPlatform, contactId).also {
+        val context = contextStore.getOrCreate(currentPlatform, contactId).also {
             it.contactName = contactName
             it.relationshipOrigin = relationshipOrigin
             val detectedStage = adapter.detectConversationStage(chatRoot)
@@ -3350,7 +3350,7 @@ class MessageEngine(
                 ) return@launch
 
                 val contactName = currentTitle!!.trim()
-                val context = getOrCreateContext(platform, contactName).also {
+                val context = contextStore.getOrCreate(platform, contactName).also {
                     it.contactName = contactName
                 }
                 enqueueSnapshot(context, messages, manualCapture = true)
@@ -3475,36 +3475,6 @@ class MessageEngine(
             false
         }
         return result.copy(uploaded = uploaded)
-    }
-
-    @Synchronized
-    private fun getOrCreateContext(platform: String, contactId: String): ConversationContext {
-        val now = System.currentTimeMillis()
-        val context = contexts.getOrPut("$platform:$contactId") {
-            ConversationContext(platform, contactId, firstMessageAt = now)
-        }
-        context.touch(now)
-        pruneConversationContexts(now)
-        return context
-    }
-
-    /**
-     * Bounded table: idle conversations are dropped once the table grows past
-     * its budget. Conversations that still owe a reply are always kept.
-     */
-    private fun pruneConversationContexts(nowMs: Long) {
-        if (contexts.size <= ConversationContextRetentionPolicy.MAX_CONTEXTS) return
-        val entries = contexts.map { (key, context) ->
-            ConversationContextRetentionPolicy.Entry(
-                key = key,
-                lastTouchedAtMs = context.lastTouchedAtMs,
-                hasPendingWork = context.hasPendingWork(),
-            )
-        }
-        val evicted = ConversationContextRetentionPolicy.keysToEvict(entries, nowMs)
-        if (evicted.isEmpty()) return
-        evicted.forEach { key -> contexts.remove(key) }
-        android.util.Log.d("AIA", "conversation contexts evicted count=${evicted.size} remaining=${contexts.size}")
     }
 
     private fun incomingFingerprint(message: PlatformAdapter.ChatMessage): String {
