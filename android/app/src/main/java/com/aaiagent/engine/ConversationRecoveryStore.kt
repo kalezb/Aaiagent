@@ -1,6 +1,11 @@
 package com.aaiagent.engine
 
+import com.aaiagent.data.repository.AppRepository
 import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 data class InFlightConversation(
     val platform: String,
@@ -98,4 +103,95 @@ object ConversationRecoveryCodec {
     }
 
     private const val DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000L
+}
+
+internal class ConversationRecoveryPersistence(
+    private val readValue: suspend () -> String?,
+    private val writeValue: suspend (String) -> Unit,
+    private val mutex: Mutex = Mutex(),
+) {
+    constructor(repository: AppRepository) : this(
+        readValue = { repository.getConfig(CONVERSATION_RECOVERY_KEY) },
+        writeValue = { repository.setConfig(CONVERSATION_RECOVERY_KEY, it) },
+    )
+
+    suspend fun clear() {
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                writeValue(ConversationRecoveryCodec.encode(emptyList()))
+            }
+        }
+    }
+
+    suspend fun recoverable(
+        platform: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): List<InFlightConversation> {
+        val records = withContext(Dispatchers.IO) {
+            mutex.withLock { ConversationRecoveryCodec.decode(readValue()) }
+        }
+        return ConversationRecoveryCodec.recoverable(
+            records = records,
+            platform = platform,
+            nowMs = nowMs,
+        )
+    }
+
+    suspend fun save(context: ConversationContext) {
+        val record = synchronized(context) {
+            InFlightConversation(
+                platform = context.platform,
+                contactId = context.contactId,
+                contactName = context.contactName,
+                pendingReplyParts = context.pendingReplyParts.toList(),
+                pendingReplyId = context.pendingReplyId,
+                pendingReplyIncomingFingerprint = context.pendingReplyIncomingFingerprint,
+                pendingReplyBatchFingerprint = context.pendingReplyBatchFingerprint,
+                pendingReplyFullContent = context.pendingReplyFullContent,
+                sentParts = context.pendingReplySentParts,
+                totalParts = context.pendingReplyTotalParts,
+                savedAtMs = System.currentTimeMillis(),
+            )
+        }
+        if (record.contactId.isBlank() || record.platform.isBlank()) return
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val records = ConversationRecoveryCodec.decode(readValue())
+                writeValue(
+                    ConversationRecoveryCodec.encode(
+                        ConversationRecoveryCodec.upsert(records, record),
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun remove(context: ConversationContext) {
+        remove(context.platform, context.contactId)
+    }
+
+    suspend fun remove(platform: String, contactId: String) {
+        if (platform.isBlank() || contactId.isBlank()) return
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val records = ConversationRecoveryCodec.decode(readValue())
+                writeValue(
+                    ConversationRecoveryCodec.encode(
+                        ConversationRecoveryCodec.remove(records, platform, contactId),
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun reconcile(context: ConversationContext) {
+        val hasWork = synchronized(context) {
+            context.pendingReplyParts.isNotEmpty() || context.pendingReplyId.isNotBlank()
+        }
+        if (hasWork) save(context) else remove(context)
+    }
+
+    private companion object {
+        const val CONVERSATION_RECOVERY_KEY = "in_flight_conversations"
+    }
 }

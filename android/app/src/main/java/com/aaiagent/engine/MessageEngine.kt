@@ -99,7 +99,7 @@ class MessageEngine(
     private var lastSyncFlushAt: Long = 0L
     private val contactSyncTimes = mutableMapOf<String, Long>()
     private val pendingBackendTasks = java.util.concurrent.ConcurrentLinkedQueue<ReplyTask>()
-    private val recoveryMutex = Mutex()
+    private val conversationRecovery = ConversationRecoveryPersistence(repository)
     private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
     private var syncFlushJob: Job? = null
     private val syncFlushMutex = Mutex()
@@ -207,25 +207,12 @@ class MessageEngine(
     }
 
     suspend fun clearRecoveryState() {
-        withContext(Dispatchers.IO) {
-            recoveryMutex.withLock {
-                repository.setConfig(CONVERSATION_RECOVERY_KEY, ConversationRecoveryCodec.encode(emptyList()))
-            }
-        }
+        conversationRecovery.clear()
     }
 
     private suspend fun restoreInFlightConversations() {
         val now = System.currentTimeMillis()
-        val records = withContext(Dispatchers.IO) {
-            recoveryMutex.withLock {
-                ConversationRecoveryCodec.decode(repository.getConfig(CONVERSATION_RECOVERY_KEY))
-            }
-        }
-        val recoverable = ConversationRecoveryCodec.recoverable(
-            records = records,
-            platform = currentPlatform,
-            nowMs = now
-        )
+        val recoverable = conversationRecovery.recoverable(currentPlatform, now)
         if (recoverable.isEmpty()) return
 
         for (record in recoverable) {
@@ -261,31 +248,7 @@ class MessageEngine(
     }
 
     private suspend fun saveConversationRecovery(context: ConversationContext) {
-        val record = synchronized(context) {
-            InFlightConversation(
-                platform = context.platform,
-                contactId = context.contactId,
-                contactName = context.contactName,
-                pendingReplyParts = context.pendingReplyParts.toList(),
-                pendingReplyId = context.pendingReplyId,
-                pendingReplyIncomingFingerprint = context.pendingReplyIncomingFingerprint,
-                pendingReplyBatchFingerprint = context.pendingReplyBatchFingerprint,
-                pendingReplyFullContent = context.pendingReplyFullContent,
-                sentParts = context.pendingReplySentParts,
-                totalParts = context.pendingReplyTotalParts,
-                savedAtMs = System.currentTimeMillis()
-            )
-        }
-        if (record.contactId.isBlank() || record.platform.isBlank()) return
-        withContext(Dispatchers.IO) {
-            recoveryMutex.withLock {
-                val records = ConversationRecoveryCodec.decode(repository.getConfig(CONVERSATION_RECOVERY_KEY))
-                repository.setConfig(
-                    CONVERSATION_RECOVERY_KEY,
-                    ConversationRecoveryCodec.encode(ConversationRecoveryCodec.upsert(records, record))
-                )
-            }
-        }
+        conversationRecovery.save(context)
     }
 
     private suspend fun removeConversationRecovery(context: ConversationContext) {
@@ -293,23 +256,11 @@ class MessageEngine(
     }
 
     private suspend fun removeConversationRecovery(platform: String, contactId: String) {
-        if (platform.isBlank() || contactId.isBlank()) return
-        withContext(Dispatchers.IO) {
-            recoveryMutex.withLock {
-                val records = ConversationRecoveryCodec.decode(repository.getConfig(CONVERSATION_RECOVERY_KEY))
-                repository.setConfig(
-                    CONVERSATION_RECOVERY_KEY,
-                    ConversationRecoveryCodec.encode(ConversationRecoveryCodec.remove(records, platform, contactId))
-                )
-            }
-        }
+        conversationRecovery.remove(platform, contactId)
     }
 
     private suspend fun reconcileConversationRecovery(context: ConversationContext) {
-        val hasWork = synchronized(context) {
-            context.pendingReplyParts.isNotEmpty() || context.pendingReplyId.isNotBlank()
-        }
-        if (hasWork) saveConversationRecovery(context) else removeConversationRecovery(context)
+        conversationRecovery.reconcile(context)
     }
 
     private suspend fun runHostingLoop(leaseToken: String) {
@@ -4408,6 +4359,5 @@ class MessageEngine(
         const val STALE_RETRY_DELAY_MS = 350L
         const val MAX_STALE_RETRIES = 3
         const val CONTACT_SYNC_THROTTLE_MS = 15 * 60 * 1000L
-        const val CONVERSATION_RECOVERY_KEY = "in_flight_conversations"
     }
 }
