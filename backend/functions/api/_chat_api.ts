@@ -84,7 +84,7 @@ import {
   isPlatformNoticeContent,
   loadProgramRules,
 } from "./_program_rules";
-import { loadAgentRuleState } from "./_agent_rule_runtime";
+import { loadTurnRuleSnapshot } from "./_turn_rule_snapshot";
 import {
   DEFAULT_GEMINI_INPUT_COST_PER_MILLION,
   DEFAULT_GEMINI_OUTPUT_COST_PER_MILLION,
@@ -109,8 +109,6 @@ import {
   upstreamErrorDetail,
 } from "./_http_runtime";
 import {
-  effectivePersonaDrawers,
-  loadEffectivePersonaFacts,
   loadForeignIdentityTerms,
   stripForeignPersonaSegments,
 } from "./_persona_runtime";
@@ -227,7 +225,13 @@ export async function handleChatRequest({ request, env, context, path, method })
       }
       const messages = preparedInput.messages;
       const activePersonaId = String(tokenRow.active_persona_id || "female");
-      const agentRuleState = await loadAgentRuleState(env.DB, activePersonaId);
+      const ruleSnapshot = await loadTurnRuleSnapshot(
+        env.DB,
+        env.KV,
+        activePersonaId,
+        programRules,
+      );
+      const agentRuleState = ruleSnapshot.agentRuleState;
 
       const rate = await enforceChatRateLimit(
         env.DB,
@@ -379,29 +383,22 @@ export async function handleChatRequest({ request, env, context, path, method })
       timing.setup_ms = personaStartedAt - chatStartedAt;
       // 2026-10-07（提速）：这四个查询互不依赖，原来一个接一个等（每个约 100ms）。
       // 现在并发发出；返回值和使用方式都不变。
-      const [existingPending, currentLink, activePersona, effectivePersona] = await Promise.all([
+      const [existingPending, currentLink] = await Promise.all([
         env.DB.prepare(
           "SELECT id, content, status, action_type, media_group_id, media_asset_id, persona_id, persona_version FROM pending_replies WHERE token = ? AND request_id = ? LIMIT 1"
         ).bind(tokenRow.token, requestId).first(),
         env.DB.prepare(
           "SELECT group_id FROM contact_links WHERE token = ? AND platform = ? AND contact_id = ?"
         ).bind(tokenRow.token, platform, contact_id).first(),
-        env.DB.prepare(
-          "SELECT id, system_prompt FROM personas WHERE id = ? LIMIT 1"
-        ).bind(activePersonaId).first(),
-        loadEffectivePersonaFacts(env.DB, tokenRow.token, activePersonaId),
       ]);
       // 智能抽屉：按需读取素材，不聊不带，省 token 且更像真人
-      const personaDrawers = effectivePersonaDrawers(
-        activePersonaId,
-        await env.KV.get(`persona:drawers:${activePersonaId}`, "json"),
-      );
+      const personaDrawers = ruleSnapshot.drawers;
       timing.persona_ms = Date.now() - personaStartedAt;
       const personaPrompt = normalizeLateReplyPersonaPrompt(
-        activePersona?.system_prompt || "\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684\u804a\u5929\u52a9\u624b\u3002",
+        ruleSnapshot.persona.systemPrompt || "\u4f60\u662f\u4e00\u4e2a\u53cb\u597d\u7684\u804a\u5929\u52a9\u624b\u3002",
       );
-      const effectivePersonaFacts = effectivePersona.facts;
-      const personaVersion = effectivePersona.version;
+      const effectivePersonaFacts = ruleSnapshot.personaFacts.facts;
+      const personaVersion = ruleSnapshot.personaFacts.version;
       const effectiveAge = resolvePersonaAge(effectivePersonaFacts);
       if (existingPending) {
         const stalePersona = String(existingPending.persona_id || "") !== activePersonaId ||
@@ -852,7 +849,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         env,
         starSoulScope,
         effectivePersonaFacts,
-        effectivePersona.hasOverride,
+        ruleSnapshot.personaFacts.hasOverride,
         activePersonaScope === "sutang",
       );
       const contactPolicy = resolveContactRequestPolicy({
