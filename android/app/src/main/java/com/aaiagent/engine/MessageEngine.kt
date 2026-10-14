@@ -71,14 +71,6 @@ private data class ReplySuggestion(
     val mediaExpected: Boolean = false
 )
 
-private data class ConversationRetry(
-    val platform: String,
-    val contactId: String,
-    val contactName: String,
-    val attempts: Int,
-    val dueAtMs: Long
-)
-
 class MessageEngine(
     private val service: AccessibilityService?,
     private val repository: AppRepository
@@ -90,7 +82,7 @@ class MessageEngine(
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     private val contexts = mutableMapOf<String, ConversationContext>()
     private val handledConversationIds = mutableSetOf<String>()
-    private val staleRetryQueue = linkedMapOf<String, ConversationRetry>()
+    private val staleRetryQueue = StaleConversationRetryQueue()
     private var hostingJob: Job? = null
     private val contactSyncTimes = mutableMapOf<String, Long>()
     private val conversationRecovery = ConversationRecoveryPersistence(repository)
@@ -194,7 +186,7 @@ class MessageEngine(
         activeContext = null
         automationOwnedChatKey = null
         handledConversationIds.clear()
-        synchronized(staleRetryQueue) { staleRetryQueue.clear() }
+        staleRetryQueue.clear()
         contexts.values.forEach(::clearPendingReply)
         clearInputField()
         state = EngineState.Idle
@@ -223,16 +215,12 @@ class MessageEngine(
                 context.pendingReplyTotalParts = record.totalParts
                 context.pendingReplyStale = false
             }
-            val key = conversationKey(record.contactId)
-            synchronized(staleRetryQueue) {
-                staleRetryQueue[key] = ConversationRetry(
-                    platform = currentPlatform,
-                    contactId = record.contactId,
-                    contactName = record.contactName,
-                    attempts = 0,
-                    dueAtMs = now
-                )
-            }
+            staleRetryQueue.restore(
+                platform = currentPlatform,
+                contactId = record.contactId,
+                contactName = record.contactName,
+                dueAtMs = now,
+            )
         }
         android.util.Log.d(
             "AIA",
@@ -700,27 +688,20 @@ class MessageEngine(
         leaseToken: String
     ): Boolean {
         val now = System.currentTimeMillis()
-        val retry = synchronized(staleRetryQueue) {
-            val entry = staleRetryQueue.entries.firstOrNull {
-                it.value.platform == currentPlatform && it.value.dueAtMs <= now
-            } ?: return@synchronized null
-            staleRetryQueue[entry.key] = entry.value.copy(dueAtMs = Long.MAX_VALUE)
-            entry.value
-        } ?: return false
+        val retry = staleRetryQueue.takeDue(currentPlatform, now) ?: return false
 
-        val key = conversationKey(retry.contactId)
         if (retry.attempts > MAX_STALE_RETRIES) {
             removeConversationRecovery(retry.platform, retry.contactId)
-            synchronized(staleRetryQueue) { staleRetryQueue.remove(key) }
+            staleRetryQueue.remove(retry)
             return true
         }
         if (!canContinue(leaseToken, null)) {
-            rescheduleStaleRetry(retry, delayMs = STALE_RETRY_DELAY_MS)
+            staleRetryQueue.reschedule(retry, delayMs = STALE_RETRY_DELAY_MS)
             return true
         }
         if (!isContactAllowed(retry.contactName, retry.contactId)) {
             removeConversationRecovery(retry.platform, retry.contactId)
-            clearInFlightStaleRetry(key)
+            staleRetryQueue.clearInFlight(retry)
             return true
         }
 
@@ -747,7 +728,11 @@ class MessageEngine(
                 }
             }
             if (verifiedChat == null) {
-                scheduleStaleRetryAttempt(retry)
+                staleRetryQueue.scheduleNext(
+                    retry = retry,
+                    delayMs = STALE_RETRY_DELAY_MS,
+                    maxAttempts = MAX_STALE_RETRIES,
+                )
                 return true
             }
 
@@ -763,61 +748,17 @@ class MessageEngine(
             val stillPending = synchronized(context) {
                 context.pendingReplyParts.isNotEmpty() || context.pendingReplyId.isNotBlank()
             }
-            if (stillPending) scheduleStaleRetryAttempt(retry)
+            if (stillPending) {
+                staleRetryQueue.scheduleNext(
+                    retry = retry,
+                    delayMs = STALE_RETRY_DELAY_MS,
+                    maxAttempts = MAX_STALE_RETRIES,
+                )
+            }
         } finally {
-            clearInFlightStaleRetry(key)
+            staleRetryQueue.clearInFlight(retry)
         }
         return true
-    }
-
-    private fun queueStaleRetry(
-        context: ConversationContext,
-        delayMs: Long = STALE_RETRY_DELAY_MS
-    ) {
-        val key = conversationKey(context.contactId)
-        val nextAttempts = synchronized(staleRetryQueue) {
-            val attempts = (staleRetryQueue[key]?.attempts ?: 0) + 1
-            if (attempts <= MAX_STALE_RETRIES) {
-                staleRetryQueue[key] = ConversationRetry(
-                    platform = currentPlatform,
-                    contactId = context.contactId,
-                    contactName = context.contactName,
-                    attempts = attempts,
-                    dueAtMs = System.currentTimeMillis() + delayMs.coerceAtLeast(0L),
-                )
-            } else {
-                staleRetryQueue.remove(key)
-            }
-            attempts
-        }
-        android.util.Log.d(
-            "AIA",
-            "stale reply queued for immediate retry contact=${context.contactName} attempt=$nextAttempts"
-        )
-    }
-
-    private fun scheduleStaleRetryAttempt(retry: ConversationRetry) {
-        val next = retry.copy(
-            attempts = retry.attempts + 1,
-            dueAtMs = System.currentTimeMillis() + STALE_RETRY_DELAY_MS,
-        )
-        val key = conversationKey(retry.contactId)
-        synchronized(staleRetryQueue) {
-            if (next.attempts <= MAX_STALE_RETRIES) staleRetryQueue[key] = next else staleRetryQueue.remove(key)
-        }
-    }
-
-    private fun rescheduleStaleRetry(retry: ConversationRetry, delayMs: Long) {
-        val key = conversationKey(retry.contactId)
-        synchronized(staleRetryQueue) {
-            staleRetryQueue[key] = retry.copy(dueAtMs = System.currentTimeMillis() + delayMs)
-        }
-    }
-
-    private fun clearInFlightStaleRetry(key: String) {
-        synchronized(staleRetryQueue) {
-            if (staleRetryQueue[key]?.dueAtMs == Long.MAX_VALUE) staleRetryQueue.remove(key)
-        }
     }
 
     private suspend fun recordCurrentChatOnly(
@@ -3511,7 +3452,7 @@ class MessageEngine(
     fun onUserInteraction() {
         if (!GestureMonitor.onTouchDetected()) return
         automationOwnedChatKey = null
-        synchronized(staleRetryQueue) { staleRetryQueue.clear() }
+        staleRetryQueue.clear()
         val activeRoot = service?.rootInActiveWindow
         val adapter = adapterRegistry?.getByPlatform(currentPlatform)
         val manualMessageList = activeRoot != null &&
@@ -4155,6 +4096,19 @@ class MessageEngine(
 
     private fun markConversationBlocked(contactName: String?, retryAfterMs: Long) {
         replyCooldown.block(contactName, retryAfterMs)
+    }
+
+    private fun queueStaleRetry(
+        context: ConversationContext,
+        delayMs: Long = STALE_RETRY_DELAY_MS,
+    ) {
+        staleRetryQueue.enqueue(
+            platform = currentPlatform,
+            contactId = context.contactId,
+            contactName = context.contactName,
+            delayMs = delayMs,
+            maxAttempts = MAX_STALE_RETRIES,
+        )
     }
 
     private fun isConversationBlocked(contactName: String?, contactId: String?): Boolean {
