@@ -125,6 +125,12 @@ class MessageEngine(
     private val contactAccess = ContactAccessGuard(repository, contactCooldown)
     private val contentChangeStability = ContentChangeStabilityPolicy()
     private val chatPageIdentityTracker = ChatPageIdentityTracker()
+    private val replyDeliveryVerifier = ReplyDeliveryVerifier(
+        rootProvider = { service?.rootInActiveWindow },
+        isIdentityConfirmed = { adapter, root, expectedContactName ->
+            isChatIdentityConfirmed(adapter, root, expectedContactName)
+        },
+    )
 
     @Volatile
     var state: EngineState = EngineState.Idle
@@ -1241,7 +1247,7 @@ class MessageEngine(
             }
             // 2026-10-06 真机：她自己的消息混在中间时也要认出来（原来只查最后一条）。
             // 认不出来就会被当成对方的新消息，于是同一句被回两遍。
-            val filteredOwnBubbles = withoutOwnBubbles(context, messages)
+            val filteredOwnBubbles = replyDeliveryVerifier.withoutOwnBubbles(context, messages)
             if (filteredOwnBubbles.size != messages.size) {
                 android.util.Log.d(
                     "AIA",
@@ -2124,7 +2130,9 @@ class MessageEngine(
 
             val nowMs = System.currentTimeMillis()
             val mergeRoot = service?.rootInActiveWindow
-            if (mergeRoot != null && verifyCurrentChat(adapter, context.contactName)) {
+            if (mergeRoot != null &&
+                replyDeliveryVerifier.verifyCurrentChat(adapter, context.contactName)
+            ) {
                 val freshMessages = adapter.readMessages(mergeRoot)
                 val freshBatch = IncomingMessageBatch.select(freshMessages)
                 val changeKind = IncomingMessageBatch.classifyChange(
@@ -2409,7 +2417,9 @@ class MessageEngine(
                 ReplyFreshnessDecision.RECOMPUTE -> {
                     recalcCount++
                     val freshRoot = service?.rootInActiveWindow ?: return null
-                    if (!verifyCurrentChat(adapter, context.contactName)) return null
+                    if (!replyDeliveryVerifier.verifyCurrentChat(adapter, context.contactName)) {
+                        return null
+                    }
                     val freshMessages = adapter.readMessages(freshRoot)
                     val freshBatch = IncomingMessageBatch.select(freshMessages)
                     if (freshBatch != null) {
@@ -2476,7 +2486,7 @@ class MessageEngine(
         if (!canContinue(leaseToken, interactionEpoch)) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, 0, 1)
         }
-        if (!incomingStillCurrent(adapter, context, deliveryFingerprint) ||
+        if (!replyDeliveryVerifier.incomingStillCurrent(adapter, context, deliveryFingerprint) ||
             synchronized(context) { context.pendingReplyStale }
         ) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STALE, 0, 1)
@@ -2501,7 +2511,11 @@ class MessageEngine(
         }
 
         if (!canContinue(leaseToken, interactionEpoch) ||
-            !incomingStillCurrent(adapter, context, deliveryFingerprint) ||
+            !replyDeliveryVerifier.incomingStillCurrent(
+                adapter,
+                context,
+                deliveryFingerprint,
+            ) ||
             synchronized(context) { context.pendingReplyStale }
         ) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STALE, 0, 1)
@@ -2709,7 +2723,7 @@ class MessageEngine(
                 saveConversationRecovery(context)
                 return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, plannedTotal)
             }
-            val incomingChanged = !incomingStillCurrent(
+            val incomingChanged = !replyDeliveryVerifier.incomingStillCurrent(
                 adapter,
                 context,
                 expectedIncomingFingerprint
@@ -2733,13 +2747,17 @@ class MessageEngine(
                     "finishing reply delivery before handling newer incoming part=${sentCount + 1} sent=$sentCount"
                 )
             }
-            if (!verifyCurrentChatWithRetry(adapter, context.contactName)) {
+            if (!replyDeliveryVerifier.verifyCurrentChatWithRetry(adapter, context.contactName)) {
                 RuntimeJournal.messageSent(false, "发送前聊天身份未确认")
                 clearInputField()
                 if (!reopenConversationForDelivery(adapter, context, leaseToken)) {
                     break
                 }
-                if (!verifyCurrentChatWithRetry(adapter, context.contactName)) {
+                if (!replyDeliveryVerifier.verifyCurrentChatWithRetry(
+                        adapter,
+                        context.contactName,
+                    )
+                ) {
                     RuntimeJournal.messageSent(false, "重新打开后聊天身份仍未确认")
                     clearInputField()
                     break
@@ -2812,7 +2830,7 @@ class MessageEngine(
             // 不计数、不确认上传 → 云端永久缺这条。这里补一眼：真看到了就按成功走。
             if (result == PlatformAdapter.SendResult.SUCCESS) ReplyPaceGate.markSent(context.platform, context.contactId)
             val visibleDespiteNotVerified = result == PlatformAdapter.SendResult.NOT_VERIFIED &&
-                verifyOutgoingPartVisible(
+                replyDeliveryVerifier.verifyOutgoingPartVisible(
                     adapter = adapter,
                     context = context,
                     expectedContent = part,
@@ -2837,7 +2855,7 @@ class MessageEngine(
             }
             sentCount++
             recentOutgoingSends.remember(part, context.contactId)
-            val visibleAfterSend = verifyOutgoingPartVisible(
+            val visibleAfterSend = replyDeliveryVerifier.verifyOutgoingPartVisible(
                 adapter = adapter,
                 context = context,
                 expectedContent = part,
@@ -2922,44 +2940,6 @@ class MessageEngine(
         )
     }
 
-    private suspend fun verifyCurrentChatWithRetry(
-        adapter: PlatformAdapter,
-        expectedContactName: String,
-        retries: Int = 3,
-        retryDelayMs: Long = 400L
-    ): Boolean {
-        repeat(retries) { attempt ->
-            if (verifyCurrentChat(adapter, expectedContactName)) return true
-            if (attempt < retries - 1) delay(retryDelayMs)
-        }
-        return false
-    }
-
-    private suspend fun verifyOutgoingPartVisible(
-        adapter: PlatformAdapter,
-        context: ConversationContext,
-        expectedContent: String,
-        retries: Int = OUTGOING_VERIFY_RETRIES,
-        retryDelayMs: Long = OUTGOING_VERIFY_RETRY_DELAY_MS,
-    ): Boolean {
-        repeat(retries) { attempt ->
-            val root = service?.rootInActiveWindow
-            if (root != null &&
-                root.packageName?.toString() == adapter.packageName &&
-                adapter.isInChat(root) &&
-                isChatIdentityConfirmed(adapter, root, context.contactName)
-            ) {
-                if (ReplyDeliveryVerificationPolicy.isOutgoingVisible(
-                        messages = adapter.readMessages(root),
-                        expectedContent = expectedContent,
-                    )
-                ) return true
-            }
-            if (attempt < retries - 1) delay(retryDelayMs)
-        }
-        return false
-    }
-
     private suspend fun reopenConversationForDelivery(
         adapter: PlatformAdapter,
         context: ConversationContext,
@@ -2974,59 +2954,6 @@ class MessageEngine(
         val recovered = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: return false
         if (recovered.packageName?.toString() != adapter.packageName) return false
         android.util.Log.d("AIA", "reply delivery reopened verified chat contact=${context.contactName}")
-        return true
-    }
-
-    private fun verifyCurrentChat(adapter: PlatformAdapter, expectedContactName: String): Boolean {
-        val root = service?.rootInActiveWindow ?: return false
-        if (root.packageName?.toString() != adapter.packageName) return false
-        return isChatIdentityConfirmed(adapter, root, expectedContactName)
-    }
-
-    /**
-     * 2026-10-06 格桑知我：她自己的气泡被过滤掉之后，读屏比对用的还是没过滤的列表，
-     * 指纹永远对不上，回复被判“过期”后无限重试（每 3 秒一次，看起来就是卡住不回复）。
-     * 统一走这个助手，保证“算指纹”和“比对指纹”用的是同一份数据。
-     */
-    private fun withoutOwnBubbles(
-        context: ConversationContext,
-        messages: List<PlatformAdapter.ChatMessage>,
-    ): List<PlatformAdapter.ChatMessage> {
-        val own = synchronized(context) { context.aiSentContents.toSet() }
-        if (own.isEmpty()) return messages
-        return messages.filterNot { message ->
-            UndetectedOwnBubblePolicy.isOwnBubble(
-                sender = message.sender,
-                type = message.type,
-                content = message.content,
-                sentByAutomation = own,
-            )
-        }
-    }
-
-    private suspend fun incomingStillCurrent(
-        adapter: PlatformAdapter,
-        context: ConversationContext,
-        expectedFingerprint: String
-    ): Boolean {
-        if (expectedFingerprint.isBlank()) return false
-        repeat(INCOMING_VERIFY_RETRIES) { attempt ->
-            val root = service?.rootInActiveWindow ?: return false
-            if (root.packageName?.toString() != adapter.packageName || !adapter.isInChat(root)) return false
-            // “正在输入”会临时顶掉标题。发送前的“有没有新消息”检查也必须
-            // 复用聊天身份缓存，不能只拿当前标题硬比，否则正在输入会被误判成
-            // 新消息已到，本轮回复被取消，随后又重进聊天页。
-            if (!isChatIdentityConfirmed(adapter, root, context.contactName)) return false
-            val current = IncomingMessageBatch.incomingHistoryFingerprint(
-                withoutOwnBubbles(context, adapter.readMessages(root))
-            )
-            if (current.isNotBlank()) {
-                return !ReplyDeliveryPolicy.incomingChanged(expectedFingerprint, current)
-            }
-            if (attempt < INCOMING_VERIFY_RETRIES - 1) delay(INCOMING_VERIFY_RETRY_DELAY_MS)
-        }
-        // A transient accessibility tree can omit chat items while Soul redraws.
-        // Treat that as unreadable, not as proof that a new message arrived.
         return true
     }
 
@@ -4040,10 +3967,6 @@ class MessageEngine(
         /** 发送被平台限制后的冷却时间。 */
         const val SEND_BANNED_BLOCK_MS = 60L * 60 * 1000
         const val DEDUP_WINDOW_MS = 5 * 60 * 1000L
-        const val INCOMING_VERIFY_RETRIES = 3
-        const val INCOMING_VERIFY_RETRY_DELAY_MS = 150L
-        const val OUTGOING_VERIFY_RETRIES = 3
-        const val OUTGOING_VERIFY_RETRY_DELAY_MS = 250L
         // Measured on device: Soul sometimes needs more than 2.5s before the
         // chat page exposes its input bar. 700ms + 7x450ms ~= 3.9s keeps the
         // "enter, look, leave" skip from dropping a conversation that was
