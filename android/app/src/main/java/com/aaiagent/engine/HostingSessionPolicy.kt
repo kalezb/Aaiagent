@@ -18,8 +18,25 @@ object HostingSessionPolicy {
     @Volatile
     private var explicitlyStopped = false
 
+    @Volatile
+    private var selectedPlatform: String? = null
+
+    fun selectPlatform(value: String?): String {
+        val normalized = normalizePlatform(value)
+        selectedPlatform = normalized
+        return normalized
+    }
+
+    fun restoreSelectedPlatform(value: String?) {
+        if (selectedPlatform == null) {
+            selectedPlatform = normalizePlatform(value)
+        }
+    }
+
+    fun selectedPlatform(): String? = selectedPlatform
+
     fun markStarted(platform: String, mode: HostingMode) {
-        activeSession = Session(platform = platform.trim().ifBlank { "soul" }, mode = mode)
+        activeSession = Session(platform = selectPlatform(platform), mode = mode)
         explicitlyStopped = false
     }
 
@@ -56,4 +73,11 @@ object HostingSessionPolicy {
     fun effectiveMode(modeOverride: HostingMode?, persistedModeValue: String?): HostingMode {
         return modeOverride ?: hostingMode(persistedModeValue)
     }
+
+    private fun normalizePlatform(value: String?): String {
+        val normalized = value?.trim()?.lowercase().orEmpty()
+        return normalized.takeIf { it in SUPPORTED_PLATFORMS } ?: "soul"
+    }
+
+    private val SUPPORTED_PLATFORMS = setOf("soul", "qq", "douban", "lianxin")
 }

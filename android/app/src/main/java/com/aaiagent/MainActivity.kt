@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
                     ?.takeIf { it in setOf("soul", "qq", "douban", "lianxin") }
                     ?: "soul"
             )
+            HostingSessionPolicy.restoreSelectedPlatform(enabledPlatforms.firstOrNull())
             weatherEnabled = withContext(Dispatchers.IO) {
                 repository.getConfig(HostingSessionPolicy.WEATHER_KEY) != "false"
             }
@@ -192,6 +193,7 @@ class MainActivity : ComponentActivity() {
                     enabledPlatforms = enabledPlatforms,
                     onTogglePlatform = { p, en ->
                         if (en) {
+                            HostingSessionPolicy.selectPlatform(p)
                             enabledPlatforms = setOf(p)
                             lifecycleScope.launch(Dispatchers.IO) {
                                 repository.setConfig(HostingSessionPolicy.PLATFORM_KEY, p)

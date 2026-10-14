@@ -71,4 +71,20 @@ class HostingSessionPolicyTest {
         assertEquals(HostingMode.MONITOR_ONLY, HostingSessionPolicy.hostingMode("bad-value"))
         assertEquals(HostingMode.MONITOR_ONLY, HostingSessionPolicy.hostingMode(null))
     }
+
+    @Test
+    fun `selected platform is the source used to start hosting`() {
+        try {
+            assertEquals("soul", HostingSessionPolicy.selectPlatform(" soul "))
+            assertEquals("soul", HostingSessionPolicy.selectedPlatform())
+
+            HostingSessionPolicy.restoreSelectedPlatform("douban")
+            assertEquals("soul", HostingSessionPolicy.selectedPlatform())
+
+            assertEquals("douban", HostingSessionPolicy.selectPlatform("douban"))
+            assertEquals("douban", HostingSessionPolicy.selectedPlatform())
+        } finally {
+            HostingSessionPolicy.selectPlatform("soul")
+        }
+    }
 }

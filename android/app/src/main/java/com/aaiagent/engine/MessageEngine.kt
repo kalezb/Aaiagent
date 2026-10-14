@@ -3526,6 +3526,7 @@ class MessageEngine(
 
     fun currentState(): EngineState = state
 
+
     private sealed class VoiceAudioResult {
         /**
          * 配音已就绪。

@@ -22,7 +22,9 @@ internal fun MainActivity.selectHostingMode(mode: HostingMode) {
     }
 
 internal fun MainActivity.toggleHosting(enable: Boolean) {
-        val platform = enabledPlatforms.firstOrNull() ?: "soul"
+        val platform = HostingSessionPolicy.selectedPlatform()
+            ?: enabledPlatforms.firstOrNull()
+            ?: "soul"
         val mode = hostingMode
         val activity = this
         android.util.Log.d("AIA", "Hosting toggle requested enable=$enable source=main platform=$platform mode=$mode")

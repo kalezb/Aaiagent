@@ -35,6 +35,7 @@ object HostingController {
         val platform = platformOverride
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+            ?: HostingSessionPolicy.selectedPlatform()
             ?: withContext(Dispatchers.IO) {
                 repository.getConfig(HostingSessionPolicy.PLATFORM_KEY)
             }?.trim()?.takeIf { it.isNotBlank() }
