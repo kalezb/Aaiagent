@@ -2620,14 +2620,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         bar.getBoundsInScreen(bounds)
         if (bounds.width() <= 0 || bounds.height() <= 0) return false
         val x = bounds.left + bounds.width() * 7 / 10
-        // Use the real bottom-bar bounds. Using the physical screen height can
-        // land below the app window and do nothing on gesture-navigation phones.
-        val y = bounds.centerY()
-        val screenHeight = service.resources.displayMetrics.heightPixels
-        if (!SoulTapPolicy.isNavigationTapSafe(x, y, screenWidth, screenHeight)) return false
+        // Soul reports the bottom tab row as a very thin strip inside the app
+        // window. Its center is above the real touch target on gesture-nav
+        // phones, so use the physical screen height for the tap.
+        val realScreenHeight = realScreenHeight()
+        val y = SoulTapPolicy.bottomTabCenterY(realScreenHeight)
+        if (!SoulTapPolicy.isNavigationTapSafe(x, y, screenWidth, realScreenHeight)) {
+            return false
+        }
         android.util.Log.d(
             "AIA",
-            "tapping chat slot by geometry x=$x y=$y bar=$bounds appHeight=$screenHeight",
+            "tapping chat slot by geometry x=$x y=$y bar=$bounds realHeight=$realScreenHeight",
         )
         return performTap(x.toFloat(), y.toFloat()) && waitForMessageList() != null
     }

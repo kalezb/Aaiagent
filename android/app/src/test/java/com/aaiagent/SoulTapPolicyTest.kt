@@ -67,6 +67,14 @@ class SoulTapPolicyTest {
             250,
             SoulTapPolicy.bottomTabCenterY(realScreenHeight = 500, insetPx = 400),
         )
+        assertTrue(
+            SoulTapPolicy.isNavigationTapSafe(
+                x = 756,
+                y = SoulTapPolicy.bottomTabCenterY(realScreenHeight = 2400),
+                screenWidth = 1080,
+                screenHeight = 2400,
+            )
+        )
     }
 
     @Test
