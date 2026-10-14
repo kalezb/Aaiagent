@@ -425,6 +425,20 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_customer_profiles_updated ON customer_profiles(token, updated_at);
 
+CREATE TABLE IF NOT EXISTS contact_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    token         TEXT NOT NULL,
+    platform      TEXT NOT NULL,
+    contact_id    TEXT NOT NULL,
+    event_type    TEXT NOT NULL DEFAULT '',
+    content       TEXT NOT NULL DEFAULT '',
+    happened_at   INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_events_recent
+  ON contact_events(token, platform, contact_id, happened_at DESC);
+
 -- 星暮客户漏斗状态：只记录有效互动产生的阶段进度，不把导入旧聊天当成本轮进度。
 CREATE TABLE IF NOT EXISTS customer_funnel_states (
     token                    TEXT NOT NULL,
@@ -545,4 +559,3 @@ ALTER TABLE contacts ADD COLUMN relationship_stage TEXT NOT NULL DEFAULT 'new';
 ALTER TABLE contacts ADD COLUMN mood TEXT NOT NULL DEFAULT 'normal';
 ALTER TABLE contacts ADD COLUMN conversation_summary TEXT NOT NULL DEFAULT '';
 ALTER TABLE contacts ADD COLUMN summary_updated_at INTEGER NOT NULL DEFAULT 0;
-

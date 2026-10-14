@@ -12,6 +12,7 @@ describe("structure size guard", () => {
       ["../functions/api/_fish_audio.ts", 420],
       ["../functions/api/_fish_audio_shared.ts", 320],
       ["../functions/api/_fish_audio_payloads.ts", 180],
+      ["../functions/api/_contact_events.ts", 180],
       ["../functions/api/_persona_management_api.ts", 500],
       ["../functions/api/_media_policy.ts", 320],
       ["../functions/api/_media_image_response.ts", 180],

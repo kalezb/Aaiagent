@@ -177,6 +177,11 @@ import {
 } from "./_funnel_runtime";
 import { getWeather } from "./_weather_runtime";
 import {
+  buildContactEventsPrompt,
+  loadRecentContactEvents,
+  recordContactEvents,
+} from "./_contact_events";
+import {
   isXingmuPersonaScope,
   resolveContactConfig,
 } from "./_persona_scope_runtime";
@@ -649,7 +654,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       const profileGroupId = funnelGroupId;
       // 2026-10-07（提速）：这四个加载互不依赖，原来串行执行要等 0.9 秒左右，
       // 现在并发发出。返回值和原来完全一样，只是少等几趟网络。
-      const [memoryRow, foreignPersonaTerms, customerProfile, historyResult] = await Promise.all([
+      const [memoryRow, foreignPersonaTerms, customerProfile, historyResult, contactEvents] = await Promise.all([
         loadMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases),
         // 别人设的专属词条：用来把历史里残留的旧人设话术挡在提示词外面（真机见过聊天记录里躺着“做二手手机和旧数码回收的”）。
         agentRuleState.isEnabled("old_persona_filter", true)
@@ -657,6 +662,13 @@ export async function handleChatRequest({ request, env, context, path, method })
           : Promise.resolve([]),
         loadCustomerProfile(env.DB, tokenRow.token, profileGroupId),
         historyStatement.all(),
+        loadRecentContactEvents(
+          env.DB,
+          tokenRow.token,
+          platform,
+          contact_id,
+          6,
+        ),
       ]);
       const allMsgs = historyResult?.results;
       const allMessages = (allMsgs || []).reverse();
@@ -1026,12 +1038,18 @@ export async function handleChatRequest({ request, env, context, path, method })
           }
         }
       }
-      const temporalContextPrompt = buildTemporalContextPrompt({
-        contact,
-        nowSec: nowSecForActivity,
-        activityEvaluation: activityEval,
-        totalExchanges: currentExchanges,
+      const contactEventsPrompt = buildContactEventsPrompt(contactEvents, {
+        enabled: agentRuleState.isEnabled("summary_budget", true),
       });
+      const temporalContextPrompt = [
+        buildTemporalContextPrompt({
+          contact,
+          nowSec: nowSecForActivity,
+          activityEvaluation: activityEval,
+          totalExchanges: currentExchanges,
+        }),
+        contactEventsPrompt,
+      ].filter(Boolean).join("\n\n");
       const layeredPromptOptions = {
         temporalContextPrompt,
         personaId: activePersonaId,
@@ -1723,6 +1741,14 @@ export async function handleChatRequest({ request, env, context, path, method })
         platform,
         contact_id,
       ).run();
+      await recordContactEvents(
+        env.DB,
+        tokenRow.token,
+        platform,
+        contact_id,
+        messages,
+        nowSec,
+      );
 
       // 2026-10-12 异步后台长对话提炼压缩（0ms 阻塞，完全不耽误回复速度）
       const summarizeJob = maybeSummarizeConversation(
