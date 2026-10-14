@@ -27,6 +27,14 @@ powershell -ExecutionPolicy Bypass -File tools/android-device-smoke.ps1 -Install
 
 截图和界面记录默认放在 `Alinshi/android-device-smoke`。
 
+想一次做“安装 + 连续两次冷启动检查”，运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/android-device-regression.ps1 -Install
+```
+
+它不会开启托管，也不会发消息，只会确认安装包能重复打开、版本能读到、强制结束后还能回到看板。
+
 ## 必须人工检查的流程
 
 自动检查不能代替真实聊天。每次改动托管、发送、页面识别、照片或语音后，按下面顺序查一遍。
