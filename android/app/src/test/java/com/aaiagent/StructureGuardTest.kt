@@ -18,7 +18,8 @@ class StructureGuardTest {
             "src/main/java/com/aaiagent/MainActivitySettings.kt" to 220,
             "src/main/java/com/aaiagent/MainActivityHosting.kt" to 140,
             "src/main/java/com/aaiagent/MainActivityPermissions.kt" to 40,
-            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4550,
+            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4450,
+            "src/main/java/com/aaiagent/engine/ReplyConfirmationQueue.kt" to 160,
             "src/main/java/com/aaiagent/adapter/SoulAdapter.kt" to 3700,
             "src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt" to 400,
         )

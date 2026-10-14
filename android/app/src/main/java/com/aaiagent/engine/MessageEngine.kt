@@ -18,7 +18,6 @@ import com.aaiagent.adapter.SoulVoiceRecordPolicy
 import com.aaiagent.data.db.entity.ConversationSyncStateEntity
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
-import com.aaiagent.data.db.entity.PendingReplyConfirmationEntity
 import com.aaiagent.network.ApiService
 import com.aaiagent.xposed.InjectPcmStore
 import com.aaiagent.network.ChatRequest
@@ -101,13 +100,12 @@ class MessageEngine(
     private val contactSyncTimes = mutableMapOf<String, Long>()
     private val pendingBackendTasks = java.util.concurrent.ConcurrentLinkedQueue<ReplyTask>()
     private val recoveryMutex = Mutex()
-    private var confirmationFlushJob: Job? = null
+    private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
     private var syncFlushJob: Job? = null
     private val syncFlushMutex = Mutex()
     /** 2026-10-06：最近发出去的话（用于拦住“把 A 的话发给 B”这种串台）。 */
     private val recentOutgoingSends = mutableListOf<CrossContactSendGuard.Sent>()
     private var backendTaskPollJob: Job? = null
-    private var lastConfirmationFlushAt: Long = 0L
     private var nextConversationScanAtMs: Long = 0L
     private var lastContentChangeWakeAtMs: Long = 0L
     private var contentChangeJob: Job? = null
@@ -184,7 +182,7 @@ class MessageEngine(
         val leaseToken = activeLeaseToken
         hostingJob = scope.launch {
             restoreInFlightConversations()
-            scheduleReplyConfirmationFlush(force = true)
+            replyConfirmationQueue.scheduleFlush(force = true)
             scheduleSyncOutboxFlush(force = true)
             runHostingLoop(leaseToken)
         }
@@ -318,7 +316,7 @@ class MessageEngine(
         delay(400)
         while (hostingEnabled && lease.owns(leaseToken) && scope.isActive) {
             lease.renew(leaseToken)
-            scheduleReplyConfirmationFlush()
+            replyConfirmationQueue.scheduleFlush()
             scheduleSyncOutboxFlush()
             val nowMs = System.currentTimeMillis()
             if (GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)) {
@@ -1467,7 +1465,7 @@ class MessageEngine(
             }
             val outstandingReplyId = synchronized(context) { context.pendingReplyId }
             if (pendingParts.isEmpty() && outstandingReplyId.isNotBlank()) {
-                if (confirmPendingReply(context)) {
+                if (replyConfirmationQueue.confirmPendingReply(context)) {
                     synchronized(context) {
                         if (context.pendingReplyBatchFingerprint.isNotBlank()) {
                             context.lastRepliedIncomingFingerprint = context.pendingReplyBatchFingerprint
@@ -2686,7 +2684,9 @@ class MessageEngine(
         synchronized(context) {
             context.rememberAutomatedReply(marker)
         }
-        val confirmed = if (replyId.isNullOrBlank()) true else queueReplyConfirmation(replyId, marker)
+        val confirmed = if (replyId.isNullOrBlank()) true else {
+            replyConfirmationQueue.queueSentReply(replyId, marker)
+        }
         RuntimeJournal.messageSent(true, "topic media sent asset=${media.assetId}")
         return ReplyDeliveryResult(
             status = ReplyDeliveryStatus.COMPLETE,
@@ -3048,7 +3048,7 @@ class MessageEngine(
             saveConversationRecovery(context)
         }
         if (progress.isComplete) {
-            replyConfirmed = confirmPendingReply(context)
+            replyConfirmed = replyConfirmationQueue.confirmPendingReply(context)
             RuntimeJournal.messageSent(true, "回复发送完成 ${progress.sentParts}/${progress.totalParts}")
         } else {
             android.util.Log.w(
@@ -3190,16 +3190,6 @@ class MessageEngine(
         // A transient accessibility tree can omit chat items while Soul redraws.
         // Treat that as unreadable, not as proof that a new message arrived.
         return true
-    }
-
-    private suspend fun confirmPendingReply(context: ConversationContext): Boolean {
-        val replyId = synchronized(context) { context.pendingReplyId }
-        if (replyId.isBlank()) return true
-        val token = withContext(Dispatchers.IO) {
-            repository.getActiveToken()?.token?.trim()
-        }.orEmpty()
-        if (token.isBlank()) return false
-        return queuePendingReplyConfirmation(context)
     }
 
     private fun clearPendingReply(context: ConversationContext) {
@@ -4261,7 +4251,7 @@ class MessageEngine(
      * 1. `rememberAutomatedReply` —— 告诉上下文"这条是我刚发的"，
      *    否则下一轮读聊天页会把它当成**对方发来的新消息**（方向就反了）；
      * 2. `saveConversationRecovery` —— 断电/重启后能接着往下走；
-     * 3. `queueReplyConfirmation` —— 把"已发送"回传后端。
+     * 3. `ReplyConfirmationQueue.queueSentReply` —— 把"已发送"回传后端。
      */
     private suspend fun finishSentVoiceReply(
         context: ConversationContext,
@@ -4281,7 +4271,7 @@ class MessageEngine(
         val confirmed = if (replyId.isNullOrBlank()) {
             true
         } else {
-            queueReplyConfirmation(replyId, outgoing)
+            replyConfirmationQueue.queueSentReply(replyId, outgoing)
         }
         // **把这条语音"说了什么"记下来。**
         //
@@ -4351,84 +4341,6 @@ class MessageEngine(
    }
 
 
-    private suspend fun queueReplyConfirmation(replyId: String, sentContent: String): Boolean {
-        if (replyId.isBlank()) return true
-        val token = withContext(Dispatchers.IO) {
-            repository.getActiveToken()?.token?.trim()
-        }.orEmpty()
-        if (token.isBlank()) return false
-        withContext(Dispatchers.IO) {
-            repository.enqueueReplyConfirmation(
-                PendingReplyConfirmationEntity(
-                    replyId = replyId,
-                    token = token,
-                    sentContent = sentContent,
-                )
-            )
-        }
-        scheduleReplyConfirmationFlush(force = true)
-        android.util.Log.d("AIA", "chat confirm queued replyId=$replyId")
-        return true
-    }
-
-    private suspend fun queuePendingReplyConfirmation(context: ConversationContext): Boolean {
-        val replyId = synchronized(context) { context.pendingReplyId }
-        if (replyId.isBlank()) return true
-        val token = withContext(Dispatchers.IO) {
-            repository.getActiveToken()?.token?.trim()
-        }.orEmpty()
-        if (token.isBlank()) return false
-        val sentContent = synchronized(context) {
-            context.pendingReplyFullContent.ifBlank {
-                context.pendingReplyParts.joinToString("|||")
-            }
-        }
-        withContext(Dispatchers.IO) {
-            repository.enqueueReplyConfirmation(
-                PendingReplyConfirmationEntity(
-                    replyId = replyId,
-                    token = token,
-                    sentContent = sentContent,
-                )
-            )
-        }
-        synchronized(context) {
-            if (context.pendingReplyId == replyId) {
-                context.pendingReplyId = ""
-                context.pendingReplyFullContent = ""
-            }
-        }
-        scheduleReplyConfirmationFlush(force = true)
-        android.util.Log.d("AIA", "chat confirm queued replyId=$replyId")
-        return true
-    }
-
-    private fun scheduleReplyConfirmationFlush(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force && now - lastConfirmationFlushAt < CONFIRMATION_FLUSH_INTERVAL_MS) return
-        if (confirmationFlushJob?.isActive == true) return
-        lastConfirmationFlushAt = now
-        confirmationFlushJob = scope.launch(Dispatchers.IO) {
-            val pending = repository.pendingReplyConfirmations(now, 50)
-            if (pending.isEmpty()) return@launch
-            val api = ApiService(repository.getApiBaseUrl())
-            for (item in pending) {
-                val confirmed = runCatching {
-                    api.confirmChatReply(item.token, item.replyId, item.sentContent)
-                }.getOrDefault(false)
-                if (confirmed) {
-                    repository.deleteReplyConfirmation(item.replyId)
-                } else {
-                    val attempts = item.attempts + 1
-                    repository.markReplyConfirmationFailed(
-                        item.replyId,
-                        System.currentTimeMillis() + SyncOutboxPolicy.retryDelayMs(attempts),
-                    )
-                }
-            }
-        }
-    }
-
     private data class MediaUnderstanding(
         val messages: List<PlatformAdapter.ChatMessage>,
         val retryInPlace: Boolean = false,
@@ -4480,7 +4392,6 @@ class MessageEngine(
         // retried every 10s (each flush reads fingerprint rows on the server).
         const val SYNC_FLUSH_INTERVAL_MS = 45_000L
         const val SYNC_BEFORE_CHAT_WAIT_MS = 8_000L
-        const val CONFIRMATION_FLUSH_INTERVAL_MS = 5_000L
         // Measured on device: Soul sometimes needs more than 2.5s before the
         // chat page exposes its input bar. 700ms + 7x450ms ~= 3.9s keeps the
         // "enter, look, leave" skip from dropping a conversation that was
