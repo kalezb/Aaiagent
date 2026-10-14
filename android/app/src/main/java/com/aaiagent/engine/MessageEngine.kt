@@ -114,6 +114,7 @@ class MessageEngine(
         repository = repository,
         currentPlatform = { currentPlatform },
     )
+    private val contactAccess = ContactAccessGuard(repository, contactCooldown)
     private val contentChangeStability = ContentChangeStabilityPolicy()
     private val chatPageIdentityTracker = ChatPageIdentityTracker()
 
@@ -474,7 +475,7 @@ class MessageEngine(
                     state = EngineState.Idle
                     return false
                 }
-                if (isContactAllowed(title, title)) {
+                if (contactAccess.allows(title, title)) {
                     markHandled(title)
                     processVerifiedChat(adapter, preparedChat.root, title, title, leaseToken)
                 } else {
@@ -559,7 +560,7 @@ class MessageEngine(
             contactFilter = { contactName, contactId ->
                 !isHandled(contactId) &&
                     !contactCooldown.isCoolingDown(contactName, contactId) &&
-                    isContactAllowed(contactName, contactId)
+                    contactAccess.allows(contactName, contactId)
             }
         )
         if (info == null) {
@@ -608,7 +609,7 @@ class MessageEngine(
                 val contactId = identity.displayName
                 !isHandled(contactId) &&
                     !contactCooldown.isCoolingDown(contactId, contactId) &&
-                    isContactAllowed(contactId, contactId)
+                    contactAccess.allows(contactId, contactId)
             },
         )
         return when (outcome) {
@@ -706,7 +707,7 @@ class MessageEngine(
             staleRetryQueue.reschedule(retry, delayMs = STALE_RETRY_DELAY_MS)
             return true
         }
-        if (!isContactAllowed(retry.contactName, retry.contactId)) {
+        if (!contactAccess.allows(retry.contactName, retry.contactId)) {
             removeConversationRecovery(retry.platform, retry.contactId)
             staleRetryQueue.clearInFlight(retry)
             return true
@@ -775,7 +776,7 @@ class MessageEngine(
     ) {
         if (hostingMode != HostingMode.MONITOR_ONLY || !canContinue(leaseToken, null)) return
         val contactName = adapter.readChatTitle(chatRoot)?.trim().orEmpty()
-        if (contactName.isBlank() || !isContactAllowed(contactName, contactName)) return
+        if (contactName.isBlank() || !contactAccess.allows(contactName, contactName)) return
 
         val context = getOrCreateContext(currentPlatform, contactName).also {
             it.contactName = contactName
@@ -829,7 +830,7 @@ class MessageEngine(
             replyTaskReporter.report(task.taskId, "failed", "empty_content")
             return true
         }
-        if (!isContactAllowed(task.contactName, task.contactId)) {
+        if (!contactAccess.allows(task.contactName, task.contactId)) {
             replyTaskReporter.report(task.taskId, "failed", "contact_filtered")
             return true
         }
@@ -846,7 +847,7 @@ class MessageEngine(
             replyTaskReporter.report(task.taskId, "failed", "chat_verification_failed")
             return true
         }
-        if (!isContactAllowed(conversation.contactName, conversation.contactId)) {
+        if (!contactAccess.allows(conversation.contactName, conversation.contactId)) {
             replyTaskReporter.report(task.taskId, "failed", "contact_filtered")
             returnToMessageList(adapter, leaseToken, "manual task contact filtered")
             return true
@@ -880,7 +881,7 @@ class MessageEngine(
         task: ReplyTask,
         leaseToken: String
     ): Boolean {
-        if (!isContactAllowed(task.contactName, task.contactId)) return true
+        if (!contactAccess.allows(task.contactName, task.contactId)) return true
         if (contactCooldown.isCoolingDown(task.contactName, task.contactId)) return true
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: return true
         val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: return false
@@ -908,7 +909,7 @@ class MessageEngine(
     ) {
         automationOwnedChatKey = conversationKey(contactId)
         chatPageIdentityTracker.reset()
-        if (!isContactAllowed(contactName, contactId)) {
+        if (!contactAccess.allows(contactName, contactId)) {
             removeConversationRecovery(currentPlatform, contactId)
             RuntimeJournal.recovery("联系人策略跳过 contact=$contactName")
             returnToMessageList(adapter, leaseToken, "contact filtered")
@@ -4042,19 +4043,6 @@ class MessageEngine(
             delay(SOUL_CHAT_POLL_MS)
         }
         return null
-    }
-
-    private suspend fun isContactAllowed(contactName: String?, contactId: String?): Boolean {
-        if (contactCooldown.isBlocked(contactName, contactId)) return false
-        val filters = withContext(Dispatchers.IO) {
-            repository.getContactWhitelist() to repository.getContactBlacklist()
-        }
-        return ContactFilterPolicy.allowsContact(
-            contactName = contactName,
-            contactId = contactId,
-            whitelist = filters.first,
-            blacklist = filters.second
-        )
     }
 
     private fun queueStaleRetry(
