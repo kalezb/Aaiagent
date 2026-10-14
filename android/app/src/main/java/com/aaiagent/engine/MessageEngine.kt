@@ -53,7 +53,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.InterruptedIOException
 
 private data class ReplySuggestion(
     val content: String,
@@ -93,15 +92,18 @@ class MessageEngine(
     private val handledConversationIds = mutableSetOf<String>()
     private val staleRetryQueue = linkedMapOf<String, ConversationRetry>()
     private var hostingJob: Job? = null
-    private var lastBackendTaskPollAt: Long = 0L
     private val contactSyncTimes = mutableMapOf<String, Long>()
-    private val pendingBackendTasks = java.util.concurrent.ConcurrentLinkedQueue<ReplyTask>()
     private val conversationRecovery = ConversationRecoveryPersistence(repository)
     private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
     private val messageSyncOutbox = MessageSyncOutboxQueue(repository, scope)
+    private val backendReplyTaskPoller = BackendReplyTaskPoller(
+        repository = repository,
+        scope = scope,
+        currentPlatform = { currentPlatform },
+        canAcceptTask = { leaseToken -> hostingEnabled && lease.owns(leaseToken) },
+    )
     /** 2026-10-06：最近发出去的话（用于拦住“把 A 的话发给 B”这种串台）。 */
     private val recentOutgoingSends = mutableListOf<CrossContactSendGuard.Sent>()
-    private var backendTaskPollJob: Job? = null
     private var nextConversationScanAtMs: Long = 0L
     private var lastContentChangeWakeAtMs: Long = 0L
     private var contentChangeJob: Job? = null
@@ -170,9 +172,7 @@ class MessageEngine(
         observedState = EngineState.Idle
         observedStateSinceMs = System.currentTimeMillis()
         state = EngineState.Idle
-        backendTaskPollJob?.cancel()
-        backendTaskPollJob = null
-        pendingBackendTasks.clear()
+        backendReplyTaskPoller.clear()
         hostingJob?.cancel()
         activeLeaseToken = lease.acquire()
         val leaseToken = activeLeaseToken
@@ -190,9 +190,7 @@ class MessageEngine(
         lease.revoke()
         hostingJob?.cancel()
         hostingJob = null
-        backendTaskPollJob?.cancel()
-        backendTaskPollJob = null
-        pendingBackendTasks.clear()
+        backendReplyTaskPoller.clear()
         activeContext = null
         automationOwnedChatKey = null
         handledConversationIds.clear()
@@ -459,12 +457,12 @@ class MessageEngine(
         }
 
         if (hostingMode != HostingMode.MONITOR_ONLY) {
-            val task = pendingBackendTasks.poll()
+            val task = backendReplyTaskPoller.nextTask()
             if (task != null && processBackendReplyTask(svc, adapter, task, leaseToken)) {
                 state = EngineState.Idle
                 return true
             }
-            scheduleBackendTaskPoll(leaseToken)
+            backendReplyTaskPoller.schedule(leaseToken)
         }
 
         val activeRoot = svc.rootInActiveWindow
@@ -856,41 +854,6 @@ class MessageEngine(
         } finally {
             activeContext = null
             state = EngineState.Idle
-        }
-    }
-
-    private fun scheduleBackendTaskPoll(leaseToken: String) {
-        if (backendTaskPollJob?.isActive == true || !pendingBackendTasks.isEmpty()) return
-        val now = System.currentTimeMillis()
-        if (!BackendTaskPollPolicy.isDue(lastBackendTaskPollAt, now, BACKEND_TASK_POLL_INTERVAL_MS)) return
-        lastBackendTaskPollAt = now
-        backendTaskPollJob = scope.launch(Dispatchers.IO) {
-            val startedAt = System.currentTimeMillis()
-            try {
-                val token = repository.getActiveToken()?.token?.trim().orEmpty()
-                if (token.isEmpty()) return@launch
-                val task = ApiService(repository.getApiBaseUrl())
-                    .getNextReplyTask(token, currentPlatform)
-                if (task != null && hostingEnabled && lease.owns(leaseToken)) {
-                    pendingBackendTasks.add(task)
-                }
-                android.util.Log.d(
-                    "AIA",
-                    "backend reply task poll complete task=${task != null} elapsed=${System.currentTimeMillis() - startedAt}"
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: InterruptedIOException) {
-                android.util.Log.w("AIA", "backend reply task poll timed out: ${error.message}")
-                RuntimeJournal.recovery("调用回复接口超时，等待下一轮扫描: ${error.message}")
-                return@launch
-            } catch (error: Exception) {
-                android.util.Log.w(
-                    "AIA",
-                    "backend reply task poll failed elapsed=${System.currentTimeMillis() - startedAt}: ${error.message}",
-                    error
-                )
-            }
         }
     }
 
@@ -4227,7 +4190,6 @@ class MessageEngine(
         const val SOUL_LIST_IDLE_RESCAN_MS = 3_000L
         const val CONTENT_CHANGE_WAKE_INTERVAL_MS = 1_000L
         const val LEASE_HEARTBEAT_INTERVAL_MS = 5_000L
-        const val BACKEND_TASK_POLL_INTERVAL_MS = 30_000L
         const val USER_PAUSE_MS = GestureMonitor.USER_PAUSE_MS
         // User browsing only needs to win for a moment. 60s used to stall every
         // scheduled click for a full minute after a single touch.
