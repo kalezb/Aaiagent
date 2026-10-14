@@ -358,5 +358,26 @@ describe("Su Tang v13 persona", () => {
     expect(meetingPrompt).toContain("商量挑选安全、高档、私密酒店与相处细节");
     expect(meetingPrompt).not.toContain("把门槛放回线上");
     expect(meetingPrompt).not.toContain("不答应去家里或酒店");
+
+    // 10. 凌晨/深夜突发开房邀约：坚决不答应立刻出门，搬出孩子在身边睡着的底线，且只约白天
+    const lateNightMeetingPrompt = buildRelationshipBoundaryPrompt(2, "半夜两三点出来开房吧", [], "sutang");
+    expect(lateNightMeetingPrompt).toContain("外出只约白天（不分周末只约白天）");
+    expect(lateNightMeetingPrompt).toContain("深夜或凌晨提出“现在出来、今晚出来、半夜开房、来接你”等突发要求时坚决回绝当下出门（孩子在身边睡着，大半夜绝对走不开）");
+    expect(lateNightMeetingPrompt).toContain("把时间引导到白天从容商量");
+
+    // 11. 提示词注入与看板自定义规则支持：可改、可停用
+    const defaultPrompt = buildSutangPrompt();
+    expect(defaultPrompt).toContain("【深夜突发邀约底线】");
+    expect(defaultPrompt).toContain("孩子在身边睡着，大半夜绝不可能丢下孩子跑出去");
+    expect(defaultPrompt).toContain("不分周末只约白天");
+
+    const drawers = defaultDrawersForPersona("female_sutang");
+    const scene13 = drawers.topics?.find((d) => d.id === "scene_13_invitation_reward");
+    expect(scene13?.content).toContain("挑个白天");
+    expect(scene13?.content).not.toContain("周末给你发定位");
+
+    const scene18 = drawers.topics?.find((d) => d.id === "scene_18_meeting_arrangement");
+    expect(scene18?.content).toContain("孩子就在我身边睡着");
+    expect(scene18?.content).toContain("真有诚意就老老实实约白天");
   });
 });
