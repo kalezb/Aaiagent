@@ -15,6 +15,7 @@ describe("structure size guard", () => {
       ["../functions/api/_persona_management_api.ts", 500],
       ["../functions/api/_media_policy.ts", 320],
       ["../functions/api/_media_image_response.ts", 180],
+      ["../functions/api/_turn_rule_snapshot.ts", 160],
       ["../src/dashboard-core.js", 300],
       ["../src/dashboard-customers.js", 450],
       ["../src/dashboard-chat.js", 450],
