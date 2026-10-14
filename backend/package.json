@@ -6,6 +6,7 @@
     "dev": "wrangler pages dev src",
     "test": "vitest run",
     "test:replay": "node replay/run-incident-cases.mjs",
+    "report:runtime": "node replay/runtime-report.mjs",
     "check:persona": "node scripts/check-persona-isolation.mjs",
     "audit:persona": "node scripts/audit-persona-prompts.mjs",
     "test:watch": "vitest",
