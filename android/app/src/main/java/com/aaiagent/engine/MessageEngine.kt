@@ -109,7 +109,10 @@ class MessageEngine(
     private val manualChatSyncJobs = mutableMapOf<String, Job>()
     private var observedState: EngineState = EngineState.Idle
     private var observedStateSinceMs: Long = System.currentTimeMillis()
-    private val replyCooldown = ConversationReplyCooldownPolicy()
+    private val contactCooldown = ContactCooldownGuard(
+        repository = repository,
+        currentPlatform = { currentPlatform },
+    )
     private val contentChangeStability = ContentChangeStabilityPolicy()
     private val chatPageIdentityTracker = ChatPageIdentityTracker()
 
@@ -458,7 +461,7 @@ class MessageEngine(
             val preparedChat = adapter.prepareChatForAutomation(activeRoot)
             if (!preparedChat.ready) {
                 val blockedName = adapter.readChatTitle(preparedChat.root)
-                markConversationBlocked(blockedName, preparedChat.retryAfterMs)
+                contactCooldown.block(blockedName, preparedChat.retryAfterMs)
                 RuntimeJournal.recovery("启动时聊天页被平台锁定，退回消息列表")
                 returnToMessageList(adapter, leaseToken, "chat locked on start")
                 state = EngineState.Idle
@@ -466,7 +469,7 @@ class MessageEngine(
             }
             val title = adapter.readChatTitle(preparedChat.root)
             if (!title.isNullOrBlank()) {
-                if (isContactCoolingDown(title, title)) {
+                if (contactCooldown.isCoolingDown(title, title)) {
                     state = EngineState.Idle
                     return false
                 }
@@ -554,7 +557,7 @@ class MessageEngine(
             shouldClick = true,
             contactFilter = { contactName, contactId ->
                 !isHandled(contactId) &&
-                    !isContactCoolingDown(contactName, contactId) &&
+                    !contactCooldown.isCoolingDown(contactName, contactId) &&
                     isContactAllowed(contactName, contactId)
             }
         )
@@ -603,7 +606,7 @@ class MessageEngine(
             candidateFilter = { identity ->
                 val contactId = identity.displayName
                 !isHandled(contactId) &&
-                    !isContactCoolingDown(contactId, contactId) &&
+                    !contactCooldown.isCoolingDown(contactId, contactId) &&
                     isContactAllowed(contactId, contactId)
             },
         )
@@ -618,7 +621,10 @@ class MessageEngine(
                 } else {
                     val prepared = adapter.prepareChatForAutomation(root)
                     if (!prepared.ready) {
-                        markConversationBlocked(contactId, prepared.retryAfterMs.coerceAtLeast(1_000L))
+                        contactCooldown.block(
+                            contactId,
+                            prepared.retryAfterMs.coerceAtLeast(1_000L),
+                        )
                         coordinator.markRetry(identity.key, "聊天页被平台锁定")
                         returnToMessageList(adapter, leaseToken, "soul entry blocked")
                         true
@@ -874,7 +880,7 @@ class MessageEngine(
         leaseToken: String
     ): Boolean {
         if (!isContactAllowed(task.contactName, task.contactId)) return true
-        if (isContactCoolingDown(task.contactName, task.contactId)) return true
+        if (contactCooldown.isCoolingDown(task.contactName, task.contactId)) return true
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: return true
         val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: return false
         RuntimeJournal.clickConversation(conversation.contactName, true)
@@ -1014,7 +1020,7 @@ class MessageEngine(
         root = currentRoot
         val preparation = adapter.prepareChatForAutomation(root)
         if (preparation.ready) return true
-        markConversationBlocked(context.contactName, preparation.retryAfterMs)
+        contactCooldown.block(context.contactName, preparation.retryAfterMs)
         RuntimeJournal.recovery("发送前发现聊天页被平台锁定，取消本轮发送 contact=${context.contactName}")
         queueStaleRetry(context, preparation.retryAfterMs.coerceAtLeast(STALE_RETRY_DELAY_MS))
         returnToMessageList(adapter, leaseToken, "chat locked before send")
@@ -1164,7 +1170,7 @@ class MessageEngine(
                     val preparation = adapter.prepareChatForAutomation(root)
                     if (!preparation.ready) {
                         val retryAfterMs = preparation.retryAfterMs.coerceAtLeast(1_000L)
-                        markConversationBlocked(actualTitle ?: expectedContactName, retryAfterMs)
+                        contactCooldown.block(actualTitle ?: expectedContactName, retryAfterMs)
                         RuntimeJournal.recovery(
                             "聊天页被平台对话框锁定，已退回消息列表并冷却 contact=${actualTitle ?: expectedContactName}"
                         )
@@ -2310,7 +2316,11 @@ class MessageEngine(
             val takeoverReason = chatResponse.reason.orEmpty()
             if (chatResponse.action == "skip" && (takeoverReason == "human_takeover_active" || takeoverReason == "outside_ai_hours")) {
                 val waitMs = if (takeoverReason == "outside_ai_hours") 30 * 60 * 1000L else 10 * 60 * 1000L
-                persistLeaveCooldown(context = context, durationMs = waitMs, reason = takeoverReason)
+                contactCooldown.persistLeave(
+                    context = context,
+                    durationMs = waitMs,
+                    reason = takeoverReason,
+                )
                 RuntimeJournal.recovery("takeover gate: " + takeoverReason)
                 returnToMessageList(adapter, leaseToken, "takeover gate, nothing to send")
                 return null
@@ -2321,7 +2331,7 @@ class MessageEngine(
                     cooldownMs = chatResponse.cooldownMs
                 )
                 if (semanticCooldownMs != null) {
-                    persistLeaveCooldown(
+                    contactCooldown.persistLeave(
                         context = context,
                         durationMs = semanticCooldownMs,
                         reason = "语义暂离"
@@ -2340,7 +2350,7 @@ class MessageEngine(
             }
             val isMediaReply = chatResponse.action == "send_media"
             if (chatResponse.code == "llm_upstream_error") {
-                markConversationBlocked(
+                contactCooldown.block(
                     context.contactName.ifBlank { context.contactId },
                     ConversationReplyCooldownPolicy.UPSTREAM_ERROR_BLOCK_MS
                 )
@@ -2658,7 +2668,7 @@ class MessageEngine(
         )
         if (delivery.isComplete) {
             if (selfLeaveCooldownMs != null && selfLeaveCooldownMs > 0L) {
-                persistLeaveCooldown(
+                contactCooldown.persistLeave(
                     context = context,
                     durationMs = selfLeaveCooldownMs,
                     reason = "模型判断我方主动离场"
@@ -2830,7 +2840,7 @@ class MessageEngine(
                     state = EngineState.Error
                     clearPendingReply(context)
                     // 2026-10-06：被平台限制（内容违规/禁言/账号异常）时别反复重试，先冷却这个联系人。
-                    markConversationBlocked(context.contactName, SEND_BANNED_BLOCK_MS)
+                    contactCooldown.block(context.contactName, SEND_BANNED_BLOCK_MS)
                     RuntimeJournal.recovery("发送被平台限制，暂停该联系人 contact=${context.contactName}")
                     recoverUnknownPageWithVision(
                         adapter = adapter,
@@ -3078,34 +3088,6 @@ class MessageEngine(
                 .onSuccess { android.util.Log.d("AIA", "contact sync result=$it contact=$contactName") }
                 .onFailure { android.util.Log.w("AIA", "contact sync failed: ${it.message}", it) }
         }
-    }
-
-    private suspend fun isContactCoolingDown(contactName: String?, contactId: String?): Boolean {
-        val keys = listOf(contactId, contactName)
-            .mapNotNull { it?.trim() }
-            .filter(String::isNotEmpty)
-            .distinct()
-        if (keys.isEmpty()) return false
-        val now = System.currentTimeMillis()
-        return withContext(Dispatchers.IO) {
-            keys.any { key ->
-                (repository.getContactLeaveCooldownUntil(currentPlatform, key) ?: 0L) > now
-            }
-        }
-    }
-
-    private suspend fun persistLeaveCooldown(
-        context: ConversationContext,
-        durationMs: Long,
-        reason: String
-    ) {
-        val until = System.currentTimeMillis() + durationMs.coerceAtLeast(60_000L)
-        withContext(Dispatchers.IO) {
-            repository.setContactLeaveCooldownUntil(currentPlatform, context.contactId, until)
-        }
-        RuntimeJournal.recovery(
-            "离开冷却已记录 contact=${context.contactName.ifBlank { context.contactId }} reason=$reason"
-        )
     }
 
     private fun markHandled(contactId: String) {
@@ -4082,7 +4064,7 @@ class MessageEngine(
     }
 
     private suspend fun isContactAllowed(contactName: String?, contactId: String?): Boolean {
-        if (isConversationBlocked(contactName, contactId)) return false
+        if (contactCooldown.isBlocked(contactName, contactId)) return false
         val filters = withContext(Dispatchers.IO) {
             repository.getContactWhitelist() to repository.getContactBlacklist()
         }
@@ -4092,10 +4074,6 @@ class MessageEngine(
             whitelist = filters.first,
             blacklist = filters.second
         )
-    }
-
-    private fun markConversationBlocked(contactName: String?, retryAfterMs: Long) {
-        replyCooldown.block(contactName, retryAfterMs)
     }
 
     private fun queueStaleRetry(
@@ -4109,10 +4087,6 @@ class MessageEngine(
             delayMs = delayMs,
             maxAttempts = MAX_STALE_RETRIES,
         )
-    }
-
-    private fun isConversationBlocked(contactName: String?, contactId: String?): Boolean {
-        return replyCooldown.isBlocked(contactName) || replyCooldown.isBlocked(contactId)
     }
 
     fun shutdown() {
