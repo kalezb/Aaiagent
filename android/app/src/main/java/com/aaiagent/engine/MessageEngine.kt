@@ -53,8 +53,6 @@ import kotlinx.coroutines.launch
 import java.io.File
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.InterruptedIOException
 
 private data class ReplySuggestion(
@@ -96,13 +94,11 @@ class MessageEngine(
     private val staleRetryQueue = linkedMapOf<String, ConversationRetry>()
     private var hostingJob: Job? = null
     private var lastBackendTaskPollAt: Long = 0L
-    private var lastSyncFlushAt: Long = 0L
     private val contactSyncTimes = mutableMapOf<String, Long>()
     private val pendingBackendTasks = java.util.concurrent.ConcurrentLinkedQueue<ReplyTask>()
     private val conversationRecovery = ConversationRecoveryPersistence(repository)
     private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
-    private var syncFlushJob: Job? = null
-    private val syncFlushMutex = Mutex()
+    private val messageSyncOutbox = MessageSyncOutboxQueue(repository, scope)
     /** 2026-10-06：最近发出去的话（用于拦住“把 A 的话发给 B”这种串台）。 */
     private val recentOutgoingSends = mutableListOf<CrossContactSendGuard.Sent>()
     private var backendTaskPollJob: Job? = null
@@ -183,7 +179,7 @@ class MessageEngine(
         hostingJob = scope.launch {
             restoreInFlightConversations()
             replyConfirmationQueue.scheduleFlush(force = true)
-            scheduleSyncOutboxFlush(force = true)
+            messageSyncOutbox.schedule(force = true)
             runHostingLoop(leaseToken)
         }
     }
@@ -268,7 +264,7 @@ class MessageEngine(
         while (hostingEnabled && lease.owns(leaseToken) && scope.isActive) {
             lease.renew(leaseToken)
             replyConfirmationQueue.scheduleFlush()
-            scheduleSyncOutboxFlush()
+            messageSyncOutbox.schedule()
             val nowMs = System.currentTimeMillis()
             if (GestureMonitor.isUserTouchingRecently(USER_PAUSE_MS)) {
                 state = EngineState.Paused
@@ -3308,92 +3304,8 @@ class MessageEngine(
             repository.persistSyncSnapshot(state, outbox)
         }
         if (inserted > 0) {
-            scheduleSyncOutboxFlush(force = true)
-            awaitSyncOutboxFlush()
-        }
-    }
-
-    private fun scheduleSyncOutboxFlush(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!SyncOutboxPolicy.shouldAttempt(lastSyncFlushAt, now, force, SYNC_FLUSH_INTERVAL_MS)) return
-        if (syncFlushJob?.isActive == true) return
-        lastSyncFlushAt = now
-        syncFlushJob = scope.launch(Dispatchers.IO) {
-            flushSyncOutboxSerially()
-        }
-    }
-
-    private suspend fun awaitSyncOutboxFlush() {
-        withContext(Dispatchers.IO) {
-            val completed = withTimeoutOrNull(SYNC_BEFORE_CHAT_WAIT_MS) {
-                flushSyncOutboxSerially()
-                true
-            } ?: false
-            if (!completed) {
-                android.util.Log.w(
-                    "AIA",
-                    "sync outbox wait timed out before chat wait_ms=$SYNC_BEFORE_CHAT_WAIT_MS"
-                )
-            }
-        }
-    }
-
-    private suspend fun flushSyncOutboxSerially() {
-        syncFlushMutex.withLock {
-            flushSyncOutboxLocked()
-        }
-    }
-
-    private suspend fun flushSyncOutboxLocked() {
-        val startedAt = System.currentTimeMillis()
-        try {
-            val pending = repository.pendingSyncMessages(System.currentTimeMillis(), 100)
-            if (pending.isEmpty()) return
-            android.util.Log.d("AIA", "sync outbox flush started count=${pending.size}")
-            val api = ApiService(repository.getApiBaseUrl())
-            pending.groupBy { Triple(it.token, it.platform, it.contactId) }.values.forEach { group ->
-                val first = group.first()
-                val success = runCatching {
-                    api.syncMessages(
-                        token = first.token,
-                        platform = first.platform,
-                        contactId = first.contactId,
-                        contactName = first.contactName,
-                        messages = group.map {
-                            mapOf<String, Any>(
-                                "message_key" to it.id,
-                                "role" to it.role,
-                                "content" to it.content,
-                                "source" to it.source,
-                                "created_at" to it.createdAt,
-                                "time_kind" to it.timeKind,
-                                "transcript" to it.transcript,
-                                "voice_seconds" to it.voiceSeconds,
-                            )
-                        }
-                    )
-                }.getOrDefault(false)
-                val ids = group.map { it.id }
-                if (success) {
-                    repository.deleteSyncMessages(ids)
-                } else {
-                    val attempts = group.maxOf { it.attempts } + 1
-                    val backoff = SyncOutboxPolicy.retryDelayMs(attempts)
-                    repository.markSyncMessagesFailed(ids, System.currentTimeMillis() + backoff)
-                }
-            }
-            android.util.Log.d(
-                "AIA",
-                "sync outbox flush complete elapsed=${System.currentTimeMillis() - startedAt}"
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            android.util.Log.w(
-                "AIA",
-                "sync outbox flush failed elapsed=${System.currentTimeMillis() - startedAt}: ${error.message}",
-                error
-            )
+            messageSyncOutbox.schedule(force = true)
+            messageSyncOutbox.awaitFlush()
         }
     }
 
@@ -4339,10 +4251,6 @@ class MessageEngine(
         const val INCOMING_VERIFY_RETRY_DELAY_MS = 150L
         const val OUTGOING_VERIFY_RETRIES = 3
         const val OUTGOING_VERIFY_RETRY_DELAY_MS = 250L
-        // D1 bills per row read, so outbox flushes are batched instead of
-        // retried every 10s (each flush reads fingerprint rows on the server).
-        const val SYNC_FLUSH_INTERVAL_MS = 45_000L
-        const val SYNC_BEFORE_CHAT_WAIT_MS = 8_000L
         // Measured on device: Soul sometimes needs more than 2.5s before the
         // chat page exposes its input bar. 700ms + 7x450ms ~= 3.9s keeps the
         // "enter, look, leave" skip from dropping a conversation that was
