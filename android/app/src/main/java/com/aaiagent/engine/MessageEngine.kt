@@ -88,6 +88,7 @@ class MessageEngine(
     private val conversationRecovery = ConversationRecoveryPersistence(repository)
     private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
     private val messageSyncOutbox = MessageSyncOutboxQueue(repository, scope)
+    private val replyTaskReporter = ReplyTaskReporter(repository, scope)
     private val backendReplyTaskPoller = BackendReplyTaskPoller(
         repository = repository,
         scope = scope,
@@ -825,28 +826,28 @@ class MessageEngine(
     ): Boolean {
         val content = task.content?.trim().orEmpty()
         if (content.isEmpty()) {
-            reportReplyTask(task.taskId, "failed", "empty_content")
+            replyTaskReporter.report(task.taskId, "failed", "empty_content")
             return true
         }
         if (!isContactAllowed(task.contactName, task.contactId)) {
-            reportReplyTask(task.taskId, "failed", "contact_filtered")
+            replyTaskReporter.report(task.taskId, "failed", "contact_filtered")
             return true
         }
         val listRoot = ensureMessageList(svc, adapter, leaseToken) ?: run {
-            reportReplyTask(task.taskId, "failed", "message_list_unavailable")
+            replyTaskReporter.report(task.taskId, "failed", "message_list_unavailable")
             return true
         }
         val conversation = adapter.clickConversationByName(listRoot, task.contactName, true) ?: run {
-            reportReplyTask(task.taskId, "failed", "contact_not_found")
+            replyTaskReporter.report(task.taskId, "failed", "contact_not_found")
             return true
         }
         RuntimeJournal.clickConversation(conversation.contactName, true)
         val chatRoot = waitForVerifiedChat(svc, adapter, conversation.contactName, leaseToken) ?: run {
-            reportReplyTask(task.taskId, "failed", "chat_verification_failed")
+            replyTaskReporter.report(task.taskId, "failed", "chat_verification_failed")
             return true
         }
         if (!isContactAllowed(conversation.contactName, conversation.contactId)) {
-            reportReplyTask(task.taskId, "failed", "contact_filtered")
+            replyTaskReporter.report(task.taskId, "failed", "contact_filtered")
             returnToMessageList(adapter, leaseToken, "manual task contact filtered")
             return true
         }
@@ -862,7 +863,7 @@ class MessageEngine(
         )
         val status = if (result == PlatformAdapter.SendResult.SUCCESS) "sent" else "failed"
         val error = if (status == "sent") "" else "send_result_$result"
-        reportReplyTask(task.taskId, status, error)
+        replyTaskReporter.report(task.taskId, status, error)
         RuntimeJournal.messageSent(status == "sent", "后台人工消息 ${conversation.contactName}")
         if (status == "sent") {
             synchronized(getOrCreateContext(currentPlatform, conversation.contactId)) {
@@ -894,26 +895,6 @@ class MessageEngine(
             latestListPreview = conversation.preview
         )
         return true
-    }
-
-    private fun reportReplyTask(
-        taskId: String?,
-        status: String,
-        error: String
-    ) {
-        if (taskId.isNullOrBlank()) return
-        scope.launch(Dispatchers.IO) {
-            try {
-                val token = repository.getActiveToken()?.token?.trim().orEmpty()
-                if (token.isEmpty()) return@launch
-                ApiService(repository.getApiBaseUrl())
-                    .reportReplyTask(token, taskId, status, error)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                android.util.Log.w("AIA", "reply task report failed: ${error.message}", error)
-            }
-        }
     }
 
     private suspend fun processVerifiedChat(
