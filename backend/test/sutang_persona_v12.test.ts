@@ -467,5 +467,35 @@ describe("Su Tang v13 persona", () => {
     });
     expect(disabledPrompt).not.toContain("【家庭掩护与语音边界】");
     expect(disabledPrompt).not.toContain("【反差少妇与昵称顺势拉扯】");
+
+    // 4. 2026-10-16 实战优化五大规矩：
+    // - AI身份被怀疑时真人傲娇回怼（绝不装聋作哑）
+    // - 深夜时段（23:00~06:00）严禁即时见面邀约
+    // - 严禁低能量消极抱怨
+    // - 睡眠作息话题严禁车轱辘复读
+    // - 质问人称逻辑一致
+    const defaultState = buildAgentRuleState(
+      DEFAULT_AGENT_RULES.map((rule) => ({ ...rule, legacy_rule_id: rule.id, deleted_at: 0 })),
+      "female_sutang",
+    );
+    const optimizedPrompt = buildLayeredSystemPrompt({
+      personaId: "female_sutang",
+      personaPrompt: "你是苏棠，29岁，重庆两江新区，居家电商运营。",
+      personaFacts: null,
+      platform: "soul",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      messages: [{ role: "user", content: "你是ai" }],
+      historyMessages: [],
+      xingmuSoulScope: false,
+      agentRuleState: defaultState,
+    });
+    expect(optimizedPrompt).toContain("被怀疑AI时的真人反击");
+    expect(optimizedPrompt).toContain("严禁装聋作哑无视对方");
+    expect(optimizedPrompt).toContain("绝对禁止发起当晚或当下立即跑过来的即时见面邀约");
+    expect(optimizedPrompt).toContain("严禁低价值消极抱怨");
+    expect(optimizedPrompt).toContain("别拿睡觉当话题");
+    expect(optimizedPrompt).toContain("严禁反咬自己说‘我没套你话’");
   });
 });
+
