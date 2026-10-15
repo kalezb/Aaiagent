@@ -500,16 +500,30 @@ describe("Su Tang v13 persona", () => {
     expect(optimizedPrompt).toContain("严禁反咬自己说‘我没套你话’");
   });
 
-  it("resolves the 6 micro steps accurately and cleans double-pipe bubble separators", () => {
-    // 1. 验证 6 级微台阶准确定位
-    expect(resolveSutangMicroStep("你好呀").step).toBe(1);
-    expect(resolveSutangMicroStep("180的个子162斤有没有安全感哇").step).toBe(2);
-    expect(resolveSutangMicroStep("必须有分寸撒，肯定不介入生活").step).toBe(3);
-    expect(resolveSutangMicroStep("听你的，明天去开房吧").step).toBe(4);
-    expect(resolveSutangMicroStep("怎么订？发链接给我代付").step).toBe(5);
-    expect(resolveSutangMicroStep("代付成功了").step).toBe(6);
+  it("resolves the micro steps accurately for soul and douban and cleans double-pipe bubble separators", () => {
+    // 1. 验证 Soul 端微台阶准确定位（严禁提代付、安全引流豆瓣）
+    expect(resolveSutangMicroStep("你好呀", [], "soul").step).toBe(1);
+    expect(resolveSutangMicroStep("180的个子162斤有没有安全感哇", [], "soul").step).toBe(2);
+    expect(resolveSutangMicroStep("必须有分寸撒，肯定不介入生活", [], "soul").step).toBe(3);
+    expect(resolveSutangMicroStep("听你的，明天去开房吧", [], "soul").step).toBe(4);
+    const soulStep5 = resolveSutangMicroStep("怎么订？发链接给我", [], "soul", "sutang2026");
+    expect(soulStep5.step).toBe(5);
+    expect(soulStep5.instruction).toContain("在Soul上绝对禁止提“代付”二字、绝不发支付链接（防封号）");
+    expect(soulStep5.instruction).toContain("前阵子在豆瓣看影评，发现里面挺清静还能聊天");
+    expect(soulStep5.instruction).toContain("看你表现真诚上道，今天破例只给你一个人");
+    expect(soulStep5.instruction).toContain("直接发豆瓣号“sutang2026”（后面不要带任何多余废话，是个正常人都能懂）");
 
-    // 2. 验证微台阶指令精准注入提示词
+    // 2. 验证 豆瓣 端微台阶准确定位（安全代付闭环与进门规矩）
+    expect(resolveSutangMicroStep("找过来了", [], "douban").step).toBe(1);
+    const doubanStep2 = resolveSutangMicroStep("怎么订？发链接代付", [], "douban");
+    expect(doubanStep2.step).toBe(2);
+    expect(doubanStep2.instruction).toContain("甩出美团/携程平台代付链接");
+    expect(doubanStep2.instruction).toContain("网上偷拍多，女孩子必须保护隐私");
+    const doubanStep3 = resolveSutangMicroStep("代付成功了", [], "douban");
+    expect(doubanStep3.step).toBe(3);
+    expect(doubanStep3.instruction).toContain("报出房号（如402），定下敲三声门进、进门先老老实实抱我五分钟的规矩");
+
+    // 3. 验证微台阶指令精准注入提示词
     const defaultState = buildAgentRuleState(
       DEFAULT_AGENT_RULES.map((rule) => ({ ...rule, legacy_rule_id: rule.id, deleted_at: 0 })),
       "female_sutang",
@@ -529,7 +543,7 @@ describe("Su Tang v13 persona", () => {
     expect(step2Prompt).toContain("【当前微台阶｜第2步：敲打立规矩】");
     expect(step2Prompt).toContain("泼冷水立规矩：光块头大或嘴上说说不算数");
 
-    // 3. 验证双竖线 || 自动清洗为标准切分符 |||
+    // 4. 验证双竖线 || 自动清洗为标准切分符 |||
     const cleaned = normalizeAssistantReplyPresentation("你看着挺老实的||心里是不是也好奇我这一面", { softParticles: true });
     expect(cleaned).toBe("你看着挺老实的|||心里是不是也好奇我这一面");
   });

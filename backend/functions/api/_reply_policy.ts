@@ -631,7 +631,12 @@ export const SUTANG_MASSAGE_PLEASURE_RULE =
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
 
-export function resolveSutangMicroStep(incomingText: string, historyMessages: any[] = []): {
+export function resolveSutangMicroStep(
+  incomingText: string,
+  historyMessages: any[] = [],
+  platform = "soul",
+  doubanAccount = "sutang2026",
+): {
   step: number;
   title: string;
   instruction: string;
@@ -640,26 +645,54 @@ export function resolveSutangMicroStep(incomingText: string, historyMessages: an
   const recentHistory = (Array.isArray(historyMessages) ? historyMessages.slice(-6) : [])
     .map((m) => String(m?.content || ""))
     .join(" ");
+  const isDouban = String(platform || "").toLowerCase() === "douban";
 
-  // 台阶 6: 进门抱五分钟规矩 (代付已完成，发房号)
-  if (/(?:代付好了|已经付了|付过了|代付成功|搞定了|订好了)/u.test(text)) {
+  // === 平台分支 A：豆瓣（私密深入与代付闭环） ===
+  if (isDouban) {
+    // 豆瓣第3步：进门抱五分钟规矩 (代付已完成，发房号)
+    if (/(?:代付好了|已经付了|付过了|代付成功|搞定了|订好了)/u.test(text)) {
+      return {
+        step: 3,
+        title: "【当前微台阶｜豆瓣第3步：进门规矩】",
+        instruction: "报出房号（如402），定下敲三声门进、进门先老老实实抱我五分钟的规矩。字数20字内，干脆利落。",
+      };
+    }
+
+    // 豆瓣第2步：防偷拍理由与平台代付 (进入支付订房环节)
+    if (
+      /(?:怎么订|发链接|我订吧|你订吧|多少钱|定好了吗|订哪家|开好房|链接|代付|亚朵|全季|酒店)/u.test(text) ||
+      (/(?:亚朵|全季|酒店|房间)/u.test(recentHistory) && /(?:好|行|可以|听你的|都行|你定|你选|你挑|没问题)/u.test(text))
+    ) {
+      return {
+        step: 2,
+        title: "【当前微台阶｜豆瓣第2步：防偷拍与平台代付】",
+        instruction: "挑好300+亚朵/全季并甩出美团/携程平台代付链接：网上偷拍多，女孩子必须保护隐私，房间必须我来订、提前过去消消毒查针孔；你直接在平台帮我代付就行，懂事点嘛。绝不长篇大论，20字内。",
+      };
+    }
+
+    // 豆瓣第1步：承接私密默契 (刚过来/打招呼)
     return {
-      step: 6,
-      title: "【当前微台阶｜第6步：进门规矩】",
-      instruction: "报出房号（如402），定下敲三声门进、进门先老老实实抱我五分钟的规矩。字数20字内，干脆利落。",
+      step: 1,
+      title: "【当前微台阶｜豆瓣第1步：承接私密默契】",
+      instruction: "承接熟悉朋友的默契：“找过来啦，手挺快的嘛”，跳过陌生客套，语气私密随性。字数18字内。",
     };
   }
 
-  // 台阶 5: 防偷拍理由与平台代付 (进入支付订房环节)
-  if (/(?:怎么订|发链接|我订吧|你订吧|多少钱|定好了吗|订哪家|开好房)/u.test(text) || (/(?:亚朵|全季|酒店)/u.test(recentHistory) && /(?:好|行|可以|听你的)/u.test(text))) {
+  // === 平台分支 B：Soul（前线拉扯、锁定共识并借势转移豆瓣） ===
+  // 5. 转移阵地至豆瓣自留地 (达成酒店共识/对方同意亚朵全季由你挑/询问怎么订)
+  if (
+    /(?:怎么订|发链接|我订吧|你订吧|多少钱|定好了吗|订哪家|开好房)/u.test(text) ||
+    (/(?:亚朵|全季|酒店|房间)/u.test(recentHistory) && /(?:好|行|可以|听你的|都行|你定|你选|你挑|没问题)/u.test(text))
+  ) {
+    const accountStr = doubanAccount || "sutang2026";
     return {
       step: 5,
-      title: "【当前微台阶｜第5步：防偷拍与平台代付】",
-      instruction: "抛出安全防线与代付：网上偷拍多，女孩子必须保护隐私，房间必须我来订、提前过去消消毒；你直接在平台帮我代付就行，懂事点嘛。绝不长篇大论，20字内。",
+      title: "【当前微台阶｜第5步：锁定共识・引流豆瓣自留地】",
+      instruction: `达成去酒店共识，立即借势锁定去豆瓣！在Soul上绝对禁止提“代付”二字、绝不发支付链接（防封号）。分三条短气泡干脆利落给号：第一条“前阵子在豆瓣看影评，发现里面挺清静还能聊天”，第二条“看你表现真诚上道，今天破例只给你一个人”，第三条直接发豆瓣号“${accountStr}”（后面不要带任何多余废话，是个正常人都能懂）。`,
     };
   }
 
-  // 台阶 4: 反客为主抢挑房权 (对方提到开房/酒店/去哪待着，或说听你的)
+  // 4. 反客为主抢挑房权 (对方提到开房/酒店/去哪待着，或说听你的)
   if (/(?:开房|酒店|开个房|全季|亚朵|去哪待|听你的|你选|你定|你挑)/u.test(text)) {
     return {
       step: 4,
@@ -668,7 +701,7 @@ export function resolveSutangMicroStep(incomingText: string, historyMessages: an
     };
   }
 
-  // 台阶 3: 逼他交底 (对方答应有分寸、表决心、或聊到明天见面)
+  // 3. 逼他交底 (对方答应有分寸、表决心、或聊到明天见面)
   if (/(?:有分寸|有分寸撒|不介入生活|不破坏|明天见|见一面|见见|出来玩|吃个饭|想见你)/u.test(text)) {
     return {
       step: 3,
@@ -677,7 +710,7 @@ export function resolveSutangMicroStep(incomingText: string, historyMessages: an
     };
   }
 
-  // 台阶 2: 敲打立规矩 (对方问安全感、展示身材、口嗨或求认可)
+  // 2. 敲打立规矩 (对方问安全感、展示身材、口嗨或求认可)
   if (/(?:安全感|个子|斤|身材|块头|怎么才能得到|抱抱|借肩膀|好性感|好美)/u.test(text)) {
     return {
       step: 2,
@@ -686,7 +719,7 @@ export function resolveSutangMicroStep(incomingText: string, historyMessages: an
     };
   }
 
-  // 台阶 1: 轻尝甜头 (默认日常打招呼/初识/调侃)
+  // 1. 轻尝甜头 (默认日常打招呼/初识/调侃)
   return {
     step: 1,
     title: "【当前微台阶｜第1步：轻尝甜头与留白】",
@@ -2764,7 +2797,8 @@ export function buildLayeredSystemPrompt({
     : "";
 
   const fragmentGuidance = sutangScope ? buildFragmentedMessageGuidance(incoming, historyMessages) : "";
-  const sutangMicroStep = sutangScope ? resolveSutangMicroStep(incoming, historyMessages) : null;
+  const doubanAccount = String(normalizedFacts?.contact_qq || "sutang2026").trim();
+  const sutangMicroStep = sutangScope ? resolveSutangMicroStep(incoming, historyMessages, platform, doubanAccount) : null;
   const customOrBase = editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE);
   const sutangActionLadderPrompt = sutangScope && sutangMicroStep && customOrBase
     ? `${customOrBase}\n\n【本轮唯一微动作・绝不抢跑】${sutangMicroStep.title}：${sutangMicroStep.instruction}`
