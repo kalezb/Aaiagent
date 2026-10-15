@@ -28,6 +28,8 @@ describe("conversation turns and sticker state", () => {
     expect(turns[1].role).toBe("user");
     expect(turns[1].content).toContain("对方：我");
     expect(turns[1].content).toContain("[表情包：小害羞（害羞）]");
+    expect(turns[1].content).toContain("这几条是在接你上一句");
+    expect(turns[1].content).toContain("一起玩 玩什么呀");
   });
 
   it("uses the text as the message body and the sticker as tone", () => {

@@ -647,7 +647,9 @@ describe("chat history and reply", () => {
     expect(third.content).toContain("对方：隔了一小时的第三条");
     expect(third.content).toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}/);
     expect(latest.content).toContain("对方：现在这句话");
-    expect(latest.content.split("\n").at(-1)).toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}·读到】/);
+    expect(latest.content.split("\n").find((line) => line.includes("对方：现在这句话")))
+      .toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}·读到】/);
+    expect(latest.content).toContain("这几条是在接你上一句");
     // 只给绝对时刻，不再给“多久前”
     expect(latest.content).not.toContain("前】");
   });

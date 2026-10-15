@@ -1,4 +1,5 @@
 import { formatTranscriptLine } from "./_transcript_runtime";
+import { isStickerStateContent } from "./_message_text";
 import { requestMessageEpochSeconds } from "./_time_runtime";
 
 const SAME_ROLE_TURN_WINDOW_SECONDS = 10 * 60;
@@ -9,7 +10,7 @@ function normalizedRole(message) {
 
 function sameLine(left, right) {
   return left.role === right.role &&
-    left.content === right.content &&
+    left.original === right.original &&
     (left.epoch === 0 || right.epoch === 0 || Math.abs(left.epoch - right.epoch) <= 300);
 }
 
@@ -19,6 +20,21 @@ function shouldJoinTurn(previous, current) {
   if (!previous.epoch || !current.epoch) return false;
   const gap = current.epoch - previous.epoch;
   return gap >= 0 && gap <= SAME_ROLE_TURN_WINDOW_SECONDS;
+}
+
+function previewTurnText(value) {
+  return String(value || "")
+    .split("|||")[0]
+    .trim()
+    .slice(0, 50);
+}
+
+function turnLooksLikeShortAnswer(turn) {
+  const substantive = turn.parts.filter((part) => !isStickerStateContent(part));
+  const text = (substantive.length ? substantive : turn.parts)
+    .join(" ")
+    .replace(/\s+/gu, "");
+  return text.length > 0 && text.length <= 12;
 }
 
 /**
@@ -39,9 +55,9 @@ export function buildConversationTurnMessages({
 
   const pushLine = (message, requestMessage, forceMerge) => {
     const epoch = requestMessageEpochSeconds(message) || 0;
-    const content = String(message?.content || "").trim();
-    if (!content) return;
-    const line = { role: normalizedRole(message), content, epoch, forceMerge };
+    const original = String(message?.content || "").trim();
+    if (!original) return;
+    const line = { role: normalizedRole(message), original, epoch, forceMerge };
     if (seenLines.some((seen) => sameLine(seen, line))) {
       previousEpoch = epoch || previousEpoch;
       return;
@@ -75,12 +91,25 @@ export function buildConversationTurnMessages({
     if (shouldJoinTurn(previous, entry)) {
       previous.content += "\n" + entry.content;
       previous.epoch = entry.epoch || previous.epoch;
+      previous.parts.push(entry.original);
     } else {
       turns.push({
         role: entry.role,
         content: entry.content,
         epoch: entry.epoch,
+        parts: [entry.original],
       });
+    }
+  }
+  for (let index = 0; index < turns.length; index += 1) {
+    const turn = turns[index];
+    const previous = turns[index - 1];
+    if (turn.role !== "user" || previous?.role !== "assistant" || !turnLooksLikeShortAnswer(turn)) {
+      continue;
+    }
+    const previousText = previewTurnText(previous.parts.at(-1));
+    if (previousText) {
+      turn.content += "\n（这几条是在接你上一句：「" + previousText + "」）";
     }
   }
   return turns.map(({ role, content }) => ({ role, content }));
