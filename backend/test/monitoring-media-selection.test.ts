@@ -675,6 +675,18 @@ describe("media selection", () => {
     expect(fixed).toBe("第一句|||第二句|||第三句");
   });
 
+  it("splits at clear message changes without changing the words", () => {
+    expect(capReplyLength(
+      "刚认识就脸红 你倒挺纯晚上好 在忙什么呢",
+      "晚上好",
+    )).toBe("刚认识就脸红 你倒挺纯|||晚上好 在忙什么呢");
+
+    expect(capReplyLength(
+      "躺这么早 不闷吗我这时候才刚把娃哄睡",
+      "你睡了吗",
+    )).toBe("躺这么早 不闷吗？|||我这时候才刚把娃哄睡");
+  });
+
   it("drops a repeated delay excuse but keeps the substance", () => {
     // 真机原样（一一）：23:59 说过“刚看手机才看到”，00:12 又说“刚没顾上看手机”。
     const now = Math.floor(Date.now() / 1000);

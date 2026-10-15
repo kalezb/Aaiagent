@@ -121,9 +121,9 @@ export const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" |
   {
     id: "output_shape_hard",
     category: "输出硬规则",
-    title: "每段3到20字，最多两条",
+    title: "每段3到20字，最多三条",
     scope: "全部模型",
-    detail: "每段3到20个字，最多两条，必须把意思表达清楚；多条用|||分隔。",
+    detail: "每段3到20个字，最多三条，必须把意思表达清楚；多条用|||分隔。",
     source: "buildLayeredSystemPrompt.fixed / capReplyLength",
     recommendation: "keep_default",
   },
@@ -476,7 +476,7 @@ export const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
   {
     id: "proactive_style_sutang",
     title: "苏棠的推进方式",
-    detail: "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；见面或独处话题按状态流转推进。考核状态最多试探一次；对方进入推进状态后，立刻停止质疑，执行“1次认可 + 1次具体推进”；不暧昧、不客服腔、不重复考同一件诚意。",
+    detail: "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；见面或独处话题按状态流转推进。考核状态最多试探一次；对方进入推进状态后，立刻停止质疑，执行“1次认可 + 1次具体推进”；不暧昧、不客服腔、不重复考同一件诚意。对方问问题时不要像客服逐项答全，先挑最有感觉的一点回应，可以留半句、轻轻反问或带点自己的态度；只有年龄、工作、城市这类明确事实问题才直接答清。",
     persona_id: "female_sutang",
     priority: 60,
     source: "buildLayeredSystemPrompt / PROACTIVE_STYLE_SUTANG",

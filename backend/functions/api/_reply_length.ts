@@ -11,6 +11,8 @@ export function replyLengthBudget(_incomingText) {
 
 const NON_ESSENTIAL_LEAD = /^(?:看这边|看这里|你看|喂+|哎+|听我说|听我讲|我跟你说|跟你说|你先听|先听我说|说真的|等下|等等|先等等)[呀啊呢吧嘛哦哟哈。！!？?…~～\s]*$/u;
 const NON_ESSENTIAL_LEAD_PREFIX = /^(?:看这边|看这里|你看|喂+|哎+|听我说|听我讲|我跟你说|跟你说|你先听|先听我说|说真的|等下|等等|先等等)[呀啊呢吧嘛哦哟哈]{0,3}\s*[，,：:；;、.。!！?？…~～-]+\s*/u;
+const GREETING_TOKENS = /(?:早上好|晚上好|下午好|中午好|早安|晚安|你好)/gu;
+const QUESTION_PARTICLE_NEW_CLAUSE = /(?<=吗)\s*(?=(?:我|你|他|她|它|这|那|今天|明天|晚上|刚才|这会儿|现在|在|有|要|能|会|想|别|先|还是|是不是|要不要))/gu;
 
 function isNonEssentialLead(value) {
   return NON_ESSENTIAL_LEAD.test(String(value || "").trim());
@@ -77,6 +79,31 @@ function splitSafeLineBreaks(value) {
     .replace(/\r?\n+/gu, " ");
 }
 
+function splitBeforeGreeting(value) {
+  const text = String(value || "");
+  const matches = Array.from(text.matchAll(GREETING_TOKENS));
+  let output = text;
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const match = matches[index];
+    const start = match.index ?? -1;
+    const token = match[0];
+    if (start < 4) continue;
+    const previous = text[start - 1] || "";
+    const next = text[start + token.length] || "";
+    if (/\s/u.test(previous)) continue;
+    if (next && !/[\s，,。！？!?]/u.test(next)) continue;
+    output = output.slice(0, start).trimEnd() + "|||" + output.slice(start).trimStart();
+  }
+  return output;
+}
+
+function splitNaturalBoundaries(value) {
+  return splitBeforeGreeting(
+    String(value || "")
+      .replace(QUESTION_PARTICLE_NEW_CLAUSE, "？|||"),
+  );
+}
+
 /**
  * 只整理模型已经分好的消息段：去引子、去重复、最多三条。
  * 不再从段内切字，也不把段与段重新粘起来。
@@ -90,6 +117,7 @@ export function capReplyLength(value, incomingText) {
   const rawSegments = normalized
     .split("|||")
     .map(splitSafeLineBreaks)
+    .map(splitNaturalBoundaries)
     .flatMap((part) => part.split("|||"))
     .map((part) => part.trim())
     .filter(Boolean);

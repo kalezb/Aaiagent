@@ -1678,7 +1678,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         },
         {
           // 2026-10-07：长度收口必须放最后——先让别的清理把该换的换掉（比如微信泄露那句），
-          // 再按“一句说一件事、一段3到20个字、最多两条”砍短。放前面会先把该保留的内容吃掉。
+          // 再按“一段3到20个字、最多三条”整理。放前面会先把该保留的内容吃掉。
           rule: "length_budget",
           reason: "reply_longer_than_his_message",
           apply: (value) => {

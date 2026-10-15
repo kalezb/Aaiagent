@@ -68,9 +68,15 @@ describe("Su Tang v13 persona", () => {
   it("uses the new 3-to-20 character reply rule and removes the old reward wording", () => {
     const prompt = buildSutangPrompt();
     expect(prompt).toContain(OUTPUT_HARD_RULE);
-    expect(prompt).toContain("每段3到20个字，最多两条");
+    expect(prompt).toContain("每段3到20个字，最多三条");
     expect(prompt).not.toContain("半真半假的专属感");
     expect(prompt).not.toContain("最终奖励");
+  });
+
+  it("keeps Su Tang from answering like a customer-service checklist", () => {
+    const prompt = buildSutangPrompt();
+    expect(prompt).toContain("不要像客服逐项答全");
+    expect(prompt).toContain("先挑最有感觉的一点回应");
   });
 
   it("pauses the old cards and enables the new ones", () => {
