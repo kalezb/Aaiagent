@@ -39,9 +39,66 @@ function turnLooksLikeShortAnswer(turn) {
   return text.length > 0 && text.length <= 12;
 }
 
+function looksLikeQuestion(value) {
+  return /(?:\?|？|什么|怎么|为什么|哪|谁|吗|呢|多少|几|是不是|要不要|行不行|好不好|在干嘛|在吗)/u
+    .test(String(value || ""));
+}
+
 function stickerSummary(turn) {
   const stickers = turn.parts.filter((part) => isStickerStateContent(part));
   return stickers.map((part) => previewTurnText(part)).filter(Boolean).join(" / ");
+}
+
+export function normalizeConversationTurnContext({
+  historyMessages = [],
+  currentMessages = [],
+}) {
+  const current = (Array.isArray(currentMessages) ? currentMessages : [])
+    .filter((message) => message && String(message.content || "").trim());
+  const currentUsers = current.filter((message) => message.role !== "assistant");
+  if (!currentUsers.length) return { historyMessages, currentMessages };
+
+  const answerText = currentUsers
+    .filter((message) => !isStickerStateContent(message.content))
+    .map((message) => String(message.content || "").trim())
+    .filter(Boolean)
+    .join(" / ");
+  if (!answerText || answerText.replace(/\s+/gu, "").length > 12) {
+    return { historyMessages, currentMessages };
+  }
+
+  const firstCurrentUserIndex = current.findIndex((message) => message.role !== "assistant");
+  const previousAssistant = firstCurrentUserIndex > 0
+    ? [...current.slice(0, firstCurrentUserIndex)].reverse()
+      .find((message) => message.role === "assistant")
+    : [...(Array.isArray(historyMessages) ? historyMessages : [])].reverse()
+      .find((message) => message.role === "assistant");
+  if (!previousAssistant) return { historyMessages, currentMessages };
+
+  const previousText = previewTurnText(previousAssistant.content);
+  if (!previousText || !looksLikeQuestion(previousText)) {
+    return { historyMessages, currentMessages };
+  }
+  const stickers = currentUsers
+    .filter((message) => isStickerStateContent(message.content))
+    .map((message) => previewTurnText(message.content))
+    .filter(Boolean)
+    .join(" / ");
+  const flat = "【把这一问一答连起来理解】\n我问：" + previousText +
+    "\n对方回：" + answerText +
+    (stickers ? "\n对方还发了个表情：" + stickers : "");
+  const normalizedCurrent = [
+    {
+      ...currentUsers[0],
+      content: flat,
+      time_kind: currentUsers[0].time_kind || "first_observed",
+    },
+  ];
+  return {
+    historyMessages: (Array.isArray(historyMessages) ? historyMessages : [])
+      .filter((message) => message !== previousAssistant),
+    currentMessages: normalizedCurrent,
+  };
 }
 
 /**
@@ -124,7 +181,7 @@ export function buildConversationTurnMessages({
     const previousText = previewTurnText(previous.parts.at(-1));
     const answerText = turn.parts.filter((part) => !isStickerStateContent(part)).join(" / ");
     const stickerText = stickerSummary(turn);
-    if (previousText && answerText) {
+    if (previousText && answerText && looksLikeQuestion(previousText)) {
       turn.content = "【把这一问一答连起来理解】\n我问：" + previousText +
         "\n对方回：" + answerText +
         (stickerText ? "\n对方还发了个表情：" + stickerText : "");

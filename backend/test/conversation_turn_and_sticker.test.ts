@@ -4,7 +4,10 @@ import {
   isGreetingStickerContent,
   isStickerOnlyTurn,
 } from "../functions/api/_message_text";
-import { buildConversationTurnMessages } from "../functions/api/_conversation_turn";
+import {
+  buildConversationTurnMessages,
+  normalizeConversationTurnContext,
+} from "../functions/api/_conversation_turn";
 import {
   SUTANG_ACTION_LADDER_RULE,
   buildSituationTimeline,
@@ -33,6 +36,26 @@ describe("conversation turns and sticker state", () => {
     expect(turns[0].content).toContain("我问：一起玩 玩什么呀");
     expect(turns[0].content).toContain("对方回：我");
     expect(turns[0].content).toContain("对方还发了个表情：[小害羞]");
+  });
+
+  it("normalizes the whole short-answer turn before the prompt is built", () => {
+    const normalized = normalizeConversationTurnContext({
+      historyMessages: [
+        {
+          role: "assistant",
+          content: "璧山离我这边不近哦 你跑那么远干嘛|||一起玩 玩什么呀",
+        },
+      ],
+      currentMessages: [
+        { role: "user", content: "我" },
+        { role: "user", content: "[小害羞]" },
+      ],
+    });
+
+    expect(normalized.historyMessages).toHaveLength(0);
+    expect(normalized.currentMessages).toHaveLength(1);
+    expect(normalized.currentMessages[0].content).toContain("我问：一起玩 玩什么呀");
+    expect(normalized.currentMessages[0].content).toContain("对方回：我");
   });
 
   it("uses the text as the message body and the sticker as tone", () => {

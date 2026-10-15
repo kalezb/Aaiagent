@@ -100,7 +100,10 @@ import {
   validateChatMessages,
 } from "./_chat_input";
 import { parseStructuredReply } from "./_reply_length";
-import { buildConversationTurnMessages } from "./_conversation_turn";
+import {
+  buildConversationTurnMessages,
+  normalizeConversationTurnContext,
+} from "./_conversation_turn";
 import { isGreetingStickerContent, isStickerOnlyTurn } from "./_message_text";
 import {
   createTimeoutSignal,
@@ -227,7 +230,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           request_id: requestId,
         });
       }
-      const messages = preparedInput.messages;
+      let messages = preparedInput.messages;
       if (
         isStickerOnlyTurn(messages) &&
         !messages.some((message) => isGreetingStickerContent(message?.content))
@@ -685,7 +688,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       const dedupedHistory = agentRuleState.isEnabled("duplicate_history", true)
         ? dedupeHistoryAgainstCurrent(recentHistory, messages)
         : recentHistory;
-      const historyMessages = dedupedHistory
+      let historyMessages = dedupedHistory
         .filter((message) =>
           !(message?.role === "assistant" &&
             foreignPersonaTerms.some((term) => String(message?.content || "").includes(term)))
@@ -693,6 +696,12 @@ export async function handleChatRequest({ request, env, context, path, method })
         .filter((message) =>
           !(message?.role === "user" && isPlatformNoticeContent(message?.content, programRules))
         );
+      const normalizedTurn = normalizeConversationTurnContext({
+        historyMessages,
+        currentMessages: messages,
+      });
+      historyMessages = normalizedTurn.historyMessages;
+      messages = normalizedTurn.currentMessages;
       const recentMediaContext = [...historyMessages, ...messages]
         .filter((message) => message?.role === "user")
         .map((message) => String(message?.content || "").trim())
