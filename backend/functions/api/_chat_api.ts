@@ -1373,6 +1373,16 @@ export async function handleChatRequest({ request, env, context, path, method })
         safetyCover = gapSec < 300 ? "\u5728\u5462 \u4f60\u8bf4" : "\u5728\u5462 \u521a\u624d\u8d70\u5f00\u4e86\u4e00\u4e0b";
       }
       const parsedModelReply = parseStructuredReply(String(rawModelContent || "").trim());
+      console.log(
+        "structured_reply_shape",
+        JSON.stringify({
+          request_id: requestId,
+          ok: parsedModelReply.ok,
+          source: parsedModelReply.source,
+          error: parsedModelReply.error,
+          messages: parsedModelReply.messages.length,
+        }),
+      );
       const modelReply = parsedModelReply.ok
         ? parsedModelReply.messages.join("|||")
         : safetyCover;
