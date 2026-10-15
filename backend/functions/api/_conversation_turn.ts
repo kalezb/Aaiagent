@@ -37,6 +37,11 @@ function turnLooksLikeShortAnswer(turn) {
   return text.length > 0 && text.length <= 12;
 }
 
+function stickerSummary(turn) {
+  const stickers = turn.parts.filter((part) => isStickerStateContent(part));
+  return stickers.map((part) => previewTurnText(part)).filter(Boolean).join(" / ");
+}
+
 /**
  * 把连续消息合成真正的“聊天回合”。
  *
@@ -108,8 +113,12 @@ export function buildConversationTurnMessages({
       continue;
     }
     const previousText = previewTurnText(previous.parts.at(-1));
-    if (previousText) {
-      turn.content += "\n（这几条是在接你上一句：「" + previousText + "」）";
+    const answerText = turn.parts.filter((part) => !isStickerStateContent(part)).join(" / ");
+    const stickerText = stickerSummary(turn);
+    if (previousText && answerText) {
+      turn.content += "\n\n【把这一问一答连起来理解】\n我问：" + previousText +
+        "\n对方回：" + answerText +
+        (stickerText ? "\n对方还发了个表情：" + stickerText : "");
     }
   }
   return turns.map(({ role, content }) => ({ role, content }));
