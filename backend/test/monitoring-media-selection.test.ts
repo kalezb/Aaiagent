@@ -669,10 +669,7 @@ describe("media selection", () => {
   });
 
   it("splits at clear message changes without changing the words", () => {
-    expect(capReplyLength(
-      JSON.stringify({ reply: "晚上好 在忙什么呢" }),
-      "晚上好",
-    )).toBe("晚上好 在忙什么呢");
+    expect(capReplyLength(JSON.stringify({ reply: "晚上好 在忙什么呢" }), "晚上好")).toBe("晚上好 在忙什么呢");
 
     expect(capReplyLength(
       JSON.stringify({
