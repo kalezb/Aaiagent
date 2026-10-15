@@ -100,6 +100,8 @@ import {
   validateChatMessages,
 } from "./_chat_input";
 import { parseStructuredReply } from "./_reply_length";
+import { buildConversationTurnMessages } from "./_conversation_turn";
+import { isGreetingStickerContent, isStickerOnlyTurn } from "./_message_text";
 import {
   createTimeoutSignal,
   elapsedSince,
@@ -160,10 +162,6 @@ import {
 } from "./_profile_runtime";
 import { validateToken } from "./_access_runtime";
 import { resolveIncomingDelayPolicy } from "./_message_delay";
-import {
-  formatCurrentChatMessage,
-  formatTranscriptLine,
-} from "./_transcript_runtime";
 import {
   sanitizeInternalInstructionLeak,
   sanitizeAssistantReply,
@@ -230,6 +228,16 @@ export async function handleChatRequest({ request, env, context, path, method })
         });
       }
       const messages = preparedInput.messages;
+      if (
+        isStickerOnlyTurn(messages) &&
+        !messages.some((message) => isGreetingStickerContent(message?.content))
+      ) {
+        return json({
+          action: "skip",
+          reason: "sticker_state_only",
+          request_id: requestId,
+        });
+      }
       const activePersonaId = String(tokenRow.active_persona_id || "female");
       const ruleSnapshot = await loadTurnRuleSnapshot(
         env.DB,
@@ -1105,50 +1113,15 @@ export async function handleChatRequest({ request, env, context, path, method })
         : null;
 
       const buildLlmMessages = (includeHistory = true, prompt = systemPrompt) => {
-        const result = [{ role: "system", content: prompt }];
-        const nowSecForTranscript = Math.floor(Date.now() / 1000);
-        let previousEpoch = 0;
-        // 2026-10-07：同一条消息可能既在历史里、又在这次读到的窗口里（真机：
-        // “【10/07 04:06】我：大半夜的 你是饿了吧”连着出现两次），既费 token 又让模型以为是两句话。
-        // 按「角色 + 内容 + 时刻」去重（同一时刻的另一句仍保留）。
-        // 真机里那两条的入库时刻差了 4 分钟（04:43 / 04:47），所以不能只比精确时刻：
-        // 同角色 + 同内容 + 5 分钟内，算同一条。
-        const seenLines = [];
-        const pushLine = (msg, requestMessage) => {
-          const epoch = requestMessageEpochSeconds(msg) || 0;
-          const content = String(msg.content || "").trim();
-          const duplicated = seenLines.some((line) =>
-            line.role === msg.role && line.content === content &&
-            (epoch === 0 || line.epoch === 0 || Math.abs(line.epoch - epoch) <= 300));
-          if (duplicated) {
-            // 跳过的虽是重复行，但它的时间仍然是“上一条”，不推进的话下一行会被当成隔了很久。
-            previousEpoch = epoch || previousEpoch;
-            return;
-          }
-          seenLines.push({ role: msg.role, content, epoch });
-          result.push({
-            role: msg.role === "assistant" ? "assistant" : "user",
-            content: formatTranscriptLine(
-              requestMessage,
-              previousEpoch,
-              nowSecForTranscript,
-              activeStickerMeanings,
-            ),
-          });
-          previousEpoch = epoch || previousEpoch;
-        };
-        if (includeHistory) {
-          for (const msg of historyMessages) {
-            pushLine(msg, msg);
-          }
-        }
-        for (const msg of messages) {
-          // 2026-10-07（时间可信）：请求里带来的这几条是手机刚读到的，
-          // 没标来源时按“读到的时间”算，别当成他真实发送时间。
-          const requestMessage = msg?.time_kind ? msg : { ...msg, time_kind: "first_observed" };
-          pushLine(msg, requestMessage);
-        }
-        return result;
+        return [
+          { role: "system", content: prompt },
+          ...buildConversationTurnMessages({
+            historyMessages: includeHistory ? historyMessages : [],
+            currentMessages: messages,
+            nowSec: Math.floor(Date.now() / 1000),
+            stickerMeanings: activeStickerMeanings,
+          }),
+        ];
       };
       let llmMessages = buildLlmMessages(true);
       const minimalSystemPrompt = () => buildLayeredSystemPrompt({

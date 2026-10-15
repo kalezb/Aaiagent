@@ -1,0 +1,76 @@
+import { describe, expect, it } from "vitest";
+import {
+  latestIncomingText,
+  isGreetingStickerContent,
+  isStickerOnlyTurn,
+} from "../functions/api/_message_text";
+import { buildConversationTurnMessages } from "../functions/api/_conversation_turn";
+import {
+  SUTANG_ACTION_LADDER_RULE,
+  buildSituationTimeline,
+} from "../functions/api/_reply_policy";
+
+describe("conversation turns and sticker state", () => {
+  it("keeps a short answer together with the question it answers", () => {
+    const turns = buildConversationTurnMessages({
+      historyMessages: [
+        { role: "assistant", content: "一起玩 玩什么呀", created_at: 1000 },
+      ],
+      currentMessages: [
+        { role: "user", content: "我", created_at: 1010 },
+        { role: "user", content: "[小害羞]", created_at: 1011 },
+      ],
+      nowSec: 1020,
+    });
+
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toMatchObject({ role: "assistant" });
+    expect(turns[1].role).toBe("user");
+    expect(turns[1].content).toContain("对方：我");
+    expect(turns[1].content).toContain("[表情包：小害羞（害羞）]");
+  });
+
+  it("uses the text as the message body and the sticker as tone", () => {
+    expect(latestIncomingText([
+      { role: "user", content: "我" },
+      { role: "user", content: "[小害羞]" },
+    ])).toBe("我");
+    expect(latestIncomingText([
+      { role: "user", content: "[小害羞]" },
+    ])).toBe("[小害羞]");
+  });
+
+  it("distinguishes pure sticker state from greeting stickers", () => {
+    expect(isStickerOnlyTurn([
+      { role: "user", content: "[小害羞]" },
+      { role: "user", content: "[表情包：偷笑（偷着乐）]" },
+    ])).toBe(true);
+    expect(isStickerOnlyTurn([
+      { role: "user", content: "我" },
+      { role: "user", content: "[小害羞]" },
+    ])).toBe(false);
+    expect(isGreetingStickerContent("对方发来时段问候表情「晚安」")).toBe(true);
+    expect(isGreetingStickerContent("对方发来 Soul 官方表情「你好」")).toBe(true);
+    expect(isGreetingStickerContent("[小害羞]")).toBe(false);
+  });
+
+  it("shows the whole current turn instead of only the last sticker", () => {
+    const timeline = buildSituationTimeline(
+      [
+        { role: "user", content: "我" },
+        { role: "user", content: "[小害羞]" },
+      ],
+      [{ role: "assistant", content: "一起玩 玩什么呀", created_at: 900 }],
+    );
+
+    expect(timeline).toContain("他这轮说");
+    expect(timeline).toContain("我 / [小害羞]");
+    expect(timeline).toContain("同一轮连着发来的消息");
+    expect(timeline).not.toContain("这轮要处理的就是他最新这一条");
+  });
+
+  it("does not force high-pressure questioning in the Sutang default rule", () => {
+    expect(SUTANG_ACTION_LADDER_RULE).not.toContain("高位反问制止");
+    expect(SUTANG_ACTION_LADDER_RULE).toContain("先听懂对方这轮完整意思");
+  });
+});

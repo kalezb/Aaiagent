@@ -64,7 +64,7 @@ class IncomingMessageBatchTest {
         assertEquals(caption, batch?.textTarget)
         assertTrue(batch?.preferTextOnly == true)
         assertNull(batch?.mediaTarget)
-        assertEquals(listOf(caption), batch?.let(IncomingMessageBatch::replyMessages))
+        assertEquals(listOf(caption, sticker), batch?.let(IncomingMessageBatch::replyMessages))
     }
 
     @Test
@@ -89,6 +89,22 @@ class IncomingMessageBatchTest {
         assertEquals(listOf(voice), voiceBatch?.let(IncomingMessageBatch::replyMessages))
         assertSame(sticker, stickerBatch?.mediaTarget)
         assertEquals(listOf(sticker), stickerBatch?.let(IncomingMessageBatch::replyMessages))
+    }
+
+    @Test
+    fun `recognized sticker stays attached to the text turn`() {
+        val text = ChatMessage("other", "我", "text", identityKey = "1")
+        val sticker = ChatMessage(
+            "other",
+            "对方发来 Soul 官方表情「小害羞」",
+            "text",
+            identityKey = "2",
+        )
+
+        val batch = IncomingMessageBatch.select(listOf(text, sticker))
+
+        assertEquals(text, batch?.textTarget)
+        assertEquals(listOf(text, sticker), batch?.let(IncomingMessageBatch::replyMessages))
     }
 
     @Test

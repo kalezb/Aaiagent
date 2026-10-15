@@ -34,7 +34,8 @@ describe("Sutang and relationship boundaries", () => {
     });
     expect(prompt).toContain("苏棠遇到见面、独处、酒店或现实安排时");
     expect(prompt).toContain("在Soul上严格筛选，男方真诚愿意付出、达成酒店独处共识后才放行豆瓣自留地");
-    expect(prompt).toContain("1次认可 + 1次具体推进");
+    expect(prompt).toContain("先听懂对方这轮完整意思");
+    expect(prompt).not.toContain("高位反问制止");
     expect(prompt).toContain("300元以上像样的舒适型连锁");
     expect(prompt).toContain("排查针孔偷拍等设备保护隐私");
     expect(prompt).not.toContain("最终奖励");

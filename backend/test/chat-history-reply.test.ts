@@ -572,7 +572,7 @@ describe("chat history and reply", () => {
       now,
     );
     expect(timeline).toContain("【现在是什么情况");
-    expect(timeline).toContain("他最新一条");
+    expect(timeline).toContain("他这轮说");
     expect(timeline).toContain("他这条你还没回");
     // 2026-10-07 晚（实测 EW/相信光！/行者）：之前写“他最新一条：…（11小时前）”“你上一条：…（17小时前）”
     // “你俩中间隔了：13小时”，模型一睁眼就算“她晾了他多久”，于是每条都以“昨晚睡着了没看到你这条”开场。
@@ -582,7 +582,8 @@ describe("chat history and reply", () => {
     expect(timeline).not.toContain("小时前");
     // 2026-10-07（时间可信）：这时间不是他真发的，就标出来，别让模型当成“他刚说的”。
     expect(timeline).toContain("我们读到的时间");
-    expect(timeline).toContain("不要当成刚发生的事来接");
+    expect(timeline).not.toContain("这轮要处理的就是他最新这一条");
+    expect(timeline).toContain("先按这一句的意思接");
     // 她回过之后就不再提示“欠他一个回应”
     const replied = buildSituationTimeline(
       [
@@ -593,7 +594,7 @@ describe("chat history and reply", () => {
       [],
       now,
     );
-    expect(replied).toContain("他最新一条");
+    expect(replied).toContain("他这轮说");
     expect(replied).not.toContain("你上一条");
   });
 
@@ -646,7 +647,7 @@ describe("chat history and reply", () => {
     expect(third.content).toContain("对方：隔了一小时的第三条");
     expect(third.content).toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}/);
     expect(latest.content).toContain("对方：现在这句话");
-    expect(latest.content).toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}/);
+    expect(latest.content.split("\n").at(-1)).toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}·读到】/);
     // 只给绝对时刻，不再给“多久前”
     expect(latest.content).not.toContain("前】");
   });

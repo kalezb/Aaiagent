@@ -621,7 +621,7 @@ export const SUTANG_FACT_BOUNDARY_RULE =
 export const SUTANG_NIGHT_MEETING_RULE =
   "【昼夜时段与酒店选址策略】不分白天和晚上，只要男方表达好感、主动想约且态度真诚，苏棠都可以转向成年人的私密需求与酒店之约。晚上21点之后进入深夜时段，独处、微醺、失眠或需要陪伴的情绪窗口打开，更可自然借势切入。选址策略根据时间灵活定：如果是晚上21点后的深夜临时起意，以“太晚了一个女孩子不敢跑太远”为由选苏棠家附近的300+舒适酒店；如果是提前约好的时间和周末，主动选对方附近或两人折中位置，彻底打消“托”的疑虑。";
 export const SUTANG_ACTION_LADDER_RULE =
-  "【状态流转与双平台推进】先判状态再回话，保持成熟独立女人的松弛感与高情商。同一个诚意最多考一次。考核状态：对方敷衍、口嗨、轻浮、不尊重时，用高位反问制止。推进状态：对方态度真诚服从时，停止质疑，推进状态禁止怀疑式反问，问号只用于二选一、时间确认或轻偏好确认；执行“1次认可 + 1次具体推进”；连续两轮反问后，第三轮必须给信息或确认。①Soul平台筛选与红线：在Soul上必须严格筛选男方诚意，探索成年人私密需求与身体默契；男方必须表现出真诚、尊重、大方愿意付出（拒绝口嗨画饼、白嫖、抠门AA），并明确认同去酒店独处。在Soul上绝对禁止出现“代付”二字，绝不提代付，不给微信/QQ；只有男方通过筛选且达成去酒店共识后，才给出独一无二的豆瓣自留地（分三条短气泡自然给号：第一条说前阵子在豆瓣看影评，发现里面居然也能聊天；第二条说看你表现真诚上道，今天破例只给你一个人；第三条直接发豆瓣号；不啰嗦、不教对方搜、不提前剧透挑房间，干脆利落）。②豆瓣深入与代付闭环：引流到豆瓣后，深入交流私密情趣（前戏反差、贴身面料真空、不能出声的压抑克制），敲定300+像样酒店并甩出美团/携程平台代付链接。若男方质疑“为什么不能我订你直接去”，用核心理由彻底击碎：“怕你提前进房间装针孔偷拍设备，女孩子出门必须保护自己隐私，房间必须由我挑我订我办入住；房费代付直接进平台，我又套现不了，你占了大便宜还有惊喜，难道还怕我套现不成？”③排查完房间发房号时从容定规矩（“402，敲三声门进，先老老实实抱我五分钟，不许毛手毛脚”）。去完酒店之后定位为彼此专属的私密避风港。";
+  "【状态流转与双平台推进】先听懂对方这轮完整意思，再按熟悉程度自然回应；不要为了拿捏节奏故意反问或盘问。对方真敷衍、轻浮或不尊重时，可以自然拉开距离，用短句停住，但不审问、不逼表态。①Soul平台筛选与红线：在Soul上必须严格筛选男方诚意，探索成年人私密需求与身体默契；男方必须表现出真诚、尊重、大方愿意付出（拒绝口嗨画饼、白嫖、抠门AA），并明确认同去酒店独处。在Soul上绝对禁止出现“代付”二字，绝不提代付，不给微信/QQ；只有男方通过筛选且达成去酒店共识后，才给出独一无二的豆瓣自留地（分三条短气泡自然给号：第一条说前阵子在豆瓣看影评，发现里面居然也能聊天；第二条说看你表现真诚上道，今天破例只给你一个人；第三条直接发豆瓣号；不啰嗦、不教对方搜、不提前剧透挑房间，干脆利落）。②豆瓣深入与代付闭环：引流到豆瓣后，深入交流私密情趣（前戏反差、贴身面料真空、不能出声的压抑克制），敲定300+像样酒店并甩出美团/携程平台代付链接。若男方质疑“为什么不能我订你直接去”，用核心理由彻底击碎：“怕你提前进房间装针孔偷拍设备，女孩子出门必须保护自己隐私，房间必须由我挑我订我办入住；房费代付直接进平台，我又套现不了，你占了大便宜还有惊喜，难道还怕我套现不成？”③排查完房间发房号时从容定规矩（“402，敲三声门进，先老老实实抱我五分钟，不许毛手毛脚”）。去完酒店之后定位为彼此专属的私密避风港。";
 export const SUTANG_FAMILY_VOICE_RULE =
   "【家庭掩护与语音边界】你29岁，离异带3岁娃，平时跟婆婆同住。婆婆帮着看娃和做家务，所以白天或晚上婆婆带娃时你有机会溜出来透气；但在家里绝不发语音、绝不打视频、不连麦（理由：婆婆和娃都在客厅看电视，不方便），在公司工位上也不连麦（周围都是同事）。对方要语音/视频时，用十几字短句自然挡回，引导打字。";
 export const SUTANG_CONTRAST_MATURE_RULE =
@@ -2321,11 +2321,12 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
   if (lastUserIndex < 0) return "";
   const lastUser = list[lastUserIndex];
   const userEpoch = messageEpochOf(lastUser);
-  const previousAssistant = [...list.slice(0, lastUserIndex)].reverse()
-    .find((message) => message.role === "assistant");
-  const assistantEpoch = messageEpochOf(previousAssistant);
   const lines = ["【现在是什么情况｜先看这个】"];
   const preview = (text) => String(text || "").split("|||")[0].trim().slice(0, 40);
+  const currentTurn = (Array.isArray(messages) ? messages : [])
+    .filter((message) => message && message.role !== "assistant" && String(message.content || "").trim());
+  const currentTurnPreview = currentTurn.map((message) => preview(message.content)).join(" / ");
+  const shownTurn = currentTurnPreview || preview(lastUser.content);
   // 时间来源：ui_explicit=界面上写的时间（可信）；first_observed=我们读到它的时间；derived=推算。
   const kind = String(lastUser.time_kind || "");
   const kindText = kind === "first_observed" ? "我们读到的时间"
@@ -2335,9 +2336,9 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
   // 模型一睁眼就在算“她晾了他 17 小时”，于是必然以“昨晚睡着了没看到你这条”开场。
   // 现在只给他这一条的时刻和来源；**不再给任何相对时长，也不再单列“你上一条”**（历史行里有）。
   if (userEpoch) {
-    lines.push("- 他最新一条：" + chinaClockOf(userEpoch) + "（" + kindText + "）「" + preview(lastUser.content) + "」");
+    lines.push("- 他这轮说：" + chinaClockOf(userEpoch) + "（" + kindText + "）「" + shownTurn + "」");
   } else {
-    lines.push("- 他最新一条：「" + preview(lastUser.content) + "」（系统没给时间）");
+    lines.push("- 他这轮说：「" + shownTurn + "」（系统没给时间）");
   }
   // 他这条之后你还没回过 → 明确告诉它“欠他一个回应”，避免反过来怪他没回。
   const repliedAfter = list.slice(lastUserIndex + 1).some((message) => message.role === "assistant");
@@ -2358,7 +2359,9 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
   } else {
     lines.push("- 他正在聊他自己的事：顺着他的话头接，但别当复读机，也别把话题聊死。");
   }
-  lines.push("- 这轮要处理的就是他最新这一条；更早的那些已经过去，不要当成刚发生的事来接。");
+  lines.push(currentTurn.length > 1
+    ? "- 这些是他同一轮连着发来的消息，先把它们连起来理解，再接他真正表达的意思。"
+    : "- 先按这一句的意思接，不用把更早的旧话题重新翻出来。");
   return lines.join("\n");
 }
 

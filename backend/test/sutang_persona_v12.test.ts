@@ -56,13 +56,12 @@ describe("Su Tang v13 persona", () => {
     expect(prompt).toContain("冷淡止损");
   });
 
-  it("keeps the state transition: test once, then one recognition plus one concrete next step", () => {
+  it("keeps Su Tang understanding the whole turn before replying", () => {
     const prompt = buildSutangPrompt();
-    expect(prompt).toContain("1次认可 + 1次具体推进");
-    expect(prompt).toContain("同一个诚意最多考一次");
-    expect(prompt).toContain("推进状态禁止怀疑式反问");
-    expect(prompt).toContain("问号只用于二选一、时间确认或轻偏好确认");
-    expect(prompt).toContain("连续两轮反问后，第三轮必须给信息或确认");
+    expect(prompt).toContain("先听懂对方这轮完整意思");
+    expect(prompt).toContain("不要为了拿捏节奏故意反问或盘问");
+    expect(prompt).toContain("自然拉开距离");
+    expect(prompt).not.toContain("高位反问制止");
   });
 
   it("uses the structured short-message rule and removes the old reward wording", () => {
@@ -105,7 +104,8 @@ describe("Su Tang v13 persona", () => {
     expect(state.isEnabled("proactive_style_sutang", true)).toBe(true);
     expect(state.isEnabled("sutang_action_ladder", true)).toBe(true);
     expect(state.textFor("proactive_style_sutang", "")).toContain("主动挑一个具体话题");
-    expect(state.textFor("sutang_action_ladder", "")).toContain("1次认可 + 1次具体推进");
+    expect(state.textFor("sutang_action_ladder", "")).toContain("先听懂对方这轮完整意思");
+    expect(state.textFor("sutang_action_ladder", "")).not.toContain("高位反问制止");
     expect(state.textFor("sutang_fact_boundary", "")).toContain("豆瓣自留地");
   });
 

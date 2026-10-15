@@ -1446,11 +1446,18 @@ class MessageEngine(
                     "语音转写后补回复 contact=${context.contactName} text=${transcriptFollowUp.transcript.take(30)}"
                 )
             }
+            if (!StickerTurnPolicy.shouldReplyToBatch(incomingBatch)) {
+                synchronized(context) { context.lastIgnoredIncomingFingerprint = IncomingMessageBatch.fingerprint(incomingBatch) }
+                RuntimeJournal.recovery("表情只当状态，不单独回复 contact=${context.contactName.ifBlank { context.contactId }}")
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "sticker state only")
+                return
+            }
             android.util.Log.d(
                 "AIA",
                 "last bubble is incoming; processing reply content=${lastMessage.content.take(30)}"
             )
-            val latestIncoming = incomingBatch.latestIncoming
+            val latestIncoming = IncomingMessageBatch.replyMessages(incomingBatch)
+                .lastOrNull { !StickerTurnPolicy.isStateSticker(it.content) } ?: incomingBatch.latestIncoming
             // 2026-10-05：同一条对方消息只回一次。真机出现过同一批“哈哈哈/有点累哟”被回 4 次。
             val latestIncomingKey = incomingContentKey(latestIncoming)
             // 只有“这轮读得不新鲜”时才用已回记录拦截；读得新鲜就正常回，避免同一句话被误判成重复。

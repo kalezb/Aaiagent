@@ -76,9 +76,13 @@ object IncomingMessageBatch {
 
     fun replyMessages(selection: Selection): List<ChatMessage> {
         if (!selection.preferTextOnly) return selection.incoming
-        return selection.incoming
-            .filter(::isTextualReplyMessage)
-            .ifEmpty { selection.incoming }
+        val lastTextIndex = selection.incoming.indexOfLast(::isTextualReplyMessage)
+        if (lastTextIndex < 0) return selection.incoming
+        val textMessages = selection.incoming.filter(::isTextualReplyMessage)
+        val attachedTone = selection.incoming
+            .drop(lastTextIndex + 1)
+            .filter { StickerTurnPolicy.isStateSticker(it.content) }
+        return textMessages + attachedTone
     }
 
     fun requestMessages(messages: List<ChatMessage>): List<ChatMessage> {
@@ -135,7 +139,8 @@ object IncomingMessageBatch {
     private fun isTextualReplyMessage(message: ChatMessage): Boolean {
         // 转发动态卡片自带可读的正文，算"有文字"，不能当成纯图片丢掉。
         if (message.type != "text" && message.type != SoulMomentCard.TYPE) return false
-        return message.content.trim().isNotEmpty()
+        return message.content.trim().isNotEmpty() &&
+            !StickerTurnPolicy.isStateSticker(message.content)
     }
 
     private fun requiresMediaContext(text: String): Boolean {
