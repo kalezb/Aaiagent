@@ -105,7 +105,11 @@ import {
   buildConversationTurnMessages,
   normalizeConversationTurnContext,
 } from "./_conversation_turn";
-import { buildConversationMemoryPrompt } from "./_conversation_memory";
+import {
+  buildConversationMemoryPrompt,
+  loadConversationMemory,
+  updateConversationMemory,
+} from "./_conversation_memory";
 import { isGreetingStickerContent, isStickerOnlyTurn } from "./_message_text";
 import {
   createTimeoutSignal,
@@ -676,7 +680,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       const profileGroupId = funnelGroupId;
       // 2026-10-07（提速）：这四个加载互不依赖，原来串行执行要等 0.9 秒左右，
       // 现在并发发出。返回值和原来完全一样，只是少等几趟网络。
-      const [memoryRow, foreignPersonaTerms, customerProfile, historyResult, contactEvents] = await Promise.all([
+      const [memoryRow, foreignPersonaTerms, customerProfile, historyResult, contactEvents, conversationMemory] = await Promise.all([
         loadMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases),
         // 别人设的专属词条：用来把历史里残留的旧人设话术挡在提示词外面（真机见过聊天记录里躺着“做二手手机和旧数码回收的”）。
         agentRuleState.isEnabled("old_persona_filter", true)
@@ -691,6 +695,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           contact_id,
           6,
         ),
+        loadConversationMemory(env.DB, tokenRow.token, platform, contact_id),
       ]);
       const allMsgs = historyResult?.results;
       const allMessages = (allMsgs || []).reverse();
@@ -725,6 +730,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       const structuredMemory = buildConversationMemoryPrompt({
         summary,
         olderMessages,
+        memory: conversationMemory,
       });
       const summarizedUpToId = olderMessages.reduce((max, message) => Math.max(max, Number(message.id || 0)), memoryRow.summarizedUpToId);
       if (olderMessages.length > 0) {
@@ -1742,6 +1748,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         platform,
         contact_id,
       ).run();
+      await updateConversationMemory({ db: env.DB, token: tokenRow.token, platform, contactId: contact_id, messages, assistantReply: safeReply, relationshipStage: nextStage, nowSec });
       await recordContactEvents(
         env.DB,
         tokenRow.token,

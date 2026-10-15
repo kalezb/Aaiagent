@@ -151,6 +151,16 @@ CREATE TABLE IF NOT EXISTS session_summary (
     PRIMARY KEY (token, platform, contact_id)
 );
 
+-- 结构化长期记忆：事实、偏好、没聊完的话、承诺、最近话题和关系阶段分开存。
+CREATE TABLE IF NOT EXISTS conversation_memory (
+    token       TEXT NOT NULL,
+    platform    TEXT NOT NULL,
+    contact_id  TEXT NOT NULL,
+    memory_json TEXT NOT NULL DEFAULT '{}',
+    updated_at  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (token, platform, contact_id)
+);
+
 -- 联系人
 CREATE TABLE IF NOT EXISTS contacts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

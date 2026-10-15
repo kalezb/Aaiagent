@@ -25,6 +25,7 @@ export class MockD1 {
     this.deviceSettingsRows = new Map();
     this.requestLimitRows = new Map();
     this.funnelRows = new Map();
+    this.conversationMemoryRows = new Map();
     this.tokenPersonas = new Map([["test-token", "female"]]);
     this.options = {};
   }
@@ -86,6 +87,17 @@ export class MockD1 {
 
   applyStatement(statement) {
     const sql = statement.sql || "";
+    if (sql.includes("INSERT INTO conversation_memory")) {
+      const p = statement.params || [];
+      this.conversationMemoryRows.set(`${p[0]}\u0000${p[1]}\u0000${p[2]}`, {
+        token: p[0],
+        platform: p[1],
+        contact_id: p[2],
+        memory_json: p[3],
+        updated_at: p[4],
+      });
+      return 1;
+    }
     if (sql.includes("INSERT OR IGNORE INTO chat_history") || sql.includes("INSERT INTO chat_history")) {
       return this.applyHistoryInsert(statement);
     }
@@ -539,6 +551,11 @@ export class MockD1 {
           }
           if (sql.includes("FROM user_locations")) {
             return this.locationRows.get(params[0]) ?? null;
+          }
+          if (sql.includes("FROM conversation_memory")) {
+            return this.conversationMemoryRows.get(
+              `${params[0]}\u0000${params[1]}\u0000${params[2]}`
+            ) ?? null;
           }
           if (sql.includes("COUNT(*) AS user_count")) {
             return this.options.profileState ?? { user_count: 0, max_id: 0 };
