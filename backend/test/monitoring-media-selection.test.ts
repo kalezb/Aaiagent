@@ -601,7 +601,53 @@ describe("media selection", () => {
     const fixed = capReplyLength(reply, "你在干嘛");
     expect(fixed).not.toBe("刚关了电脑 屋里就剩");
     expect(fixed).not.toMatch(/剩$/u);
-    // 他这句只有 4 个字：只回一条完整的短句（不许是“刚关了电脑 屋里就剩”这种半句）。
+    // 不许把“刚关了电脑 屋里就剩”这种半句直接发出去。
+  });
+
+  it("drops a standalone opener and keeps the actual reply", () => {
+    const fixed = capReplyLength(
+      "看这边|||你这起床方式够直接的",
+      "起床窝尿啦！",
+    );
+
+    expect(fixed).toBe("你这起床方式够直接的");
+  });
+
+  it("removes an opener attached to the real reply", () => {
+    const fixed = capReplyLength(
+      "看这边，你这起床方式够直接的",
+      "起床窝尿啦！",
+    );
+
+    expect(fixed).toBe("你这起床方式够直接的");
+  });
+
+  it("keeps a complete sentence that ends with a pronoun", () => {
+    const fixed = capReplyLength(
+      "谢谢 你眼光不错|||你这个点才想起我",
+      "你这高跟鞋真好看",
+    );
+
+    expect(fixed).toBe("谢谢 你眼光不错|||你这个点才想起我");
+  });
+
+  it("keeps one natural sentence as one segment even when his message is long", () => {
+    const fixed = capReplyLength(
+      "行 那等你忙完再说",
+      "我今天从早上开始就一直在开会，手机都没顾上看，刚坐下来才看到你消息",
+    );
+
+    expect(fixed).toBe("行 那等你忙完再说");
+  });
+
+  it("allows three natural pieces without splitting a thought mid-way", () => {
+    const fixed = capReplyLength(
+      "刚忙完|||你这起床方式也太直接了|||今天不用赶着出门吗",
+      "起床窝尿啦！",
+    );
+
+    expect(fixed).toBe("刚忙完|||你这起床方式也太直接了|||今天不用赶着出门吗");
+    expect(fixed.split("|||")).toHaveLength(3);
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {

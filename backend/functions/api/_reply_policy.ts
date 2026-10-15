@@ -8,6 +8,7 @@ import {
   replyOpeningHint,
   semanticReplySimilarity,
 } from "./_reply_naturalness";
+export { capReplyLength, replyLengthBudget } from "./_reply_length";
 export {
   avoidRepeatedAssistantReply,
   normalizeAssistantReplyPresentation,
@@ -383,116 +384,6 @@ function intimateTransferInstruction(stage) {
 
 
 const ROLE_OF = (message) => (message && message.role === "assistant" ? "assistant" : "user");
-
-/**
- * 2026-10-07 用户反馈：她一下回 3 条长的，像 AI；正常人回一两句。
- * 但又要她主动暧昧——所以长度不该让模型猜，应该由“他这条有多长”算出来，后端强制收口。
- * 返回允许的段数与总字数上限。
- */
-export function replyLengthBudget(incomingText) {
-  const text = String(incomingText || "").trim();
-  // 2026-10-07 用户定的口径：只看他这条（最后一条）写得长不长，不管他连发了几条；
-  // 他写得少就只回一条，写得长才最多两条。回复本身一律短句、且要通顺。
-  // 2026-10-11 苏棠新人设把单段上限从15字放宽到20字，下限按3字收口。
-  const pieces = text.split(/\|\|\||\r?\n/u).map((part) => part.trim()).filter(Boolean);
-  const latest = pieces.length ? pieces[pieces.length - 1] : text;
-  const chars = latest.replace(/\s+/gu, "").length;
-  return { maxSegments: chars <= 10 ? 1 : 2, maxCharsPerSegment: 20, softLimit: 20 };
-}
-
-/** 长句里“我/你/他”常常是新一句话的开头（“精神了我这边刚把…”），拆不开时按它断句。 */
-const INNER_PRONOUN_BREAK = /(?<=[\u4e00-\u9fa5])(?=[我你他她它])/u;
-/** 语气词（呀/啊/呢/吧…）后面通常是另一句话，模型漏标点时就靠它断句。 */
-const AFTER_PARTICLE_BREAK = /(?<=[呀啊呢吧啦嘛哦哟哈])(?=[^呀啊呢吧啦嘛哦哟哈])/u;
-/**
- * 一条消息绝不能停在“说不下去”的字上（剩/就/还/我/那…）——
- * 真机（遇见）发过“刚关了电脑 屋里就剩”，对方回“就剩什么”。
- * 做法：挂尾的那片和下一片粘起来补全；最后一片还挂尾就整片丢掉（宁可少说一句，也不发半句）。
- */
-const HANGING_TAIL = /[剩就还的是和跟把被给让从向对为有着我你他她它那这]$/u;
-
-function fixHangingPieces(pieces) {
-  const fixed = [];
-  for (const piece of pieces) {
-    if (fixed.length && HANGING_TAIL.test(fixed[fixed.length - 1])) {
-      fixed[fixed.length - 1] = fixed[fixed.length - 1] + " " + piece;
-    } else {
-      fixed.push(piece);
-    }
-  }
-  while (fixed.length && HANGING_TAIL.test(fixed[fixed.length - 1])) fixed.pop();
-  return fixed.length ? fixed : pieces;
-}
-
-/** 一句完整的话被切碎了反而难看，所以只在超长时才再断一次。 */
-function splitOverlongClause(clause, limit) {
-  const plain = String(clause || "").replace(/\s+/gu, "");
-  if (plain.length <= limit) return [clause];
-  const parts = String(clause)
-    .split(INNER_PRONOUN_BREAK)
-    .flatMap((part) => part.split(AFTER_PARTICLE_BREAK))
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return parts.length > 1 ? parts : [clause];
-}
-
-/**
- * 把回复收口成短句：一句说一件事，一条不超过20个字，最多两条，超出的只删不换。
- * 2026-10-07 查出来的问题：这个函数以前**根本没有被调用**，而且只会整段删，单段超长时什么都不做——
- * 所以真机上出现过 34 个字一条、35/40 条回复根本没拆的情况。
- */
-export function capReplyLength(value, incomingText) {
-  const reply = String(value || "").trim();
-  if (!reply) return reply;
-  // 包含联系方式（如豆瓣号 sutang2026）的已放行消息不粗暴截断，防止号码气泡被腰斩
-  if (/sutang2026/iu.test(reply)) return reply;
-  const budget = replyLengthBudget(incomingText);
-  // 本来就够短（条数没超、每段没超字数）就原样返回：不要因为“收口”去动它的标点。
-  const existing = reply.split("|||").map((part) => part.trim()).filter(Boolean);
-  const alreadyShort = existing.length <= budget.maxSegments &&
-    existing.every((segment) => segment.replace(/\s+/gu, "").length <= budget.softLimit);
-  if (alreadyShort) return reply;
-  // 说话人前缀夹在句子中间时（“你这话说得我心里软软的我：那你呢”），它其实是个断句点，先当分隔标记。
-  const normalized = reply.replace(/(?:你说|对方说|我说|我)\s*[：:]\s*/gu, "|||");
-  const rawSegments = normalized.split("|||").map((part) => part.trim()).filter(Boolean);
-  // 每条原始消息先各自算成“不超过20字的小句”队列
-  // 只有本来就超宽（超过 softLimit）的那条才拆；20字以内的整句保留原样。
-  // 2026-10-07 真机 bug（联系人 light up）：原来是"按标点切开 → 丢掉标点 → 用空格拼到不超字"，
-  // 结果拼出"系统跳的也赖 我头上呀那 你现在信"这种半句话，读不通、手机端还发不出去。
-  // 现在改成"整句删"：只留第一句完整的话（带原来的标点），后面的话直接丢掉，绝不从中间截断。
-  const queues = rawSegments.map((segment) => {
-    if (segment.replace(/\s+/gu, "").length <= budget.softLimit) return [segment];
-    // 先按句末标点切成完整小句（标点留在句尾，再统一去掉），一句一条。
-    let clauses = segment
-      .split(/(?<=[，,。！!？?；;、])/u)
-      .map((part) => part.trim().replace(/[，,。！!？?；;、]+$/u, "").trim())
-      .filter(Boolean);
-    // 2026-10-07 真机（遇见）：模型在句子中间换行，整句 19 个字又没有标点。
-    // 以前只能整条发出去，手机端碰上换行把后半句吞了；没标点时按空格再切一次。
-    if (clauses.length <= 1) {
-      clauses = segment
-        .split(/\s+/u)
-        .map((part) => part.trim().replace(/[，,。！!？?；;、]+$/u, "").trim())
-        .filter(Boolean);
-    }
-    if (clauses.length > 1) return fixHangingPieces(clauses);
-    return [splitOverlongClause(segment, budget.maxCharsPerSegment)[0] || segment];
-  });
-  // 2026-10-07 用户明确：他写得少就只回一条，不许为了凑字数硬拆成两条。
-  // 所以她写长了只留第一句完整的话，后面整句丢掉（短句、通顺优先）。
-  const maxSegments = budget.maxSegments;
-  const out = [];
-  // 第一轮：每条原始消息先各占一条（她要说的两件事都能留下，不会因为第一句被拆开就把第二句挤掉）
-  for (const queue of queues) {
-    if (out.length >= maxSegments) break;
-    if (queue.length) out.push(queue.shift());
-  }
-  // 第二轮：还有空位就继续补（她一口气写长了的时候，拆成第二条）
-  for (const queue of queues) {
-    while (queue.length && out.length < maxSegments) out.push(queue.shift());
-  }
-  return out.length ? out.join("|||") : reply;
-}
 
 /**
  * 2026-10-06 真机（请叫我球⚽️）：昨天凌晨聊完，她一句没回，他今天又发来；

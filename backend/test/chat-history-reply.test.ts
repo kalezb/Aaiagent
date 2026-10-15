@@ -319,8 +319,8 @@ describe("chat history and reply", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 2026-10-07：他这句只有 8 字，按长度预算只回一条。
-      reply: "谢谢 你眼光不错",
+      // 两段都是完整表达，不因为第二段末尾是“我”就当成半句话删掉。
+      reply: "谢谢 你眼光不错|||你这个点才想起我",
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
@@ -860,8 +860,8 @@ describe("chat history and reply", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 新人设把单段上限放宽到20字；这条19字，整句完整保留，不再被15字旧上限切掉。
-      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86",
+      // 两段都是完整表达，按内容保留；不再因为对方发得短就机械砍掉第二段。
+      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86|||\u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
     });
   });
 
@@ -893,10 +893,8 @@ describe("chat history and reply", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 2026-10-07 砍规则：睡话题规则已删，第三段留下；但“你说：”“[09/25 03:40]”这些泄露前缀照旧被清掉
-      // 2026-10-07：泄露前缀照旧清掉；但“在吗”这种短消息最多回两条（新增长度预算），第三段会被收掉。
-      // 2026-10-07：他这句只有 2 字，按长度预算只回一条。
-      reply: "给谁 你对象啊",
+      // 泄露前缀照旧清掉；第三段和前一秒重复表达同一个意思，不重复发送。
+      reply: "给谁 你对象啊|||我眯了啊 明天还一堆单子",
     });
   });
 
@@ -932,7 +930,7 @@ describe("chat history and reply", () => {
     });
   });
 
-  it("keeps only the segments within the length budget", async () => {
+  it("keeps natural content-defined segments instead of forcing one segment", async () => {
     const kv = new MockKV();
     await kv.put("weather:cache", JSON.stringify({ city: "重庆", condition: "晴", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
@@ -960,10 +958,8 @@ describe("chat history and reply", () => {
 
     const body = await response.json();
     expect(body.action).toBe("send");
-    // 2026-10-07 砍规则：反问/sleep 过滤已删，两段都保留（只校验内容还在，不锁死分隔符格式）
-    // 2026-10-07：长度按他这条算——他 8 字，只保留第一条。
     expect(String(body.reply)).toContain("谢谢 你眼光不错");
-    expect(String(body.reply)).not.toContain("你怎么这个点还醒着");
+    expect(String(body.reply)).toContain("你怎么这个点还醒着");
   });
 
   it("passes Beijing time to the model without injecting a rest-period policy", async () => {
@@ -1008,9 +1004,8 @@ describe("chat history and reply", () => {
     expect(prompt).not.toContain("躺床上睡不着");
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 2026-10-07 砍规则：反问过滤已删，两段都留
-      // 2026-10-07：他这句只有 3 字，按长度预算只回一条。
-      reply: "睡了 被你消息吵醒了",
+      // 两段自然承接，不需要为了短消息硬删第二段。
+      reply: "睡了 被你消息吵醒了|||这么晚还没睡",
     });
   });
 

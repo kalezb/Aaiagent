@@ -903,10 +903,11 @@ describe("chat boundaries", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    // 2026-10-07 用户定新口径：一句说一件事，一条不超过15个字，最多两条；
-    // 26 个字的整句会被拆成两条（拆在“，”处，不切碎意思）。
-    // 他最后一句只有 4 个字（“认识一下”）：只回一条完整短句。
-    expect(body).toMatchObject({ action: "send", reply: "认识一下可以啊" });
+    // 回复按内容自然分成三段，每段都是完整短句，不再按他最后一句只有 4 个字就硬砍。
+    expect(body).toMatchObject({
+      action: "send",
+      reply: "认识一下可以啊|||我平时做旧数码回收|||主要看机子情况",
+    });
     expect(body.reply).not.toBe("嗯，你刚说的这个我记住了。");
   });
 

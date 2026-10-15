@@ -5,6 +5,7 @@ describe("structure size guard", () => {
   it("keeps the largest backend files from growing again", () => {
     const limits = [
       ["../functions/api/_reply_policy.ts", 2900],
+      ["../functions/api/_reply_length.ts", 220],
       ["../functions/api/_chat_api.ts", 1820],
       ["../functions/api/_emoji_pragmatics_data.ts", 700],
       ["../functions/api/_persona_drawers_data.ts", 850],
