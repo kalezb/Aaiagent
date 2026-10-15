@@ -50,7 +50,13 @@ export function parseStructuredReply(value) {
       const parsed = JSON.parse(jsonText);
       const messages = Array.isArray(parsed) ? parsed : parsed?.messages;
       if (!Array.isArray(messages)) {
-        return { ok: false, source: "json", messages: [], error: "messages_missing" };
+        return {
+          ok: false,
+          source: "json",
+          messages: [],
+          error: "messages_missing",
+          keys: parsed && typeof parsed === "object" ? Object.keys(parsed).slice(0, 12) : [],
+        };
       }
       const cleaned = messages.map(cleanMessage).filter(Boolean);
       if (!cleaned.length) {

@@ -1380,6 +1380,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           ok: parsedModelReply.ok,
           source: parsedModelReply.source,
           error: parsedModelReply.error,
+          keys: parsedModelReply.keys || [],
           messages: parsedModelReply.messages.length,
         }),
       );
