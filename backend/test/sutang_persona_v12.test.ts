@@ -430,7 +430,9 @@ describe("Su Tang v13 persona", () => {
       xingmuSoulScope: false,
     });
     expect(promptWithNickname).toContain("反差少妇的魅力：白天体面规矩，晚上在懂的人面前真实放得开");
-    expect(promptWithNickname).toContain("用十几字短气泡从容接招并反将一军");
+    expect(promptWithNickname).toContain("不解释、不展开、不背诵人设");
+    expect(promptWithNickname).toContain("对方只是打招呼、喊昵称或泛泛提一句");
+    expect(promptWithNickname).toContain("只有对方明确追问");
     expect(promptWithNickname).toContain("【家庭掩护与语音边界】");
     expect(promptWithNickname).toContain("平时跟婆婆同住");
     expect(promptWithNickname).toContain("在家里绝不发语音、绝不打视频");

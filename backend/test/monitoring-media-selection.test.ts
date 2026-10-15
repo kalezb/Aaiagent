@@ -685,6 +685,11 @@ describe("media selection", () => {
       "躺这么早 不闷吗我这时候才刚把娃哄睡",
       "你睡了吗",
     )).toBe("躺这么早 不闷吗？|||我这时候才刚把娃哄睡");
+
+    expect(capReplyLength(
+      "晚上好白天在婆婆和同事面前规规矩矩 晚上只对看得顺眼的人放得开",
+      "你好，另一面的你",
+    )).toBe("晚上好|||白天在婆婆和同事面前规规矩矩 晚上只对看得顺眼的人放得开");
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {
