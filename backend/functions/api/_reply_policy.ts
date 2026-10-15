@@ -2321,6 +2321,8 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
   if (lastUserIndex < 0) return "";
   const lastUser = list[lastUserIndex];
   const userEpoch = messageEpochOf(lastUser);
+  const previousAssistant = [...list.slice(0, lastUserIndex)].reverse()
+    .find((message) => message.role === "assistant");
   const lines = ["【现在是什么情况｜先看这个】"];
   const preview = (text) => String(text || "").split("|||")[0].trim().slice(0, 40);
   const currentTurn = (Array.isArray(messages) ? messages : [])
@@ -2334,7 +2336,7 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
       : "他发送的时间";
   // 2026-10-07 晚（用户实测 EW/相信光！/行者）：原来这里写“他最新一条：…（11小时前）”“你上一条：…（17小时前）”，
   // 模型一睁眼就在算“她晾了他 17 小时”，于是必然以“昨晚睡着了没看到你这条”开场。
-  // 现在只给他这一条的时刻和来源；**不再给任何相对时长，也不再单列“你上一条”**（历史行里有）。
+  // 现在不给相对时长；只在对方用很短的回答接上一句问话时，把一问一答摆在一起。
   if (userEpoch) {
     lines.push("- 他这轮说：" + chinaClockOf(userEpoch) + "（" + kindText + "）「" + shownTurn + "」");
   } else {
@@ -2362,6 +2364,9 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
   lines.push(currentTurn.length > 1
     ? "- 这些是他同一轮连着发来的消息，先把它们连起来理解，再接他真正表达的意思。"
     : "- 先按这一句的意思接，不用把更早的旧话题重新翻出来。");
+  if (previousAssistant && String(lastUser.content || "").replace(/\s+/gu, "").length <= 8) {
+    lines.push("- 这是紧挨着的一问一答：你上一句「" + preview(previousAssistant.content) + "」，他这轮回「" + shownTurn + "」。");
+  }
   return lines.join("\n");
 }
 

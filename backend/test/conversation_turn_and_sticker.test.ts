@@ -66,6 +66,8 @@ describe("conversation turns and sticker state", () => {
     expect(timeline).toContain("他这轮说");
     expect(timeline).toContain("我 / [小害羞]");
     expect(timeline).toContain("同一轮连着发来的消息");
+    expect(timeline).toContain("这是紧挨着的一问一答");
+    expect(timeline).toContain("你上一句「一起玩 玩什么呀」");
     expect(timeline).not.toContain("这轮要处理的就是他最新这一条");
   });
 
