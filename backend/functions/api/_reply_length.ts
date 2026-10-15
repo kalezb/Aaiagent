@@ -14,6 +14,7 @@ const NON_ESSENTIAL_LEAD_PREFIX = /^(?:看这边|看这里|你看|喂+|哎+|听�
 const GREETING_TOKENS = /(?:早上好|晚上好|下午好|中午好|早安|晚安|你好)/gu;
 const LEADING_GREETING = /^(?:早上好|晚上好|下午好|中午好|早安|晚安|你好)[呀啊呢吧嘛哦哟哈]{0,2}\s*/u;
 const QUESTION_PARTICLE_NEW_CLAUSE = /(?<=吗)\s*(?=(?:我|你|他|她|它|这|那|今天|明天|晚上|刚才|这会儿|现在|在|有|要|能|会|想|别|先|还是|是不是|要不要))/gu;
+const PARTICLE_BEFORE_NEW_SUBJECT = /(?<=[的了吧呀啊])[，,]?\s*(?=(?:我|你|他|她|它)[\s\S]{4,})/gu;
 
 function isNonEssentialLead(value) {
   return NON_ESSENTIAL_LEAD.test(String(value || "").trim());
@@ -111,7 +112,8 @@ function splitAfterLeadingGreeting(value) {
 function splitNaturalBoundaries(value) {
   return splitAfterLeadingGreeting(splitBeforeGreeting(
     String(value || "")
-      .replace(QUESTION_PARTICLE_NEW_CLAUSE, "？|||"),
+      .replace(QUESTION_PARTICLE_NEW_CLAUSE, "？|||")
+      .replace(PARTICLE_BEFORE_NEW_SUBJECT, "|||"),
   ));
 }
 

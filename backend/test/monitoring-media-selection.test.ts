@@ -690,6 +690,11 @@ describe("media selection", () => {
       "晚上好白天在婆婆和同事面前规规矩矩 晚上只对看得顺眼的人放得开",
       "你好，另一面的你",
     )).toBe("晚上好|||白天在婆婆和同事面前规规矩矩 晚上只对看得顺眼的人放得开");
+
+    expect(capReplyLength(
+      "带娃的人 哪有清闲的你反应这么大 是没见过还是不信",
+      "都有娃了啊",
+    )).toBe("带娃的人 哪有清闲的|||你反应这么大 是没见过还是不信");
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {

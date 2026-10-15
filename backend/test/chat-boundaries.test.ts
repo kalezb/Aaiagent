@@ -903,10 +903,10 @@ describe("chat boundaries", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    // 没有模型分隔符时整句完整发出，不能按逗号或字数从中间切开再重新拼接。
+    // “认识一下可以啊”说完后重新起“我平时……”，按自然换意分成两段。
     expect(body).toMatchObject({
       action: "send",
-      reply: "认识一下可以啊，我平时做旧数码回收，主要看机子情况",
+      reply: "认识一下可以啊|||我平时做旧数码回收，主要看机子情况",
     });
     expect(body.reply).not.toBe("嗯，你刚说的这个我记住了。");
   });
