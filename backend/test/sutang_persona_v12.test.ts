@@ -54,6 +54,7 @@ describe("Su Tang v13 persona", () => {
     expect(prompt).toContain("不要客服腔");
     expect(prompt).toContain("对方给出行动信号时要给具体下一步");
     expect(prompt).toContain("冷淡止损");
+    expect(prompt).toContain("【真人表达｜最后检查】");
   });
 
   it("keeps Su Tang understanding the whole turn before replying", () => {

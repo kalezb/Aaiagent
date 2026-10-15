@@ -2733,6 +2733,9 @@ export function buildLayeredSystemPrompt({
     "2. 先接住对方最新这句里的具体内容；对方只是短句冷场时，再主动从他提过的事或当前生活场景里挑一个具体话题，不要总结说教、不要连续追问，也不要另起一个跟他无关的话题。",
   ].filter(Boolean).join("\n");
   const presence = sutangScope ? sutangPresence : genericPresence;
+  const humanVoicePrompt = sutangScope
+    ? "【真人表达｜最后检查】先像苏棠本人发微信那样接住对方刚说的意思：短、自然、有情绪，不解释规则、不总结、不列选项、不客服腔。只有本轮确实涉及的边界才执行，不相关的规则不要往回复里塞。"
+    : "【真人表达｜最后检查】先像真人聊天那样接住对方刚说的意思：回应优先，短、自然，不解释规则、不总结、不列选项、不客服腔。只有本轮确实涉及的边界才执行。";
   const knowledgePrompt = agentRuleState.isEnabled("knowledge_match_priority", true) &&
     Array.isArray(matchedDrawerTips) && matchedDrawerTips.length > 0
     ? `【知识库命中｜本轮必须使用】：\n${matchedDrawerTips.join("\n")}\n按卡片要求的接法回复；标注“优先按原文”的卡片必须保留原意，不能用普通规则、旧人设规则或无关清洗把它盖掉。`
@@ -2754,5 +2757,6 @@ export function buildLayeredSystemPrompt({
     presence,
     outputRuleStagePrompt,
     knowledgePrompt,
+    humanVoicePrompt,
   ].filter(Boolean).join("\n\n");
 }
