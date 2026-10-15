@@ -382,4 +382,79 @@ describe("Su Tang v13 persona", () => {
     expect(scene18?.content).toContain("进门先老老实实抱我五分钟");
     expect(scene18?.content).not.toContain("孩子就在我身边睡着");
   });
+
+  it("incorporates mother-in-law cover, contrast mature woman nicknames, and massage hooks", () => {
+    // 1. 抽屉知识卡库检查
+    const drawers = defaultDrawersForPersona("female_sutang");
+    const motherInLawDrawer = drawers.topics?.find((d) => d.id === "scene_26_mother_in_law_cover");
+    const contrastDrawer = drawers.topics?.find((d) => d.id === "scene_27_contrast_mature_woman");
+    const massageDrawer = drawers.topics?.find((d) => d.id === "scene_28_body_massage_spa");
+
+    expect(motherInLawDrawer?.enabled).toBe(true);
+    expect(motherInLawDrawer?.keywords).toContain("语音");
+    expect(motherInLawDrawer?.keywords).toContain("视频");
+    expect(motherInLawDrawer?.content).toContain("婆婆和娃都在客厅呢");
+    expect(motherInLawDrawer?.content).toContain("旁边都是同事 不方便连麦");
+    expect(motherInLawDrawer?.content).toContain("晚上婆婆把娃哄睡了");
+
+    expect(contrastDrawer?.enabled).toBe(true);
+    expect(contrastDrawer?.keywords).toContain("另一面的我");
+    expect(contrastDrawer?.keywords).toContain("期待下一步");
+    expect(contrastDrawer?.content).toContain("白天在婆婆和同事面前规规矩矩的");
+    expect(contrastDrawer?.content).toContain("下一步怎么走 钥匙在你表现里");
+
+    expect(massageDrawer?.enabled).toBe(true);
+    expect(massageDrawer?.keywords).toContain("推拿");
+    expect(massageDrawer?.keywords).toContain("精油");
+    expect(massageDrawer?.content).toContain("做电商天天盯电脑");
+    expect(massageDrawer?.content).toContain("我这人腰上特别怕痒");
+    expect(massageDrawer?.content).toContain("乱按我可是会翻脸的");
+
+    // 2. 账号昵称提示词注入与顺水推舟
+    const promptWithNickname = buildLayeredSystemPrompt({
+      personaId: "female_sutang",
+      personaPrompt: "你是苏棠，29岁，重庆两江新区，居家电商运营，有一名3岁孩子，平时跟婆婆同住。",
+      personaFacts: null,
+      platform: "soul",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      selfNickname: "另一面的我",
+      messages: [{ role: "user", content: "你另一面是什么样的？" }],
+      historyMessages: [],
+      xingmuSoulScope: false,
+    });
+    expect(promptWithNickname).toContain("反差少妇的魅力：白天体面规矩，晚上在懂的人面前真实放得开");
+    expect(promptWithNickname).toContain("用十几字短气泡从容接招并反将一军");
+    expect(promptWithNickname).toContain("【家庭掩护与语音边界】");
+    expect(promptWithNickname).toContain("平时跟婆婆同住");
+    expect(promptWithNickname).toContain("在家里绝不发语音、绝不打视频");
+    expect(promptWithNickname).toContain("【反差少妇与昵称顺势拉扯】");
+    expect(promptWithNickname).toContain("【精油推拿与敏感反差开关】");
+    expect(promptWithNickname).toContain("腰背酸痛、极度怕痒");
+
+    // 3. 看板拥有最高权力：停用规则时立即从提示词消失
+    const disabledState = buildAgentRuleState(
+      DEFAULT_AGENT_RULES.map((rule) => {
+        if (rule.id === "sutang_family_and_voice_boundary" || rule.id === "sutang_contrast_mature_hook") {
+          return { ...rule, legacy_rule_id: rule.id, enabled: false, deleted_at: 0 };
+        }
+        return { ...rule, legacy_rule_id: rule.id, deleted_at: 0 };
+      }),
+      "female_sutang",
+    );
+    const disabledPrompt = buildLayeredSystemPrompt({
+      personaId: "female_sutang",
+      personaPrompt: "你是苏棠，29岁，重庆两江新区，居家电商运营。",
+      personaFacts: null,
+      platform: "soul",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      messages: [{ role: "user", content: "在干嘛" }],
+      historyMessages: [],
+      xingmuSoulScope: false,
+      agentRuleState: disabledState,
+    });
+    expect(disabledPrompt).not.toContain("【家庭掩护与语音边界】");
+    expect(disabledPrompt).not.toContain("【反差少妇与昵称顺势拉扯】");
+  });
 });

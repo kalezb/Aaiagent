@@ -397,7 +397,7 @@ describe("media selection", () => {
   it("uses only the new Su Tang knowledge cards", () => {
     const drawers = defaultDrawersForPersona("female_sutang");
     const ids = (drawers.topics || []).map((item) => item.id);
-    expect(ids).toHaveLength(25);
+    expect(ids).toHaveLength(28);
     expect(ids).toContain("scene_01_black_stockings");
     expect(ids).toContain("scene_13_invitation_reward");
     expect(ids).toContain("scene_14_rainy_neck");
@@ -405,6 +405,9 @@ describe("media selection", () => {
     expect(ids).toContain("scene_23_sunny_hot_summer");
     expect(ids).toContain("scene_24_cold_wind_winter");
     expect(ids).toContain("scene_25_pleasant_breeze");
+    expect(ids).toContain("scene_26_mother_in_law_cover");
+    expect(ids).toContain("scene_27_contrast_mature_woman");
+    expect(ids).toContain("scene_28_body_massage_spa");
     expect(ids).not.toContain("sofa_tired");
     expect(ids).not.toContain("food_hungry");
 

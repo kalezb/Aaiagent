@@ -78,6 +78,10 @@ const EXPLICIT_AGENT_RULE_IDS = new Set([
   "sutang_contact_refusal_wechat",
   "sutang_douban_wechat_refusal",
   "sutang_explicit_boundary",
+  "sutang_night_meeting_boundary",
+  "sutang_family_and_voice_boundary",
+  "sutang_contrast_mature_hook",
+  "sutang_massage_pleasure_hook",
 ]);
 
 const SYSTEM_ACTION_RULE_IDS = new Set([
