@@ -128,7 +128,10 @@ export function buildConversationTurnMessages({
       turn.content = "【把这一问一答连起来理解】\n我问：" + previousText +
         "\n对方回：" + answerText +
         (stickerText ? "\n对方还发了个表情：" + stickerText : "");
+      previous.omit = true;
     }
   }
-  return turns.map(({ role, content }) => ({ role, content }));
+  return turns
+    .filter((turn) => !turn.omit)
+    .map(({ role, content }) => ({ role, content }));
 }
