@@ -125,7 +125,7 @@ describe("Su Tang v13 persona", () => {
       sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
+    expect(allowed.reply).toBe("前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026");
 
     expect(sanitizeContactDisclosure("豆瓣知道吧|||sutang2026", {
       allowed: true,
@@ -301,7 +301,7 @@ describe("Su Tang v13 persona", () => {
       customerProfile: { relationship: { generosity_status: "qualified" } },
     });
     expect(qualifiedPolicy.allowed).toBe(true);
-    expect(qualifiedPolicy.reply).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
+    expect(qualifiedPolicy.reply).toBe("前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026");
 
     // 5.1 初次要微信时：先抛顾虑并反问等他接话（两步走第一步）
     const firstWechatAsk = resolveContactRequestPolicy({
@@ -348,8 +348,8 @@ describe("Su Tang v13 persona", () => {
     expect(blockedOutput).toContain("联系方式先不发了 在这儿聊就行");
 
     // 8. 即使对方发来一两字的超短消息，放号气泡也绝不被长度收口（capReplyLength）腰斩切断号码
-    const capped = capReplyLength("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你", "好的");
-    expect(capped).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
+    const capped = capReplyLength("前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026", "好的");
+    expect(capped).toBe("前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026");
 
     // 9. 线下邀约提示词与成年人私密需求对齐，300+酒店代付排查偷拍
     const meetingPrompt = buildRelationshipBoundaryPrompt(2, "我们周末去高档酒店开房喝茶吧", [], "sutang");

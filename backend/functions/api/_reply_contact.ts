@@ -262,7 +262,7 @@ export function resolveContactRequestPolicy({
     ? (xingmuScope
         ? "行 那我把私人微信号给你：" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
         : sutangScope
-          ? "那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： " + contactAccountDisplay(normalizedAccount, normalizedChannel) + "|||房间我来挑，过去之后我把安排发你"
+          ? "前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||" + contactAccountDisplay(normalizedAccount, normalizedChannel)
           : "可以 我QQ是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
     : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope, platform, agentRuleState));
 
