@@ -2123,17 +2123,7 @@ class MessageEngine(
         // 实测能把手机端发请求前的 4~6 秒砍掉。
         val mergeStartedAtMs = System.currentTimeMillis()
         var mergeLastChangeAtMs = mergeStartedAtMs
-        val newestIncomingAtMs = messages.lastOrNull { it.sender != "self" }?.timestampMillis ?: 0L
-        val newestIncomingAgeMs = if (newestIncomingAtMs > 0L) {
-            System.currentTimeMillis() - newestIncomingAtMs
-        } else {
-            Long.MAX_VALUE
-        }
-        android.util.Log.d(
-            "AIA",
-            "chat merge window newest_age_ms=$newestIncomingAgeMs wait=${ReplyFreshnessPolicy.shouldWaitForMerge(newestIncomingAgeMs)}"
-        )
-        while (ReplyFreshnessPolicy.shouldWaitForMerge(newestIncomingAgeMs)) {
+        while (ReplyFreshnessPolicy.shouldConfirmStableBatch()) {
             delay(ReplyFreshnessPolicy.INITIAL_MERGE_POLL_MS)
             if (!canContinue(leaseToken, interactionEpoch)) return null
 

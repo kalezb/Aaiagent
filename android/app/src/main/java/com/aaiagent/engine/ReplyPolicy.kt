@@ -19,24 +19,12 @@ object ReplyFreshnessPolicy {
     const val BURST_MERGE_DELAY_MS = 2_500L
     const val BURST_MERGE_MAX_WAIT_MS = 10_000L
 
-    /** 对方消息还热乎（刚发出来）才值得等合并窗口，超过这个时长就不用等了。 */
-    const val FRESH_MESSAGE_GRACE_MS = 3_000L
-
     /**
-     * 要不要等“对方可能还在连着发”的合并窗口。
-     *
-     * 真机问题（2026-10-05）：回复慢的主因就是这个窗口——一批两条消息时静默窗口 2.5 秒，
-     * 每轮还要重读整棵消息树，实测手机端在发请求前先花了 4~6 秒。
-     * 但绝大多数情况是在回几分钟甚至几小时前的未读，根本不存在“对方还在打字”，
-     * 这种就直接发请求；只有消息刚发出来（3 秒内）才等窗口。
+     * A turn is not sent to the model from the first page read.
+     * We always take one more read so late-arriving messages from the same
+     * conversation batch cannot slip into a second generation.
      */
-    fun shouldWaitForMerge(
-        newestIncomingAgeMs: Long,
-        graceMs: Long = FRESH_MESSAGE_GRACE_MS,
-    ): Boolean {
-        if (newestIncomingAgeMs < 0L) return true
-        return newestIncomingAgeMs < graceMs
-    }
+    fun shouldConfirmStableBatch(): Boolean = true
 
     fun initialMergeDecision(
         startedAtMs: Long,
