@@ -19,6 +19,7 @@ data class ConversationContext(
     var pendingReplyStale: Boolean = false,
     var lastRepliedIncomingFingerprint: String = "",
     var lastIgnoredIncomingFingerprint: String = "",
+    var lastReplySentAtMs: Long = 0L,
     var relationshipOrigin: RelationshipOrigin = RelationshipOrigin.UNKNOWN,
     var conversationStage: ConversationStage = ConversationStage.UNKNOWN,
     /** 已经回过的对方消息身份键；同一条消息 30 分钟内不再回第二次。 */

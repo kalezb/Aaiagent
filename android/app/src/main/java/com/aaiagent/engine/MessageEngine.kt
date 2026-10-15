@@ -1381,6 +1381,7 @@ class MessageEngine(
                 )
                 if (delivery.isComplete && delivery.confirmed) {
                     synchronized(context) {
+                        context.lastReplySentAtMs = System.currentTimeMillis()
                         if (pendingBatchFingerprint.isNotBlank()) {
                             context.lastRepliedIncomingFingerprint = pendingBatchFingerprint
                         }
@@ -1446,16 +1447,14 @@ class MessageEngine(
                     "语音转写后补回复 contact=${context.contactName} text=${transcriptFollowUp.transcript.take(30)}"
                 )
             }
-            if (!StickerTurnPolicy.shouldReplyToBatch(incomingBatch)) {
+            val staleIncoming = synchronized(context) { IncomingMessageStalenessPolicy.shouldTreatAsAlreadyHandled(incomingBatch.incoming, context.lastReplySentAtMs) }
+            if (staleIncoming || !StickerTurnPolicy.shouldReplyToBatch(incomingBatch)) {
                 synchronized(context) { context.lastIgnoredIncomingFingerprint = IncomingMessageBatch.fingerprint(incomingBatch) }
-                RuntimeJournal.recovery("表情只当状态，不单独回复 contact=${context.contactName.ifBlank { context.contactId }}")
-                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "sticker state only")
+                RuntimeJournal.recovery(if (staleIncoming) "旧消息已被上一条回复覆盖，跳过重复生成 contact=${context.contactName.ifBlank { context.contactId }}" else "表情只当状态，不单独回复 contact=${context.contactName.ifBlank { context.contactId }}")
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, if (staleIncoming) "stale incoming already covered" else "sticker state only")
                 return
             }
-            android.util.Log.d(
-                "AIA",
-                "last bubble is incoming; processing reply content=${lastMessage.content.take(30)}"
-            )
+            android.util.Log.d("AIA", "last bubble is incoming; processing reply content=${lastMessage.content.take(30)}")
             val latestIncoming = IncomingMessageBatch.replyMessages(incomingBatch)
                 .lastOrNull { !StickerTurnPolicy.isStateSticker(it.content) } ?: incomingBatch.latestIncoming
             // 2026-10-05：同一条对方消息只回一次。真机出现过同一批“哈哈哈/有点累哟”被回 4 次。
