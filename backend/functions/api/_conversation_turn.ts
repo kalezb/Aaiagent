@@ -24,7 +24,8 @@ function shouldJoinTurn(previous, current) {
 
 function previewTurnText(value) {
   return String(value || "")
-    .split("|||")[0]
+    .split("|||")
+    .at(-1)
     .trim()
     .slice(0, 50);
 }

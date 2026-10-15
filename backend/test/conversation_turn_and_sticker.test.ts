@@ -14,7 +14,11 @@ describe("conversation turns and sticker state", () => {
   it("keeps a short answer together with the question it answers", () => {
     const turns = buildConversationTurnMessages({
       historyMessages: [
-        { role: "assistant", content: "一起玩 玩什么呀", created_at: 1000 },
+        {
+          role: "assistant",
+          content: "璧山离我这边不近哦 你跑那么远干嘛|||一起玩 玩什么呀",
+          created_at: 1000,
+        },
       ],
       currentMessages: [
         { role: "user", content: "我", created_at: 1010 },
