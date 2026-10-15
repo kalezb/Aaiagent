@@ -2,11 +2,13 @@ package com.aaiagent.service
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import com.aaiagent.data.db.AppDatabase
 import com.aaiagent.data.repository.AppRepository
 import com.aaiagent.engine.HostingControlPolicy
 import com.aaiagent.engine.HostingMode
 import com.aaiagent.engine.HostingSessionPolicy
+import com.aaiagent.engine.HostingStartNoticePolicy
 import com.aaiagent.network.ApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -94,6 +96,15 @@ object HostingController {
 
             HostingSessionPolicy.markStarted(platform, mode)
             publishState(appContext, enabled = true)
+            val filters = withContext(Dispatchers.IO) {
+                repository.getContactWhitelist() to repository.getContactBlacklist()
+            }
+            val notice = HostingStartNoticePolicy.notice(filters.first, filters.second)
+            if (notice.isNotBlank()) {
+                withContext(Dispatchers.Main.immediate) {
+                    Toast.makeText(appContext, notice, Toast.LENGTH_LONG).show()
+                }
+            }
             syncBackend(repository, token, enabled = true)
             return Result(success = true, enabled = true, message = "已开启 AI 托管")
         }

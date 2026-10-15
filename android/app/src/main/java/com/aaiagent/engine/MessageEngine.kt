@@ -170,6 +170,9 @@ class MessageEngine(
         currentPlatform = platform
         automationOwnedChatKey = null
         hostingEnabled = true
+        // 开启托管本身就是一次用户触摸；不能把这下点击当成“用户还在操作”，
+        // 否则会白白等待导航宽限期，期间只会反复扫描列表却不点未读。
+        GestureMonitor.reset()
         GestureMonitor.onAutomationActionStarted(protectionMs = 1_500L)
         android.util.Log.d("AIA", "HostingStarted platform=$platform mode=$hostingMode")
         RuntimeJournal.stateChange(state.toString(), "HostingStarted")
