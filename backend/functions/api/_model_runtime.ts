@@ -45,7 +45,18 @@ export function buildModelRequestPayload(
   if (!isGeminiModelConfig(modelConfig)) {
     // DeepSeek needs thinking disabled to leave room for the visible reply.
     payload.thinking = { type: "disabled" };
-    if (responseFormat) payload.response_format = { type: responseFormat };
+    if (responseFormat) {
+      payload.response_format = { type: responseFormat };
+      const hasJsonWord = messages.some((message) =>
+        String(message?.content || "").toLowerCase().includes("json")
+      );
+      if (!hasJsonWord) {
+        payload.messages = [
+          ...messages,
+          { role: "system", content: "输出格式必须是 json。" },
+        ];
+      }
+    }
     return payload;
   }
   // Gemini's compatible endpoint rejects the DeepSeek `thinking` field.

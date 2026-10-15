@@ -102,6 +102,7 @@ describe("chat core", () => {
     const payload = JSON.parse(String(init.body));
     expect(payload.max_tokens).toBe(96);
     expect(payload.messages[0].content).toContain("【交流方式】");
+    expect(payload.messages[0].content).toContain("json");
     expect(payload.messages[0].content).toContain("{\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}");
     expect(payload.messages[0].content).toContain("硬上限25个字");
     expect(payload.messages[0].content).toContain("每轮最多一个问号；上一轮已经问过，这一轮就不要再问");

@@ -68,6 +68,7 @@ describe("Su Tang v13 persona", () => {
   it("uses the structured short-message rule and removes the old reward wording", () => {
     const prompt = buildSutangPrompt();
     expect(prompt).toContain(OUTPUT_HARD_RULE);
+    expect(prompt).toContain("json");
     expect(prompt).toContain("{\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}");
     expect(prompt).toContain("硬上限25个字");
     expect(prompt).not.toContain("半真半假的专属感");

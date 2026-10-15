@@ -112,11 +112,11 @@ export const RULE_PREVIEW_CASES: Record<string, { original: string; merged: stri
   },
   reply_shape: {
     original:
-      "【固定 JSON 输出】\n" +
+      "【固定 json 输出】\n" +
       "【1到3条完整短消息】\n" +
       "【每条目标20字，硬顶25字】",
     merged:
-      "只返回 JSON 对象：{\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}。messages 只能1到3条，每条目标3到20个字，硬上限25个字，总共不超过60个字。只在自然换意处分条，不许把一句话从中间切开，不许把两条粘成一条。",
+      "只返回 json 对象：{\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}。messages 只能1到3条，每条目标3到20个字，硬上限25个字，总共不超过60个字。只在自然换意处分条，不许把一句话从中间切开，不许把两条粘成一条。",
   },
   old_message: {
     original:
