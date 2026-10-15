@@ -125,7 +125,7 @@ describe("Su Tang v13 persona", () => {
       sutangScope: true,
     });
     expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toBe("前阵子在豆瓣查电影评分，无意中发现居然也能私聊|||清清静静没熟人|||sutang2026");
+    expect(allowed.reply).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
 
     expect(sanitizeContactDisclosure("豆瓣知道吧|||sutang2026", {
       allowed: true,
@@ -221,10 +221,9 @@ describe("Su Tang v13 persona", () => {
     expect(prompt).toContain("【豆瓣自留地前提】");
     expect(prompt).toContain("私人豆瓣自留地/秘密树洞");
     expect(prompt).toContain("跳过陌生客套");
-    expect(prompt).toContain("三步共识");
-    expect(prompt).toContain("商量挑选安全、高档、私密的酒店");
-    expect(prompt).toContain("探讨私密相处细节");
-    expect(prompt).toContain("做无话不谈的知己情人");
+    expect(prompt).toContain("300+像样酒店");
+    expect(prompt).toContain("怕你提前进房间装针孔偷拍设备");
+    expect(prompt).toContain("彼此专属的私密避风港");
 
     // 亲密尺度解绑：允许情趣与相处细节，但拦截粗鄙色情
     const intimateTalk = "商量挑选安全高档酒店|||一起睡你探讨私密相处细节";
@@ -302,7 +301,7 @@ describe("Su Tang v13 persona", () => {
       customerProfile: { relationship: { generosity_status: "qualified" } },
     });
     expect(qualifiedPolicy.allowed).toBe(true);
-    expect(qualifiedPolicy.reply).toBe("前阵子在豆瓣查电影评分，无意中发现居然也能私聊|||清清静静没熟人|||sutang2026");
+    expect(qualifiedPolicy.reply).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
 
     // 5.1 初次要微信时：先抛顾虑并反问等他接话（两步走第一步）
     const firstWechatAsk = resolveContactRequestPolicy({
@@ -349,35 +348,38 @@ describe("Su Tang v13 persona", () => {
     expect(blockedOutput).toContain("联系方式先不发了 在这儿聊就行");
 
     // 8. 即使对方发来一两字的超短消息，放号气泡也绝不被长度收口（capReplyLength）腰斩切断号码
-    const capped = capReplyLength("前阵子在豆瓣查电影评分，无意中发现居然也能私聊|||清清静静没熟人|||sutang2026", "好的");
-    expect(capped).toBe("前阵子在豆瓣查电影评分，无意中发现居然也能私聊|||清清静静没熟人|||sutang2026");
+    const capped = capReplyLength("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你", "好的");
+    expect(capped).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
 
-    // 9. 线下邀约提示词与三步共识对齐，绝不出现“门槛放回线上/表现够了再说/不答应去酒店”的冲突阻断
+    // 9. 线下邀约提示词与成年人私密需求对齐，300+酒店代付排查偷拍
     const meetingPrompt = buildRelationshipBoundaryPrompt(2, "我们周末去高档酒店开房喝茶吧", [], "sutang");
     expect(meetingPrompt).toContain("【邀约与线下独处推进】");
-    expect(meetingPrompt).toContain("商量挑选安全、高档、私密酒店与相处细节");
+    expect(meetingPrompt).toContain("300元以上像样舒适型连锁");
+    expect(meetingPrompt).toContain("由苏棠挑房订房、男方平台代付、苏棠提前去办入住排查针孔偷拍等设备保护隐私");
     expect(meetingPrompt).not.toContain("把门槛放回线上");
     expect(meetingPrompt).not.toContain("不答应去家里或酒店");
 
-    // 10. 凌晨/深夜突发开房邀约：坚决不答应立刻出门，搬出孩子在身边睡着的底线，且只约白天
+    // 10. 线下邀约：在Soul上严禁出现“代付”二字，严格筛选男方诚意，达成共识后给豆瓣自留地，彻底剔除已婚带娃旧条目
     const lateNightMeetingPrompt = buildRelationshipBoundaryPrompt(2, "半夜两三点出来开房吧", [], "sutang");
-    expect(lateNightMeetingPrompt).toContain("外出只约白天（不分周末只约白天）");
-    expect(lateNightMeetingPrompt).toContain("深夜或凌晨提出“现在出来、今晚出来、半夜开房、来接你”等突发要求时坚决回绝当下出门（孩子在身边睡着，大半夜绝对走不开）");
-    expect(lateNightMeetingPrompt).toContain("把时间引导到白天从容商量");
+    expect(lateNightMeetingPrompt).toContain("在Soul上严禁出现“代付”二字");
+    expect(lateNightMeetingPrompt).toContain("重点筛选男方诚意");
+    expect(lateNightMeetingPrompt).not.toContain("孩子在身边睡着");
+    expect(lateNightMeetingPrompt).not.toContain("外出只约白天");
 
     // 11. 提示词注入与看板自定义规则支持：可改、可停用
     const defaultPrompt = buildSutangPrompt();
-    expect(defaultPrompt).toContain("【深夜突发邀约底线】");
-    expect(defaultPrompt).toContain("孩子在身边睡着，大半夜绝不可能丢下孩子跑出去");
-    expect(defaultPrompt).toContain("不分周末只约白天");
+    expect(defaultPrompt).toContain("【昼夜时段与酒店选址策略】");
+    expect(defaultPrompt).toContain("只要男方表达好感、主动想约且态度真诚，苏棠都可以转向成年人的私密需求与酒店之约");
+    expect(defaultPrompt).toContain("晚上21点之后进入深夜时段");
+    expect(defaultPrompt).not.toContain("孩子在身边睡着，大半夜绝不可能丢下孩子跑出去");
 
     const drawers = defaultDrawersForPersona("female_sutang");
     const scene13 = drawers.topics?.find((d) => d.id === "scene_13_invitation_reward");
-    expect(scene13?.content).toContain("挑个白天");
-    expect(scene13?.content).not.toContain("周末给你发定位");
+    expect(scene13?.content).toContain("现实里我可比屏幕上磨人得多");
 
     const scene18 = drawers.topics?.find((d) => d.id === "scene_18_meeting_arrangement");
-    expect(scene18?.content).toContain("孩子就在我身边睡着");
-    expect(scene18?.content).toContain("真有诚意就老老实实约白天");
+    expect(scene18?.content).toContain("排查有没有偷拍设备");
+    expect(scene18?.content).toContain("进门先老老实实抱我五分钟");
+    expect(scene18?.content).not.toContain("孩子就在我身边睡着");
   });
 });

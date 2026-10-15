@@ -115,7 +115,7 @@ function contactRefusalReply(
       return agentRuleState.textFor("sutang_contact_refusal_wechat", wechatRefusal) || wechatRefusal;
     }
     if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
-    return "豆瓣那边最干净 只有聊得久的人才进得去";
+    return "豆瓣是我个人的自留地，从来没给过任何人，看你真诚才可能破例";
   }
   if (requestCount <= 1) {
     // 他问什么渠道就回什么渠道，别答非所问。
@@ -262,7 +262,7 @@ export function resolveContactRequestPolicy({
     ? (xingmuScope
         ? "行 那我把私人微信号给你：" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
         : sutangScope
-          ? "前阵子在豆瓣查电影评分，无意中发现居然也能私聊|||清清静静没熟人|||" + contactAccountDisplay(normalizedAccount, normalizedChannel)
+          ? "那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： " + contactAccountDisplay(normalizedAccount, normalizedChannel) + "|||房间我来挑，过去之后我把安排发你"
           : "可以 我QQ是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
     : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope, platform, agentRuleState));
 

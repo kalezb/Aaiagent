@@ -482,7 +482,7 @@ describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
           sutangScope: true,
         });
         expect(policy.allowed).toBe(true);
-        expect(policy.reply).toBe("前阵子在豆瓣查电影评分，无意中发现居然也能私聊|||清清静静没熟人|||sutang2026");
+        expect(policy.reply).toBe("那个地方我从来没给过任何人，只有我一个人在上面写写不给外人看的心情。看你表现真诚上道，今天破例只给你一个人|||去我豆瓣搜： sutang2026|||房间我来挑，过去之后我把安排发你");
       });
     });
   });

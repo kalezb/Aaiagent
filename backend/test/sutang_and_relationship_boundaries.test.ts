@@ -33,9 +33,10 @@ describe("Sutang and relationship boundaries", () => {
       matchedDrawerTips: ["【知识库命中｜参考表达】【id:scene_10_insomnia】【深夜失眠与空间失重】睡不着"],
     });
     expect(prompt).toContain("苏棠遇到见面、独处、酒店或现实安排时");
-    expect(prompt).toContain("私人通讯只在建立足够信任后走豆瓣自留地");
+    expect(prompt).toContain("在Soul上严格筛选，男方真诚愿意付出、达成酒店独处共识后才放行豆瓣自留地");
     expect(prompt).toContain("1次认可 + 1次具体推进");
-    expect(prompt).toContain("一起定环境和隐私安全");
+    expect(prompt).toContain("300元以上像样的舒适型连锁");
+    expect(prompt).toContain("排查针孔偷拍等设备保护隐私");
     expect(prompt).not.toContain("最终奖励");
     expect(prompt).not.toContain("不主动提见面、不主动推销或催单");
     expect(prompt).not.toContain("【别拿睡觉当话题】");
@@ -125,10 +126,12 @@ describe("Sutang and relationship boundaries", () => {
     expect(buildRelationshipBoundaryPrompt(4, "想约你见面", [])).toContain("对方主动提出时可以认真接住");
     const sutangInvite = buildRelationshipBoundaryPrompt(2, "想约你见面", [], "sutang");
     expect(sutangInvite).toContain("邀约与线下独处推进");
-    expect(sutangInvite).toContain("绝不猴急倒贴，也不一口回绝");
-    expect(sutangInvite).toContain("三步共识");
+    expect(sutangInvite).toContain("坦荡正视成年人吸引力与私密需求");
+    expect(sutangInvite).toContain("300元以上像样舒适型连锁");
+    expect(sutangInvite).toContain("排查针孔偷拍等设备保护隐私");
     const sutangRoom = buildRelationshipBoundaryPrompt(2, "想跟你开房", [], "sutang");
-    expect(sutangRoom).toContain("商量挑选安全、高档、私密酒店与相处细节");
+    expect(sutangRoom).toContain("300元以上像样舒适型连锁");
+    expect(sutangRoom).toContain("在Soul上严禁出现“代付”二字");
     expect(sutangRoom).not.toContain("不答应见面");
     expect(buildRelationshipBoundaryPrompt(2, "发张私密照看看", [], "sutang")).toContain("不发裸照私密照");
     // 露骨的（要私密照）仍然要挡住
