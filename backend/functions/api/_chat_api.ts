@@ -105,6 +105,7 @@ import {
   buildConversationTurnMessages,
   normalizeConversationTurnContext,
 } from "./_conversation_turn";
+import { buildConversationMemoryPrompt } from "./_conversation_memory";
 import { isGreetingStickerContent, isStickerOnlyTurn } from "./_message_text";
 import {
   createTimeoutSignal,
@@ -721,6 +722,10 @@ export async function handleChatRequest({ request, env, context, path, method })
           .filter((message) => Number(message.id || 0) > memoryRow.summarizedUpToId)
         : [];
       const summary = mergeMemorySummary(memoryRow.summary, olderMessages);
+      const structuredMemory = buildConversationMemoryPrompt({
+        summary,
+        olderMessages,
+      });
       const summarizedUpToId = olderMessages.reduce((max, message) => Math.max(max, Number(message.id || 0)), memoryRow.summarizedUpToId);
       if (olderMessages.length > 0) {
         await persistMemorySummary(env.DB, tokenRow.token, currentLink?.group_id || "", historyAliases, summary, summarizedUpToId);
@@ -1112,7 +1117,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           ? "familiar"
           : conversationStage,
         relationshipOrigin,
-        memorySummary: String(contact?.conversation_summary || summary || "").trim(),
+        memorySummary: String(structuredMemory || contact?.conversation_summary || summary || "").trim(),
         evaluationQuoteSent,
         funnelState,
         contactRequest: starSoulScope && currentContactRequest && !contactPolicy.allowed,
