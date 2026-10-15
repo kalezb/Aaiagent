@@ -99,6 +99,7 @@ import {
   prepareChatInput,
   validateChatMessages,
 } from "./_chat_input";
+import { parseStructuredReply } from "./_reply_length";
 import {
   createTimeoutSignal,
   elapsedSince,
@@ -1188,6 +1189,7 @@ export async function handleChatRequest({ request, env, context, path, method })
               outgoingMessages,
               requestTemperature,
               maxTokens,
+              "json_object",
             )),
             signal: createTimeoutSignal(llmFetchTimeoutMs),
           });
@@ -1370,7 +1372,10 @@ export async function handleChatRequest({ request, env, context, path, method })
         const gapSec = lastUserAt > 0 ? nowSec - lastUserAt : 86400;
         safetyCover = gapSec < 300 ? "\u5728\u5462 \u4f60\u8bf4" : "\u5728\u5462 \u521a\u624d\u8d70\u5f00\u4e86\u4e00\u4e0b";
       }
-      const modelReply = String(rawModelContent || "").trim() || safetyCover;
+      const parsedModelReply = parseStructuredReply(String(rawModelContent || "").trim());
+      const modelReply = parsedModelReply.ok
+        ? parsedModelReply.messages.join("|||")
+        : safetyCover;
       const mediaDirective = mediaActionsEnabled ? parseMediaDirective(modelReply) : "";
       let rawReply = stripMediaDirective(modelReply);
       if (mediaDirective) {

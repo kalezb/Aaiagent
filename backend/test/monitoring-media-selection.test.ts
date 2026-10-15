@@ -606,22 +606,15 @@ describe("media selection", () => {
     expect(fixed).toBe("刚关了电脑 屋里就剩 我这盏灯还亮着呢");
   });
 
-  it("drops a standalone opener and keeps the actual reply", () => {
-    const fixed = capReplyLength(
+  it("keeps model segments untouched instead of rewriting their words", () => {
+    expect(capReplyLength(
       "看这边|||你这起床方式够直接的",
       "起床窝尿啦！",
-    );
-
-    expect(fixed).toBe("你这起床方式够直接的");
-  });
-
-  it("removes an opener attached to the real reply", () => {
-    const fixed = capReplyLength(
+    )).toBe("看这边|||你这起床方式够直接的");
+    expect(capReplyLength(
       "看这边，你这起床方式够直接的",
       "起床窝尿啦！",
-    );
-
-    expect(fixed).toBe("你这起床方式够直接的");
+    )).toBe("看这边，你这起床方式够直接的");
   });
 
   it("keeps a complete sentence that ends with a pronoun", () => {
@@ -677,24 +670,57 @@ describe("media selection", () => {
 
   it("splits at clear message changes without changing the words", () => {
     expect(capReplyLength(
-      "刚认识就脸红 你倒挺纯晚上好 在忙什么呢",
+      JSON.stringify({
+        messages: [
+          "刚认识就脸红 你倒挺纯",
+          "晚上好 在忙什么呢",
+        ],
+      }),
       "晚上好",
     )).toBe("刚认识就脸红 你倒挺纯|||晚上好 在忙什么呢");
 
     expect(capReplyLength(
-      "躺这么早 不闷吗我这时候才刚把娃哄睡",
+      JSON.stringify({
+        messages: [
+          "躺这么早 不闷吗？",
+          "我这时候才刚把娃哄睡",
+        ],
+      }),
       "你睡了吗",
     )).toBe("躺这么早 不闷吗？|||我这时候才刚把娃哄睡");
 
     expect(capReplyLength(
-      "晚上好白天在婆婆和同事面前规规矩矩 晚上只对看得顺眼的人放得开",
+      JSON.stringify({
+        messages: [
+          "晚上好",
+          "白天在婆婆和同事面前规规矩矩",
+        ],
+      }),
       "你好，另一面的你",
-    )).toBe("晚上好|||白天在婆婆和同事面前规规矩矩 晚上只对看得顺眼的人放得开");
+    )).toBe("晚上好|||白天在婆婆和同事面前规规矩矩");
 
     expect(capReplyLength(
-      "带娃的人 哪有清闲的你反应这么大 是没见过还是不信",
+      JSON.stringify({
+        messages: [
+          "带娃的人 哪有清闲的",
+          "你反应这么大 是没见过还是不信",
+        ],
+      }),
       "都有娃了啊",
     )).toBe("带娃的人 哪有清闲的|||你反应这么大 是没见过还是不信");
+  });
+
+  it("rejects an overlong unstructured message instead of sending a long paragraph", () => {
+    const long = "这是一个超过二十五个字并且完全没有任何停顿的完整想法必须继续往下说";
+    expect(capReplyLength(JSON.stringify({ messages: [long] }), "在吗"))
+      .toBe("嗯 你接着说");
+  });
+
+  it("only uses complete punctuation when an overlong message needs a safe fallback split", () => {
+    const first = "第一句完整内容要写得长一点";
+    const second = "第二句完整内容也要写得长一点";
+    expect(capReplyLength(JSON.stringify({ messages: [first + "。" + second + "。"] }), "在吗"))
+      .toBe(first + "。|||" + second + "。");
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {

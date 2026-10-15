@@ -23,8 +23,10 @@ describe("model runtime", () => {
       [{ role: "user", content: "hi" }],
       0.5,
       120,
+      "json_object",
     )).toMatchObject({
       thinking: { type: "disabled" },
+      response_format: { type: "json_object" },
       max_tokens: 120,
     });
 
@@ -34,10 +36,19 @@ describe("model runtime", () => {
       [{ role: "user", content: "hi" }],
       0.5,
       320,
+      "json_object",
     )).toMatchObject({
       reasoning_effort: "low",
       max_tokens: 320,
     });
+    expect(buildModelRequestPayload(
+      { provider: "gemini" },
+      "gemini-3.8-flash",
+      [{ role: "user", content: "hi" }],
+      0.5,
+      320,
+      "json_object",
+    )).not.toHaveProperty("response_format");
   });
 
   it("adds the Gemini key header only for Gemini", () => {

@@ -837,7 +837,18 @@ describe("chat history and reply", () => {
     await kv.put("weather:cache", JSON.stringify({ city: "\u91cd\u5e86", condition: "\u6674", temp: 25, updated_at: Math.floor(Date.now() / 1000) }));
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ choices: [{ message: { content: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86 [soul 10/01 18:57] \u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427" } }] }),
+        JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                messages: [
+                  "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86",
+                  "[soul 10/01 18:57] \u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
+                ],
+              }),
+            },
+          }],
+        }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );
@@ -860,7 +871,7 @@ describe("chat history and reply", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // “了”后面重新起“你也是……”是新的一句，按自然换意断成两段。
+      // 模型已经分成两条；后台只清掉第二条前面的泄露标记，不重新断句或拼接。
       reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86|||\u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
     });
   });
@@ -893,8 +904,8 @@ describe("chat history and reply", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 泄露前缀照旧清掉；第三段和前一秒重复表达同一个意思，不重复发送。
-      reply: "给谁 你对象啊|||我眯了啊 明天还一堆单子",
+      // 泄露前缀照旧清掉；是否重复由模型自己决定，后台不再删整段。
+      reply: "给谁 你对象啊|||我眯了啊 明天还一堆单子|||明天还得跑单子",
     });
   });
 

@@ -903,10 +903,10 @@ describe("chat boundaries", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    // “认识一下可以啊”说完后重新起“我平时……”，按自然换意分成两段。
+    // 旧格式没有消息数组时按一条完整消息发，不再由后台猜着切开。
     expect(body).toMatchObject({
       action: "send",
-      reply: "认识一下可以啊|||我平时做旧数码回收，主要看机子情况",
+      reply: "认识一下可以啊，我平时做旧数码回收，主要看机子情况",
     });
     expect(body.reply).not.toBe("嗯，你刚说的这个我记住了。");
   });

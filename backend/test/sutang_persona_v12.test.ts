@@ -65,10 +65,11 @@ describe("Su Tang v13 persona", () => {
     expect(prompt).toContain("连续两轮反问后，第三轮必须给信息或确认");
   });
 
-  it("uses the new 3-to-20 character reply rule and removes the old reward wording", () => {
+  it("uses the structured short-message rule and removes the old reward wording", () => {
     const prompt = buildSutangPrompt();
     expect(prompt).toContain(OUTPUT_HARD_RULE);
-    expect(prompt).toContain("每段3到20个字，最多三条");
+    expect(prompt).toContain("{\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}");
+    expect(prompt).toContain("硬上限25个字");
     expect(prompt).not.toContain("半真半假的专属感");
     expect(prompt).not.toContain("最终奖励");
   });

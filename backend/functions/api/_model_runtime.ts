@@ -28,7 +28,14 @@ export function buildModelHeaders(apiKey, modelConfig) {
   return headers;
 }
 
-export function buildModelRequestPayload(modelConfig, modelName, messages, temperature, maxTokens) {
+export function buildModelRequestPayload(
+  modelConfig,
+  modelName,
+  messages,
+  temperature,
+  maxTokens,
+  responseFormat = "",
+) {
   const payload: Record<string, unknown> = {
     model: modelName,
     messages,
@@ -38,6 +45,7 @@ export function buildModelRequestPayload(modelConfig, modelName, messages, tempe
   if (!isGeminiModelConfig(modelConfig)) {
     // DeepSeek needs thinking disabled to leave room for the visible reply.
     payload.thinking = { type: "disabled" };
+    if (responseFormat) payload.response_format = { type: responseFormat };
     return payload;
   }
   // Gemini's compatible endpoint rejects the DeepSeek `thinking` field.

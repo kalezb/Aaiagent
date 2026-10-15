@@ -1,141 +1,114 @@
-/**
- * 回复段数只由模型已经给出的分隔决定，正常情况下 1~3 条自然短句。
- *
- * 2026-10-15 用户纠正：禁止按字数、逗号、空格或某个字把完整句子从中间切开，
- * 也禁止把碎片重新用空格拼成一句。这里保留最多三条的硬上限，超出只丢掉整段，
- * 绝不改变已有段的内部文字。
- */
+export const REPLY_MAX_SEGMENTS = 3;
+export const REPLY_TARGET_CHARS = 20;
+export const REPLY_HARD_CHARS = 25;
+export const REPLY_TOTAL_CHARS = 60;
+export const EMPTY_STRUCTURED_REPLY_FALLBACK = "嗯 你接着说";
+const INTERNAL_DIRECTIVE = /\[\[(?:SEND_MEDIA|NO_REPLY|SELF_LEAVE)(?::[^\]]+)?\]\]/giu;
+
 export function replyLengthBudget(_incomingText) {
-  return { maxSegments: 3, maxCharsPerSegment: Number.POSITIVE_INFINITY, softLimit: Number.POSITIVE_INFINITY };
+  return {
+    maxSegments: REPLY_MAX_SEGMENTS,
+    targetCharsPerSegment: REPLY_TARGET_CHARS,
+    maxCharsPerSegment: REPLY_HARD_CHARS,
+    maxTotalChars: REPLY_TOTAL_CHARS,
+  };
 }
 
-const NON_ESSENTIAL_LEAD = /^(?:看这边|看这里|你看|喂+|哎+|听我说|听我讲|我跟你说|跟你说|你先听|先听我说|说真的|等下|等等|先等等)[呀啊呢吧嘛哦哟哈。！!？?…~～\s]*$/u;
-const NON_ESSENTIAL_LEAD_PREFIX = /^(?:看这边|看这里|你看|喂+|哎+|听我说|听我讲|我跟你说|跟你说|你先听|先听我说|说真的|等下|等等|先等等)[呀啊呢吧嘛哦哟哈]{0,3}\s*[，,：:；;、.。!！?？…~～-]+\s*/u;
-const GREETING_TOKENS = /(?:早上好|晚上好|下午好|中午好|早安|晚安|你好)/gu;
-const LEADING_GREETING = /^(?:早上好|晚上好|下午好|中午好|早安|晚安|你好)[呀啊呢吧嘛哦哟哈]{0,2}\s*/u;
-const QUESTION_PARTICLE_NEW_CLAUSE = /(?<=吗)\s*(?=(?:我|你|他|她|它|这|那|今天|明天|晚上|刚才|这会儿|现在|在|有|要|能|会|想|别|先|还是|是不是|要不要))/gu;
-const PARTICLE_BEFORE_NEW_SUBJECT = /(?<=[的了吧呀啊])[，,]?\s*(?=(?:我|你|他|她|它)[\s\S]{4,})/gu;
-
-function isNonEssentialLead(value) {
-  return NON_ESSENTIAL_LEAD.test(String(value || "").trim());
-}
-
-function dropNonEssentialLeadingPieces(pieces) {
-  const output = [];
-  for (const piece of pieces) {
-    const value = String(piece || "").trim();
-    if (!value) continue;
-    if (isNonEssentialLead(value)) continue;
-    const withoutLead = value.replace(NON_ESSENTIAL_LEAD_PREFIX, "").trim();
-    if (withoutLead) output.push(withoutLead);
-  }
-  return output.length ? output : pieces;
-}
-
-function comparableText(value) {
+function visibleLength(value) {
   return String(value || "")
-    .toLowerCase()
-    .replace(/[\s，,。！!？?；;、…~～"'“”‘’（）()【】[\]]+/gu, "");
+    .replace(INTERNAL_DIRECTIVE, "")
+    .replace(/\s+/gu, "")
+    .length;
 }
 
-function bigrams(value) {
-  const text = comparableText(value);
-  const output = new Set();
-  for (let index = 0; index < text.length - 1; index += 1) {
-    output.add(text.slice(index, index + 2));
+function cleanMessage(value) {
+  return String(value || "").replace(/\r?\n+/gu, " ").trim();
+}
+
+function extractJson(value) {
+  const text = String(value || "").trim()
+    .replace(/^```(?:json)?\s*/iu, "")
+    .replace(/\s*```$/u, "")
+    .trim();
+  if (!text) return "";
+  const objectStart = text.indexOf("{");
+  const objectEnd = text.lastIndexOf("}");
+  if (objectStart >= 0 && objectEnd > objectStart) return text.slice(objectStart, objectEnd + 1);
+  const arrayStart = text.indexOf("[");
+  const arrayEnd = text.lastIndexOf("]");
+  if (arrayStart >= 0 && arrayEnd > arrayStart) return text.slice(arrayStart, arrayEnd + 1);
+  return "";
+}
+
+export function parseStructuredReply(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { ok: false, source: "empty", messages: [], error: "empty" };
+
+  const jsonText = extractJson(raw);
+  if (jsonText) {
+    try {
+      const parsed = JSON.parse(jsonText);
+      const messages = Array.isArray(parsed) ? parsed : parsed?.messages;
+      if (!Array.isArray(messages)) {
+        return { ok: false, source: "json", messages: [], error: "messages_missing" };
+      }
+      const cleaned = messages.map(cleanMessage).filter(Boolean);
+      if (!cleaned.length) {
+        return { ok: false, source: "json", messages: [], error: "messages_empty" };
+      }
+      return { ok: true, source: "json", messages: cleaned, error: "" };
+    } catch {
+      if (/^[\{\[]/u.test(raw) && raw.includes("\"messages\"")) {
+        return { ok: false, source: "json", messages: [], error: "json_invalid" };
+      }
+    }
   }
-  return output;
+
+  // 旧模型没有按新格式返回时，只承认它明确写出的分隔，不在文字里继续猜。
+  const legacy = raw.split(/\|\|\|/u).map(cleanMessage).filter(Boolean);
+  return legacy.length
+    ? { ok: true, source: "legacy", messages: legacy, error: "" }
+    : { ok: false, source: "legacy", messages: [], error: "empty" };
 }
 
-function looksLikeRepeatedThought(left, right) {
-  const a = comparableText(left);
-  const b = comparableText(right);
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a))) return true;
-  if (a.length < 6 || b.length < 6) return false;
-  const leftPairs = bigrams(a);
-  const rightPairs = bigrams(b);
-  if (leftPairs.size === 0 || rightPairs.size === 0) return false;
-  let overlap = 0;
-  for (const pair of leftPairs) {
-    if (rightPairs.has(pair)) overlap += 1;
-  }
-  const union = leftPairs.size + rightPairs.size - overlap;
-  return overlap >= 3 && union > 0 && overlap / union >= 0.2;
-}
-
-function dropRepeatedThoughts(pieces) {
-  const output = [];
-  for (const piece of pieces) {
-    if (output.some((existing) => looksLikeRepeatedThought(existing, piece))) continue;
-    output.push(piece);
-  }
-  return output;
-}
-
-function splitSafeLineBreaks(value) {
-  return String(value || "")
-    // 句号、问号等完整停顿后的换行是安全分段；句中的换行只补成空格。
-    .replace(/(?<=[。！？!?；;…])\r?\n\s*/gu, "|||")
-    .replace(/\r?\n+/gu, " ");
-}
-
-function splitBeforeGreeting(value) {
-  const text = String(value || "");
-  const matches = Array.from(text.matchAll(GREETING_TOKENS));
-  let output = text;
-  for (let index = matches.length - 1; index >= 0; index -= 1) {
-    const match = matches[index];
-    const start = match.index ?? -1;
-    const token = match[0];
-    if (start < 4) continue;
-    const previous = text[start - 1] || "";
-    const next = text[start + token.length] || "";
-    if (/\s/u.test(previous)) continue;
-    if (next && !/[\s，,。！？!?]/u.test(next)) continue;
-    output = output.slice(0, start).trimEnd() + "|||" + output.slice(start).trimStart();
-  }
-  return output;
-}
-
-function splitAfterLeadingGreeting(value) {
-  const text = String(value || "");
-  const match = LEADING_GREETING.exec(text);
-  if (!match) return text;
-  const greeting = match[0].trim();
-  const rest = text.slice(match[0].length).trim();
-  if (rest.length < 8) return text;
-  return greeting + "|||" + rest;
-}
-
-function splitNaturalBoundaries(value) {
-  return splitAfterLeadingGreeting(splitBeforeGreeting(
-    String(value || "")
-      .replace(QUESTION_PARTICLE_NEW_CLAUSE, "？|||")
-      .replace(PARTICLE_BEFORE_NEW_SUBJECT, "|||"),
-  ));
+function splitOnlyAtCompleteSentences(value) {
+  const text = cleanMessage(value);
+  if (visibleLength(text) <= REPLY_HARD_CHARS) return [text];
+  const parts = text
+    .split(/(?<=[。！？!?；;…])\s*/u)
+    .map(cleanMessage)
+    .filter(Boolean);
+  return parts.length > 1 ? parts : [text];
 }
 
 /**
- * 只整理模型已经分好的消息段：去引子、去重复、最多三条。
- * 不再从段内切字，也不把段与段重新粘起来。
+ * 结构化输出只做格式和长度验收：
+ * 1. 只认模型返回的 messages 数组，旧格式只认 ||| 和换行；
+ * 2. 不再按字数、逗号、空格或某个字从句子中间切开；
+ * 3. 超长兜底只在句号、问号等完整停顿处分开；
+ * 4. 仍然超长的整句只丢弃，不切半句。
  */
-export function capReplyLength(value, incomingText) {
+export function capReplyLength(value, _incomingText) {
   const reply = String(value || "").trim();
   if (!reply) return reply;
   if (/sutang2026/iu.test(reply)) return reply;
-  const budget = replyLengthBudget(incomingText);
-  const normalized = reply.replace(/(?:你说|对方说|我说|我)\s*[：:]\s*/gu, "|||");
-  const rawSegments = normalized
-    .split("|||")
-    .map(splitSafeLineBreaks)
-    .map(splitNaturalBoundaries)
-    .flatMap((part) => part.split("|||"))
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const withoutOpeners = dropNonEssentialLeadingPieces(rawSegments);
-  const withoutRepeats = dropRepeatedThoughts(withoutOpeners);
-  const out = withoutRepeats.slice(0, budget.maxSegments);
-  return out.length ? out.join("|||") : reply;
+
+  const parsed = parseStructuredReply(reply);
+  if (!parsed.ok) return EMPTY_STRUCTURED_REPLY_FALLBACK;
+
+  const output = [];
+  let totalChars = 0;
+  for (const message of parsed.messages) {
+    for (const piece of splitOnlyAtCompleteSentences(message)) {
+      const length = visibleLength(piece);
+      if (length > REPLY_HARD_CHARS) continue;
+      if (output.length >= REPLY_MAX_SEGMENTS) break;
+      if (totalChars + length > REPLY_TOTAL_CHARS) break;
+      output.push(piece);
+      totalChars += length;
+    }
+    if (output.length >= REPLY_MAX_SEGMENTS || totalChars >= REPLY_TOTAL_CHARS) break;
+  }
+
+  return output.length ? output.join("|||") : EMPTY_STRUCTURED_REPLY_FALLBACK;
 }
