@@ -631,6 +631,69 @@ export const SUTANG_MASSAGE_PLEASURE_RULE =
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
 
+export function resolveSutangMicroStep(incomingText: string, historyMessages: any[] = []): {
+  step: number;
+  title: string;
+  instruction: string;
+} {
+  const text = String(incomingText || "").toLowerCase();
+  const recentHistory = (Array.isArray(historyMessages) ? historyMessages.slice(-6) : [])
+    .map((m) => String(m?.content || ""))
+    .join(" ");
+
+  // 台阶 6: 进门抱五分钟规矩 (代付已完成，发房号)
+  if (/(?:代付好了|已经付了|付过了|代付成功|搞定了|订好了)/u.test(text)) {
+    return {
+      step: 6,
+      title: "【当前微台阶｜第6步：进门规矩】",
+      instruction: "报出房号（如402），定下敲三声门进、进门先老老实实抱我五分钟的规矩。字数20字内，干脆利落。",
+    };
+  }
+
+  // 台阶 5: 防偷拍理由与平台代付 (进入支付订房环节)
+  if (/(?:怎么订|发链接|我订吧|你订吧|多少钱|定好了吗|订哪家|开好房)/u.test(text) || (/(?:亚朵|全季|酒店)/u.test(recentHistory) && /(?:好|行|可以|听你的)/u.test(text))) {
+    return {
+      step: 5,
+      title: "【当前微台阶｜第5步：防偷拍与平台代付】",
+      instruction: "抛出安全防线与代付：网上偷拍多，女孩子必须保护隐私，房间必须我来订、提前过去消消毒；你直接在平台帮我代付就行，懂事点嘛。绝不长篇大论，20字内。",
+    };
+  }
+
+  // 台阶 4: 反客为主抢挑房权 (对方提到开房/酒店/去哪待着，或说听你的)
+  if (/(?:开房|酒店|开个房|全季|亚朵|去哪待|听你的|你选|你定|你挑)/u.test(text)) {
+    return {
+      step: 4,
+      title: "【当前微台阶｜第4步：抢挑房权与品质门槛】",
+      instruction: "树立品质门槛：声明自己挑剔还认床，小旅馆受不了，至少得是亚朵或全季干干净净的；而且房间必须由自己来挑。等他答应，字数20字内。",
+    };
+  }
+
+  // 台阶 3: 逼他交底 (对方答应有分寸、表决心、或聊到明天见面)
+  if (/(?:有分寸|有分寸撒|不介入生活|不破坏|明天见|见一面|见见|出来玩|吃个饭|想见你)/u.test(text)) {
+    return {
+      step: 3,
+      title: "【当前微台阶｜第3步：逼他交底去处】",
+      instruction: "把皮球踢给他：“明天要是见面，你打算带我去哪待着呀？”逼他主动表态去安静私密的地方，不替他抢答，字数18字内。",
+    };
+  }
+
+  // 台阶 2: 敲打立规矩 (对方问安全感、展示身材、口嗨或求认可)
+  if (/(?:安全感|个子|斤|身材|块头|怎么才能得到|抱抱|借肩膀|好性感|好美)/u.test(text)) {
+    return {
+      step: 2,
+      title: "【当前微台阶｜第2步：敲打立规矩】",
+      instruction: "泼冷水立规矩：光块头大或嘴上说说不算数，自己最看重的是做人有分寸、地方干干净净。绝不主动提酒店或开房，等他自己表态，字数18字内。",
+    };
+  }
+
+  // 台阶 1: 轻尝甜头 (默认日常打招呼/初识/调侃)
+  return {
+    step: 1,
+    title: "【当前微台阶｜第1步：轻尝甜头与留白】",
+    instruction: "只针对他刚才的话轻调侃或打趣一句，留白，绝不主动提见面、开房或任何具体地点，等他主动跟进。字数15字内。",
+  };
+}
+
 function editableRule(
   state: AgentRuleState,
   ruleId: string,
@@ -2701,6 +2764,11 @@ export function buildLayeredSystemPrompt({
     : "";
 
   const fragmentGuidance = sutangScope ? buildFragmentedMessageGuidance(incoming, historyMessages) : "";
+  const sutangMicroStep = sutangScope ? resolveSutangMicroStep(incoming, historyMessages) : null;
+  const customOrBase = editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE);
+  const sutangActionLadderPrompt = sutangScope && sutangMicroStep && customOrBase
+    ? `${customOrBase}\n\n【本轮唯一微动作・绝不抢跑】${sutangMicroStep.title}：${sutangMicroStep.instruction}`
+    : customOrBase;
   const sutangPresence = [
     situationTimeline,
     temporalContextPrompt,
@@ -2709,7 +2777,7 @@ export function buildLayeredSystemPrompt({
     editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
     "新人设的【核心目标】【互动原则】和命中的知识库卡片优先于普通风格规则。允许不高冷、允许有态度和小情绪，但不许客服腔、说教、总结、列选项。生活状态中若有刚做完的事，按生活状态自然带出，不与不汇报规则冲突。",
     editableRule(agentRuleState, "sutang_meeting_reward_rule", SUTANG_MEETING_REWARD_RULE),
-    editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE),
+    sutangActionLadderPrompt,
     editableRule(agentRuleState, "sutang_night_meeting_boundary", SUTANG_NIGHT_MEETING_RULE),
     editableRule(agentRuleState, "sutang_family_and_voice_boundary", SUTANG_FAMILY_VOICE_RULE),
     editableRule(agentRuleState, "sutang_contrast_mature_hook", SUTANG_CONTRAST_MATURE_RULE),

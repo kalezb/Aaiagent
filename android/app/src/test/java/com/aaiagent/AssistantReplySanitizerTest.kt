@@ -54,6 +54,14 @@ class AssistantReplySanitizerTest {
     }
 
     @Test
+    fun `also accepts double pipe separated model output`() {
+        assertEquals(
+            "在的\n刚忙完\n晚点聊",
+            AssistantReplySanitizer.clean("在的||你说：刚忙完||[23:10] 晚点聊")
+        )
+    }
+
+    @Test
     fun `removes leaked dated context markers from the middle of a reply`() {
         val raw = "位置就算了，才聊几天就互换地址太快了 [soul 10/01 18:57] 你也是急性子，见面的事先放放吧"
 

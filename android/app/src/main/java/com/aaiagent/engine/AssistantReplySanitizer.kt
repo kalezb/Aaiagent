@@ -6,7 +6,7 @@ package com.aaiagent.engine
  * such as "你说呢" are not modified.
  */
 object AssistantReplySanitizer {
-    private val segmentSeparator = Regex("\\r?\\n|\\|\\|\\|")
+    private val segmentSeparator = Regex("\\r?\\n|\\|{2,3}")
     private val contextPrefix = Regex("""^\[[^\]\r\n]{1,100}]\s*(?:你说|对方说|我说|对方|我)\s*[：:]\s*""")
     private val speakerPrefix = Regex("""^(?:你说|对方说|我说|对方|我)\s*[：:]\s*""")
     private val embeddedSpeakerLabel = Regex("""(?:你说|对方说|我说|对方|我)\s*[：:]\s*""")

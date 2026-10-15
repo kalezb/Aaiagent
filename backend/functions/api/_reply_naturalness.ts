@@ -67,7 +67,8 @@ function normalizeReplySegment(value, options = {}) {
 }
 
 export function normalizeAssistantReplyPresentation(value, options = {}) {
-  const original = splitPresentationSegments(value);
+  const preprocessed = String(value || "").replace(/\|{2,3}/gu, "|||");
+  const original = splitPresentationSegments(preprocessed);
   if (!original) return "";
   return original
     .split(/(\|\|\||\r?\n)/u)
@@ -79,7 +80,9 @@ export function normalizeAssistantReplyPresentation(value, options = {}) {
 }
 
 function splitPresentationSegments(value) {
-  const text = String(value || "").trim();
+  const text = String(value || "")
+    .replace(/\|{2,3}/gu, "|||")
+    .trim();
   if (!text || /(?:\|\|\||\r?\n)/u.test(text)) return text;
 
   const sentenceParts = text

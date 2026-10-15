@@ -13,8 +13,10 @@ import {
   isDoubanContactRequest,
   OUTPUT_HARD_RULE,
   resolveContactRequestPolicy,
+  resolveSutangMicroStep,
   sanitizeContactDisclosure,
 } from "../functions/api/_reply_policy";
+import { normalizeAssistantReplyPresentation } from "../functions/api/_reply_naturalness";
 import {
   extractExplicitCustomerFacts,
   isCheapTalkGenerosity,
@@ -497,5 +499,40 @@ describe("Su Tang v13 persona", () => {
     expect(optimizedPrompt).toContain("别拿睡觉当话题");
     expect(optimizedPrompt).toContain("严禁反咬自己说‘我没套你话’");
   });
+
+  it("resolves the 6 micro steps accurately and cleans double-pipe bubble separators", () => {
+    // 1. 验证 6 级微台阶准确定位
+    expect(resolveSutangMicroStep("你好呀").step).toBe(1);
+    expect(resolveSutangMicroStep("180的个子162斤有没有安全感哇").step).toBe(2);
+    expect(resolveSutangMicroStep("必须有分寸撒，肯定不介入生活").step).toBe(3);
+    expect(resolveSutangMicroStep("听你的，明天去开房吧").step).toBe(4);
+    expect(resolveSutangMicroStep("怎么订？发链接给我代付").step).toBe(5);
+    expect(resolveSutangMicroStep("代付成功了").step).toBe(6);
+
+    // 2. 验证微台阶指令精准注入提示词
+    const defaultState = buildAgentRuleState(
+      DEFAULT_AGENT_RULES.map((rule) => ({ ...rule, legacy_rule_id: rule.id, deleted_at: 0 })),
+      "female_sutang",
+    );
+    const step2Prompt = buildLayeredSystemPrompt({
+      personaId: "female_sutang",
+      personaPrompt: "你是苏棠，29岁，重庆两江新区，居家电商运营。",
+      personaFacts: null,
+      platform: "soul",
+      homeLocation: { city: "重庆", district: "两江新区" },
+      workLocation: { city: "重庆", district: "江北区" },
+      messages: [{ role: "user", content: "180个子162斤有没有安全感" }],
+      historyMessages: [],
+      xingmuSoulScope: false,
+      agentRuleState: defaultState,
+    });
+    expect(step2Prompt).toContain("【当前微台阶｜第2步：敲打立规矩】");
+    expect(step2Prompt).toContain("泼冷水立规矩：光块头大或嘴上说说不算数");
+
+    // 3. 验证双竖线 || 自动清洗为标准切分符 |||
+    const cleaned = normalizeAssistantReplyPresentation("你看着挺老实的||心里是不是也好奇我这一面", { softParticles: true });
+    expect(cleaned).toBe("你看着挺老实的|||心里是不是也好奇我这一面");
+  });
 });
+
 

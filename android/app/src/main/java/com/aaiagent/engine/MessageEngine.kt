@@ -2621,7 +2621,7 @@ class MessageEngine(
             }
         }
 
-        val segments = outgoing.split(Regex("\\r?\\n|\\|\\|\\|"))
+        val segments = outgoing.split(Regex("\\r?\\n|\\|{2,3}"))
             .map(String::trim)
             .filter(String::isNotEmpty)
         val rawParts = if (segments.isNotEmpty()) segments else listOf(outgoing.trim())
