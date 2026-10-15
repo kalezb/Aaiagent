@@ -43,11 +43,11 @@ describe("reply presentation and repair", () => {
     expect(normalizeAssistantReplyPresentation("评估报价，搜 shanhs668")).toBe("评估报价，搜 shanhs668");
   });
 
-  it("splits independent long reply points into explicit delivery segments", () => {
+  it("splits only at complete sentence endings and never at spaces", () => {
     expect(normalizeAssistantReplyPresentation(
       "自己住清静，我也一个人住惯了，屋子随便收拾 严肃是因为说的都是正经话，没在跟你谈生意 不累，刚收拾完坐下",
     )).toBe(
-      "自己住清静，我也一个人住惯了，屋子随便收拾|||严肃是因为说的都是正经话，没在跟你谈生意|||不累，刚收拾完坐下",
+      "自己住清静，我也一个人住惯了，屋子随便收拾 严肃是因为说的都是正经话，没在跟你谈生意 不累，刚收拾完坐下",
     );
     expect(normalizeAssistantReplyPresentation(
       "不爱拍是真的，不是端着。你到家了没？还是还在那坐着？",

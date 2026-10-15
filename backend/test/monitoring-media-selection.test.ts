@@ -602,9 +602,8 @@ describe("media selection", () => {
     // 真机（遇见 2026-10-07 23:10）：她发出去“刚关了电脑 屋里就剩”，对方回“就剩什么”。
     const reply = "刚关了电脑 屋里就剩\n我这盏灯还亮着呢";
     const fixed = capReplyLength(reply, "你在干嘛");
-    expect(fixed).not.toBe("刚关了电脑 屋里就剩");
-    expect(fixed).not.toMatch(/剩$/u);
-    // 不许把“刚关了电脑 屋里就剩”这种半句直接发出去。
+    // 句中换行只补成空格，整句话完整留下，不能切成半句。
+    expect(fixed).toBe("刚关了电脑 屋里就剩 我这盏灯还亮着呢");
   });
 
   it("drops a standalone opener and keeps the actual reply", () => {
@@ -651,6 +650,29 @@ describe("media selection", () => {
 
     expect(fixed).toBe("刚忙完|||你这起床方式也太直接了|||今天不用赶着出门吗");
     expect(fixed.split("|||")).toHaveLength(3);
+  });
+
+  it("keeps model fragments separate instead of gluing them into a new sentence", () => {
+    const fixed = capReplyLength(
+      "大学城啊|||那头我可不太熟|||你常往那边跑？",
+      "我在大学城",
+    );
+
+    expect(fixed).toBe("大学城啊|||那头我可不太熟|||你常往那边跑？");
+  });
+
+  it("does not split a complete sentence by length or spaces", () => {
+    const reply = "大学城啊 那头我可不太熟 你常往那边跑？";
+    expect(capReplyLength(reply, "我在大学城")).toBe(reply);
+  });
+
+  it("drops extra whole pieces instead of packing fragments together", () => {
+    const fixed = capReplyLength(
+      "第一句|||第二句|||第三句|||第四句",
+      "继续说",
+    );
+
+    expect(fixed).toBe("第一句|||第二句|||第三句");
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {

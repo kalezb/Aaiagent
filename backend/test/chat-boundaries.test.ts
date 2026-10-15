@@ -903,10 +903,10 @@ describe("chat boundaries", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    // 回复按内容自然分成三段，每段都是完整短句，不再按他最后一句只有 4 个字就硬砍。
+    // 没有模型分隔符时整句完整发出，不能按逗号或字数从中间切开再重新拼接。
     expect(body).toMatchObject({
       action: "send",
-      reply: "认识一下可以啊|||我平时做旧数码回收|||主要看机子情况",
+      reply: "认识一下可以啊，我平时做旧数码回收，主要看机子情况",
     });
     expect(body.reply).not.toBe("嗯，你刚说的这个我记住了。");
   });

@@ -1,33 +1,19 @@
 /**
- * 回复段数由回复内容本身决定，正常情况下 1~3 条自然短句。
+ * 回复段数只由模型已经给出的分隔决定，正常情况下 1~3 条自然短句。
  *
- * 2026-10-15 用户纠正：不要按“对方发了几行”机械决定回几段，也不要为了像真人
- * 硬凑两段。这里保留最多三条的硬上限，具体一条、两条还是三条由清洗后的内容决定。
+ * 2026-10-15 用户纠正：禁止按字数、逗号、空格或某个字把完整句子从中间切开，
+ * 也禁止把碎片重新用空格拼成一句。这里保留最多三条的硬上限，超出只丢掉整段，
+ * 绝不改变已有段的内部文字。
  */
 export function replyLengthBudget(_incomingText) {
-  return { maxSegments: 3, maxCharsPerSegment: 20, softLimit: 20 };
+  return { maxSegments: 3, maxCharsPerSegment: Number.POSITIVE_INFINITY, softLimit: Number.POSITIVE_INFINITY };
 }
 
-const INNER_PRONOUN_BREAK = /(?<=[\u4e00-\u9fa5])(?=[我你他她它])/u;
-const AFTER_PARTICLE_BREAK = /(?<=[呀啊呢吧啦嘛哦哟哈])(?=[^呀啊呢吧啦嘛哦哟哈])/u;
 const NON_ESSENTIAL_LEAD = /^(?:看这边|看这里|你看|喂+|哎+|听我说|听我讲|我跟你说|跟你说|你先听|先听我说|说真的|等下|等等|先等等)[呀啊呢吧嘛哦哟哈。！!？?…~～\s]*$/u;
 const NON_ESSENTIAL_LEAD_PREFIX = /^(?:看这边|看这里|你看|喂+|哎+|听我说|听我讲|我跟你说|跟你说|你先听|先听我说|说真的|等下|等等|先等等)[呀啊呢吧嘛哦哟哈]{0,3}\s*[，,：:；;、.。!！?？…~～-]+\s*/u;
-const HANGING_TAIL = /(?:剩|就|还)$/u;
-const HANGING_PRONOUN_PHRASE = /^(?:我|你|他|她|它|这|那)$|^[我你他她它](?:的|是|和|跟|把|被|给|让|从|向|对|为|有)$/u;
-
-function plainLength(value) {
-  return String(value || "").replace(/\s+/gu, "").length;
-}
 
 function isNonEssentialLead(value) {
   return NON_ESSENTIAL_LEAD.test(String(value || "").trim());
-}
-
-function isHangingTail(value) {
-  const text = String(value || "").trim();
-  if (!text || /[。！？!?；;…]$/u.test(text)) return false;
-  const plain = text.replace(/\s+/gu, "");
-  return HANGING_TAIL.test(plain) || HANGING_PRONOUN_PHRASE.test(plain);
 }
 
 function dropNonEssentialLeadingPieces(pieces) {
@@ -40,28 +26,6 @@ function dropNonEssentialLeadingPieces(pieces) {
     if (withoutLead) output.push(withoutLead);
   }
   return output.length ? output : pieces;
-}
-
-function mergeCrossSegmentTail(pieces, limit) {
-  const output = [];
-  for (const piece of pieces) {
-    const value = String(piece || "").trim();
-    if (!value) continue;
-    if (output.length && isHangingTail(output[output.length - 1])) {
-      const combined = output[output.length - 1] + " " + value;
-      if (plainLength(combined) <= Math.max(limit, 24)) {
-        output[output.length - 1] = combined;
-      } else {
-        output[output.length - 1] = value;
-      }
-    } else {
-      output.push(value);
-    }
-  }
-  while (output.length && isHangingTail(output[output.length - 1])) {
-    output.pop();
-  }
-  return output;
 }
 
 function comparableText(value) {
@@ -106,33 +70,16 @@ function dropRepeatedThoughts(pieces) {
   return output;
 }
 
-function fixHangingPieces(pieces) {
-  const fixed = [];
-  for (const piece of pieces) {
-    if (fixed.length && isHangingTail(fixed[fixed.length - 1])) {
-      fixed[fixed.length - 1] = fixed[fixed.length - 1] + " " + piece;
-    } else {
-      fixed.push(piece);
-    }
-  }
-  while (fixed.length && isHangingTail(fixed[fixed.length - 1])) fixed.pop();
-  return fixed.length ? fixed : pieces;
-}
-
-function splitOverlongClause(clause, limit) {
-  const plain = String(clause || "").replace(/\s+/gu, "");
-  if (plain.length <= limit) return [clause];
-  const parts = String(clause)
-    .split(INNER_PRONOUN_BREAK)
-    .flatMap((part) => part.split(AFTER_PARTICLE_BREAK))
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return parts.length > 1 ? parts : [clause];
+function splitSafeLineBreaks(value) {
+  return String(value || "")
+    // 句号、问号等完整停顿后的换行是安全分段；句中的换行只补成空格。
+    .replace(/(?<=[。！？!?；;…])\r?\n\s*/gu, "|||")
+    .replace(/\r?\n+/gu, " ");
 }
 
 /**
- * 把回复收口成自然短句：内容有多少就说多少，最多三条，每条不超过20个字。
- * 超出的只删不换；开头引子单独成段会丢掉；半句会补全或删除。
+ * 只整理模型已经分好的消息段：去引子、去重复、最多三条。
+ * 不再从段内切字，也不把段与段重新粘起来。
  */
 export function capReplyLength(value, incomingText) {
   const reply = String(value || "").trim();
@@ -140,27 +87,14 @@ export function capReplyLength(value, incomingText) {
   if (/sutang2026/iu.test(reply)) return reply;
   const budget = replyLengthBudget(incomingText);
   const normalized = reply.replace(/(?:你说|对方说|我说|我)\s*[：:]\s*/gu, "|||");
-  const rawSegments = normalized.split("|||").map((part) => part.trim()).filter(Boolean);
-  const queues = rawSegments.map((segment) => {
-    if (segment.replace(/\s+/gu, "").length <= budget.softLimit) return [segment];
-    let clauses = segment
-      .split(/(?<=[，,。！!？?；;、])/u)
-      .map((part) => part.trim().replace(/[，,。！!？?；;、]+$/u, "").trim())
-      .filter(Boolean);
-    if (clauses.length <= 1) {
-      clauses = segment
-        .split(/\s+/u)
-        .map((part) => part.trim().replace(/[，,。！!？?；;、]+$/u, "").trim())
-        .filter(Boolean);
-    }
-    if (clauses.length > 1) return fixHangingPieces(clauses);
-    return [splitOverlongClause(segment, budget.maxCharsPerSegment)[0] || segment];
-  });
-  const flattened = queues.flat();
-  const withoutOpeners = dropNonEssentialLeadingPieces(flattened);
+  const rawSegments = normalized
+    .split("|||")
+    .map(splitSafeLineBreaks)
+    .flatMap((part) => part.split("|||"))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const withoutOpeners = dropNonEssentialLeadingPieces(rawSegments);
   const withoutRepeats = dropRepeatedThoughts(withoutOpeners);
-  const completePieces = mergeCrossSegmentTail(withoutRepeats, budget.maxCharsPerSegment);
-  const finalPieces = completePieces.length ? completePieces : withoutRepeats;
-  const out = finalPieces.slice(0, budget.maxSegments);
+  const out = withoutRepeats.slice(0, budget.maxSegments);
   return out.length ? out.join("|||") : reply;
 }

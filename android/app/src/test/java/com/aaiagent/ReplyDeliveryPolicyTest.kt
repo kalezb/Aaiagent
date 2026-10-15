@@ -84,40 +84,50 @@ class ReplyDeliveryPolicyTest {
     fun `natural short replies are not padded to three parts`() {
         assertEquals(listOf("在的"), ReplyDeliveryPolicy.prepareParts(listOf("在的")))
         assertEquals(
-            listOf("在的 刚忙完"),
+            listOf("在的", "刚忙完"),
             ReplyDeliveryPolicy.prepareParts(listOf("在的", "刚忙完"))
         )
     }
 
     @Test
-    fun `more than three parts are compacted instead of sent as a long burst`() {
+    fun `more than three parts drop the tail and never glue fragments together`() {
         assertEquals(
-            listOf("一 二 三 四 五"),
+            listOf("一", "二", "三"),
             ReplyDeliveryPolicy.prepareParts(listOf("一", "二", "三", "四", "五"))
         )
     }
 
     @Test
-    fun `planning folds incomplete fragments into one natural bubble`() {
+    fun `planning keeps incomplete fragments separate instead of folding them`() {
         assertEquals(
-            listOf("一 二 三"),
+            listOf("一", "二", "三"),
             ReplyDeliveryPolicy.planParts(listOf("一", "二", "三"), randomUnit = 0.1)
         )
         assertEquals(
-            listOf("一 二 三"),
+            listOf("一", "二", "三"),
             ReplyDeliveryPolicy.planParts(listOf("一", "二", "三"), randomUnit = 0.5)
         )
         assertEquals(
-            listOf("一 二 三"),
+            listOf("一", "二", "三"),
             ReplyDeliveryPolicy.planParts(listOf("一", "二", "三"), randomUnit = 0.95)
         )
     }
 
     @Test
-    fun `two model parts can still be sent as one short reply`() {
+    fun `two model parts stay separate`() {
         assertEquals(
-            listOf("在的 刚忙完"),
+            listOf("在的", "刚忙完"),
             ReplyDeliveryPolicy.planParts(listOf("在的", "刚忙完"), randomUnit = 0.2)
+        )
+    }
+
+    @Test
+    fun `model fragments are never glued into a new sentence`() {
+        assertEquals(
+            listOf("大学城啊", "那头我可不太熟", "你常往那边跑？"),
+            ReplyDeliveryPolicy.planParts(
+                listOf("大学城啊", "那头我可不太熟", "你常往那边跑？")
+            )
         )
     }
 

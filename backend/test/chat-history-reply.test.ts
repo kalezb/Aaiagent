@@ -860,8 +860,8 @@ describe("chat history and reply", () => {
 
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
-      // 两段都是完整表达，按内容保留；不再因为对方发得短就机械砍掉第二段。
-      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86|||\u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
+      // 没有模型分隔符时整句完整发出，不能按空格从中间切开。
+      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86 \u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
     });
   });
 

@@ -89,17 +89,6 @@ function splitPresentationSegments(value) {
   if (sentenceParts.length >= 2 && sentenceParts.every((part) => visibleReplyLength(part) >= 2)) {
     return sentenceParts.join("|||");
   }
-
-  const spaceParts = text.split(/\s+/u).map((part) => part.trim()).filter(Boolean);
-  const visibleLength = visibleReplyLength(text);
-  if (
-    visibleLength >= 30 &&
-    spaceParts.length >= 2 &&
-    spaceParts.length <= 3 &&
-    spaceParts.every((part) => visibleReplyLength(part) >= 4)
-  ) {
-    return spaceParts.join("|||");
-  }
   return text;
 }
 
