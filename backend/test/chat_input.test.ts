@@ -4,6 +4,7 @@ import {
   normalizeHostingMode,
   normalizePlatform,
   prepareChatInput,
+  validateTurnSnapshot,
 } from "../functions/api/_chat_input";
 import { DEFAULT_PROGRAM_RULES, normalizeProgramRules } from "../functions/api/_program_rules";
 
@@ -54,5 +55,30 @@ describe("chat input layer", () => {
       reason: "untranscribed_voice_fixed",
       reply: "在呢 你打字跟我说嘛",
     });
+  });
+
+  it("accepts only a complete turn snapshot that matches the messages", () => {
+    const messages = [
+      { role: "user", content: "你说呀", created_at: 100 },
+      { role: "user", content: "你说多少", created_at: 101 },
+    ];
+    expect(validateTurnSnapshot({
+      turn_id: "turn-1",
+      message_count: 2,
+      last_message_at: 101,
+      capture_complete: true,
+    }, messages)).toEqual({ ok: true, reason: "" });
+    expect(validateTurnSnapshot({
+      turn_id: "turn-1",
+      message_count: 1,
+      last_message_at: 101,
+      capture_complete: true,
+    }, messages)).toEqual({ ok: false, reason: "snapshot_message_count_mismatch" });
+    expect(validateTurnSnapshot({
+      turn_id: "turn-1",
+      message_count: 2,
+      last_message_at: 101,
+      capture_complete: false,
+    }, messages)).toEqual({ ok: false, reason: "snapshot_capture_incomplete" });
   });
 });

@@ -40,6 +40,7 @@ export interface NormalizedChatRequest {
   conversationStage: string;
   relationshipOrigin: string;
   requestId: string;
+  snapshot: unknown;
 }
 
 const CONVERSATION_STAGES = ["first_contact", "continuing", "familiar", "soulmate", "unknown"];
@@ -71,7 +72,28 @@ export function normalizeChatRequest(body: Record<string, any>): NormalizedChatR
     conversationStage: normalizeConversationStage(body.conversation_stage),
     relationshipOrigin: normalizeRelationshipOrigin(body.relationship_origin),
     requestId: String(body.request_id || "").trim().slice(0, 120) || crypto.randomUUID(),
+    snapshot: body.snapshot && typeof body.snapshot === "object" ? body.snapshot : null,
   };
+}
+
+export function validateTurnSnapshot(snapshot: any, messages: any[]) {
+  if (!snapshot) return { ok: true, reason: "" };
+  const turnId = String(snapshot.turn_id || "").trim();
+  const messageCount = Number(snapshot.message_count);
+  const lastMessageAt = Number(snapshot.last_message_at);
+  if (!turnId) return { ok: false, reason: "snapshot_turn_id_missing" };
+  if (snapshot.capture_complete !== true) {
+    return { ok: false, reason: "snapshot_capture_incomplete" };
+  }
+  if (!Number.isInteger(messageCount) || messageCount !== messages.length) {
+    return { ok: false, reason: "snapshot_message_count_mismatch" };
+  }
+  const lastMessage = messages.at(-1);
+  const actualLastAt = Number(lastMessage?.created_at || 0);
+  if (lastMessageAt > 0 && actualLastAt > 0 && Math.abs(lastMessageAt - actualLastAt) > 3) {
+    return { ok: false, reason: "snapshot_last_message_mismatch" };
+  }
+  return { ok: true, reason: "" };
 }
 
 export type PreparedChatInput =

@@ -98,6 +98,7 @@ import {
   normalizeChatRequest,
   prepareChatInput,
   validateChatMessages,
+  validateTurnSnapshot,
 } from "./_chat_input";
 import { parseStructuredReply } from "./_reply_length";
 import {
@@ -231,6 +232,14 @@ export async function handleChatRequest({ request, env, context, path, method })
         });
       }
       let messages = preparedInput.messages;
+      const snapshotCheck = validateTurnSnapshot(normalizedRequest.snapshot, messages);
+      if (!snapshotCheck.ok) {
+        return json({
+          action: "resync",
+          reason: snapshotCheck.reason,
+          request_id: requestId,
+        });
+      }
       if (
         isStickerOnlyTurn(messages) &&
         !messages.some((message) => isGreetingStickerContent(message?.content))

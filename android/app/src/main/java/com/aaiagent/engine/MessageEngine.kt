@@ -2211,6 +2211,7 @@ class MessageEngine(
                 "chat request attempt=${it + 1}/$MAX_LLM_RETRIES contact=${context.contactName} messages=${requestMessages.size} requestId=$requestId"
             )
             val httpStartedAtNanos = System.nanoTime()
+            val turnSnapshot = ConversationTurnSnapshotPolicy.build(requestId, requestMessages)
             val chatCall = try {
                 api.chat(
                     ChatRequest(
@@ -2228,6 +2229,7 @@ class MessageEngine(
                                 "created_at" to (it.timestampMillis?.div(1000L) ?: 0L)
                             )
                         },
+                        snapshot = turnSnapshot,
                         conversationTimeline = conversationTimeline,
                         conversationStage = context.conversationStage.name.lowercase(),
                         relationshipOrigin = context.relationshipOrigin.name.lowercase(),
@@ -2321,6 +2323,7 @@ class MessageEngine(
             }
 
             val takeoverReason = chatResponse.reason.orEmpty()
+            if (chatResponse.action == "resync") { RuntimeJournal.recovery("后台要求重新读取会话: " + takeoverReason.ifBlank { "snapshot_mismatch" }); queueStaleRetry(context, delayMs = 500L); wakeSignal.trySend(Unit); returnToMessageList(adapter, leaseToken, "backend resync"); return null }
             if (chatResponse.action == "skip" && (takeoverReason == "human_takeover_active" || takeoverReason == "outside_ai_hours")) {
                 val waitMs = if (takeoverReason == "outside_ai_hours") 30 * 60 * 1000L else 10 * 60 * 1000L
                 contactCooldown.persistLeave(

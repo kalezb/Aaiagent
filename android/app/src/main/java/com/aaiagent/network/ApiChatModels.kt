@@ -10,12 +10,20 @@ data class ChatRequest(
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
     val messages: List<Map<String, Any>>,
+    val snapshot: ChatTurnSnapshot? = null,
     @SerializedName("conversation_timeline") val conversationTimeline: String? = null,
     @SerializedName("conversation_stage") val conversationStage: String = "unknown",
     @SerializedName("relationship_origin") val relationshipOrigin: String = "unknown",
     /** 本机当前平台账号昵称，用户手填；空串表示没填（见 SelfNicknamePolicy）。 */
     @SerializedName("self_nickname") val selfNickname: String = "",
     val location: Map<String, Map<String, String>>? = null
+)
+
+data class ChatTurnSnapshot(
+    @SerializedName("turn_id") val turnId: String,
+    @SerializedName("message_count") val messageCount: Int,
+    @SerializedName("last_message_at") val lastMessageAt: Long,
+    @SerializedName("capture_complete") val captureComplete: Boolean,
 )
 
 data class ChatResponse(
