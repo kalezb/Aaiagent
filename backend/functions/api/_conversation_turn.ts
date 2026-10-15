@@ -16,6 +16,7 @@ function sameLine(left, right) {
 
 function shouldJoinTurn(previous, current) {
   if (!previous || previous.role !== current.role) return false;
+  if (previous.isCurrent !== current.isCurrent) return false;
   if (current.forceMerge) return true;
   if (!previous.epoch || !current.epoch) return false;
   const gap = current.epoch - previous.epoch;
@@ -63,7 +64,13 @@ export function buildConversationTurnMessages({
     const epoch = requestMessageEpochSeconds(message) || 0;
     const original = String(message?.content || "").trim();
     if (!original) return;
-    const line = { role: normalizedRole(message), original, epoch, forceMerge };
+    const line = {
+      role: normalizedRole(message),
+      original,
+      epoch,
+      forceMerge,
+      isCurrent: forceMerge,
+    };
     if (seenLines.some((seen) => sameLine(seen, line))) {
       previousEpoch = epoch || previousEpoch;
       return;
@@ -104,20 +111,21 @@ export function buildConversationTurnMessages({
         content: entry.content,
         epoch: entry.epoch,
         parts: [entry.original],
+        isCurrent: entry.isCurrent,
       });
     }
   }
   for (let index = 0; index < turns.length; index += 1) {
     const turn = turns[index];
     const previous = turns[index - 1];
-    if (turn.role !== "user" || previous?.role !== "assistant" || !turnLooksLikeShortAnswer(turn)) {
+    if (!turn.isCurrent || turn.role !== "user" || previous?.role !== "assistant" || !turnLooksLikeShortAnswer(turn)) {
       continue;
     }
     const previousText = previewTurnText(previous.parts.at(-1));
     const answerText = turn.parts.filter((part) => !isStickerStateContent(part)).join(" / ");
     const stickerText = stickerSummary(turn);
     if (previousText && answerText) {
-      turn.content += "\n\n【把这一问一答连起来理解】\n我问：" + previousText +
+      turn.content = "【把这一问一答连起来理解】\n我问：" + previousText +
         "\n对方回：" + answerText +
         (stickerText ? "\n对方还发了个表情：" + stickerText : "");
     }

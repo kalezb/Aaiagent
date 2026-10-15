@@ -30,8 +30,6 @@ describe("conversation turns and sticker state", () => {
     expect(turns).toHaveLength(2);
     expect(turns[0]).toMatchObject({ role: "assistant" });
     expect(turns[1].role).toBe("user");
-    expect(turns[1].content).toContain("对方：我");
-    expect(turns[1].content).toContain("[表情包：小害羞（害羞）]");
     expect(turns[1].content).toContain("把这一问一答连起来理解");
     expect(turns[1].content).toContain("我问：一起玩 玩什么呀");
     expect(turns[1].content).toContain("对方回：我");

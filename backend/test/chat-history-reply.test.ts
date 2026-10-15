@@ -649,7 +649,6 @@ describe("chat history and reply", () => {
     expect(latest.content).toContain("对方：现在这句话");
     expect(latest.content.split("\n").find((line) => line.includes("对方：现在这句话")))
       .toMatch(/^【\d{2}\/\d{2} \d{2}:\d{2}·读到】/);
-    expect(latest.content).toContain("把这一问一答连起来理解");
     // 只给绝对时刻，不再给“多久前”
     expect(latest.content).not.toContain("前】");
   });
