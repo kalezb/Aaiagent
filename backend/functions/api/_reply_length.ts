@@ -106,7 +106,7 @@ function splitOnlyAtCompleteSentences(value) {
  * 1. 只认模型返回的 messages 数组，旧格式只认 ||| 和换行；
  * 2. 不再按字数、逗号、空格或某个字从句子中间切开；
  * 3. 超长兜底只在句号、问号等完整停顿处分开；
- * 4. 仍然超长的整句只丢弃，不切半句。
+ * 4. 完整句子优先保留；只有实在无法整理时才用兜底。
  */
 export function capReplyLength(value, _incomingText) {
   const reply = String(value || "").trim();
@@ -121,9 +121,8 @@ export function capReplyLength(value, _incomingText) {
   for (const message of parsed.messages) {
     for (const piece of splitOnlyAtCompleteSentences(message)) {
       const length = visibleLength(piece);
-      if (length > REPLY_HARD_CHARS) continue;
       if (output.length >= REPLY_MAX_SEGMENTS) break;
-      if (totalChars + length > REPLY_TOTAL_CHARS) break;
+      if (output.length > 0 && totalChars + length > REPLY_TOTAL_CHARS) break;
       output.push(piece);
       totalChars += length;
     }

@@ -712,10 +712,11 @@ describe("media selection", () => {
     )).toBe("带娃的人 哪有清闲的|||你反应这么大 是没见过还是不信");
   });
 
-  it("rejects an overlong unstructured message instead of sending a long paragraph", () => {
+  it("keeps long complete thoughts instead of replacing them with a fallback line", () => {
     const long = "这是一个超过二十五个字并且完全没有任何停顿的完整想法必须继续往下说";
-    expect(capReplyLength(JSON.stringify({ messages: [long] }), "在吗"))
-      .toBe("嗯 你接着说");
+    expect(capReplyLength(JSON.stringify({ messages: [long] }), "在吗")).toBe(long);
+    expect(capReplyLength("行动就是别光在手机上打字 周末两江新区 你敢出来见一面吗？", "你在干嘛")).toBe("行动就是别光在手机上打字 周末两江新区 你敢出来见一面吗？");
+    expect(capReplyLength("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？", "你好")).toBe("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？");
   });
 
   it("only uses complete punctuation when an overlong message needs a safe fallback split", () => {
