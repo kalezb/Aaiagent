@@ -17,7 +17,8 @@ function cleanStaleReplySegment(value, policy) {
     return staleReplyFallback(policy);
   }
   return reply
-    .replace(/^[，,。！？!?\s]+|[，,。！？!?\s]+$/gu, "")
+    .replace(/^[，,。！？!?\s]+/u, "")
+    .replace(/[，,。\s]+$/u, "")
     .replace(/\s{2,}/gu, " ")
     .trim();
 }

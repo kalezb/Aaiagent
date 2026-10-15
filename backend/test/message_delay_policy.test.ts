@@ -70,6 +70,8 @@ describe("message delay policy", () => {
 
     const overnight = policyFor(11 * 3600);
     expect(sanitizeStaleAssistantReply("刚忙完 你睡了吗", overnight)).toBe("刚忙完 你睡了吗");
+    expect(sanitizeStaleAssistantReply("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？", overnight))
+      .toBe("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？");
     const twoDays = policyFor(2 * 86400);
     expect(sanitizeStaleAssistantReply("刚看到|||咋啦", twoDays)).toBe("刚看到|||咋啦");
   });
