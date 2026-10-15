@@ -48,7 +48,21 @@ export function parseStructuredReply(value) {
   if (jsonText) {
     try {
       const parsed = JSON.parse(jsonText);
-      const messages = Array.isArray(parsed) ? parsed : parsed?.messages;
+      const messages = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.messages)
+          ? parsed.messages
+          : Array.isArray(parsed?.reply)
+            ? parsed.reply
+            : typeof parsed?.reply === "string"
+              ? parsed.reply.split("|||")
+              : typeof parsed?.message === "string"
+                ? [parsed.message]
+                : typeof parsed?.content === "string"
+                  ? [parsed.content]
+                  : typeof parsed?.text === "string"
+                    ? [parsed.text]
+                    : null;
       if (!Array.isArray(messages)) {
         return {
           ok: false,
