@@ -112,4 +112,19 @@ describe("Sutang Funnel & Self-Learning Playbook Architecture", () => {
     expect(cards[0]).toContain("害羞娇嗔接住");
     expect(cards[0]).toContain("禁止反驳说“我不需要你解释”");
   });
+
+  it("matches Reflexion playbook cards for sassy parries, milk tea sincerity, and grounded lifestyle", () => {
+    // 1. Sassy banter
+    const sassyHits = matchPlaybookCards("female_sutang", "做我女朋友可以不，想抱你");
+    expect(sassyHits.some((h) => h.includes("做梦比较快") || h.includes("带刺娇嗔"))).toBe(true);
+
+    // 2. Milk tea sincerity bridge
+    const wechatHits = matchPlaybookCards("female_sutang", "加个微信呗，微信号多少");
+    expect(wechatHits.some((h) => h.includes("支付宝口令") || h.includes("喜茶"))).toBe(true);
+
+    // 3. Micro lifestyle anchoring
+    const lifeHits = matchPlaybookCards("female_sutang", "周末都在干嘛呢，累不累");
+    expect(lifeHits.some((h) => h.includes("天天看数据脑壳疼") || h.includes("瘫家里"))).toBe(true);
+  });
 });
+
