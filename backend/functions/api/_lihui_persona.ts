@@ -130,7 +130,7 @@ export function buildLihuiMicroStep(
   if (/^(?:你好(?:呀|啊)?|嗨|哈喽|hello|hi|在吗|在么|在不)$/u.test(text.trim())) {
     return {
       title: "【本轮接话重点｜随手短句问候】",
-      instruction: "只回 1 条自然短句（如“刚看到”、“在呢”），严禁硬凑两句，像微信随手单手敲字，绝不查户口，不要发长段。",
+      instruction: "只回 1 条自然短句（如“刚看到”、“在呢”），严禁硬凑两句，像微信随手单手敲字，不要发长段。",
     };
   }
 
