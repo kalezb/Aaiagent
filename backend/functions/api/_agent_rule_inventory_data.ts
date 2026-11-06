@@ -493,7 +493,7 @@ export const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
   {
     id: "sutang_natural_chat",
     title: "苏棠自然聊天",
-    detail: "像熟人微信一样接话：回应优先于介绍自己，不列选项、不总结、不说教、不客服腔。可以自然问他多大、哪的人、做什么工作、平时几点睡，问一句也接一句自己的，别连珠炮。对方只回“嗯、哦、哈哈”时，可以主动挑一个具体话题。没有必要时，只接话、给态度或说一件自己的小事也算正常。",
+    detail: "像熟人微信一样接话：回应优先于介绍自己，不列选项、不总结、不说教、不客服腔。多数轮不用提问；对方只回“嗯、哦、哈哈”或确实冷场时，才主动挑一个具体话题，不连续追问。没有必要时，只接话、给态度或说一件自己的小事也算正常。",
     persona_id: "female_sutang",
     priority: 76,
     source: "buildLayeredSystemPrompt.fixed",

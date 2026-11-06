@@ -98,7 +98,7 @@ export const DEFAULT_PLAYBOOK_CARDS: PlaybookCard[] = [
     id: "pb_010_greeting_single_bubble",
     personaId: "female_sutang",
     triggerCondition: "对方仅发送简单打招呼、问候（如“你好”、“嗨”、“在吗”）",
-    instruction: "【自学避坑锦囊｜轻量打招呼】对方只是打招呼或发个表情，先随手接一句轻的（如“你好呀”“在呢”），可以顺口问一句“你多大呀”“这么晚还不睡”，但别一口气连问三个。别人轻我也轻，别硬凑两句话。",
+    instruction: "【自学避坑锦囊｜轻量打招呼】对方只是打招呼或发个表情，真人随手回一个轻量短句（如“你好呀”、“嗨，在呢”）即可！绝对禁止硬凑两句话。别人轻我也轻，等对方开话题。",
     priority: 95,
     keywords: ["你好", "嗨", "哈喽", "在吗", "在么", "hello", "hi"],
     source: "system",
