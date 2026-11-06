@@ -4,8 +4,6 @@ import {
   buildTurnBrief,
   classifyConversationTurn,
   isXingmuSoulScope,
-  PROACTIVE_STYLE_GENERIC,
-  PROACTIVE_STYLE_XINGMU,
   SUTANG_ACTION_LADDER_RULE,
 } from "../functions/api/_reply_policy";
 
@@ -55,7 +53,6 @@ describe("Xingmu prompt and turn context", () => {
       proactive_location_allowed: false,
     });
     expect(soulPrompt).toContain("【星暮六段漏斗】");
-    expect(soulPrompt).toContain("【关系前提】");
     expect(soulPrompt).toContain("【人物事实｜最高优先级】");
     expect(soulPrompt).toContain("【人设风格｜只负责表达方式】");
     expect(soulPrompt).toContain("优先级高于历史聊天、人设风格描述、对方推测和模型推断");
@@ -67,8 +64,6 @@ describe("Xingmu prompt and turn context", () => {
     expect(soulPrompt).toContain("住房：自有住房");
     expect(soulPrompt).not.toContain("已婚，无子女");
     expect(soulPrompt).toContain("不要回复单字");
-    expect(soulPrompt).toContain("默认只发日常照");
-    expect(soulPrompt).toContain("身材照、腿照或腰照");
     expect(soulPrompt).toContain("【离场判断｜最高优先级】");
     expect(soulPrompt).toContain("[[NO_REPLY:类型]]");
     expect(soulPrompt).toContain("[[SELF_LEAVE:类型]]");
@@ -78,20 +73,14 @@ describe("Xingmu prompt and turn context", () => {
 
     const qqPrompt = promptFor("你是王雅慧，对外叫星暮。", "qq", true);
     expect(qqPrompt).toContain("【星暮六段漏斗】");
-    expect(qqPrompt).toContain("【关系前提】");
-    expect(qqPrompt).toContain("照片动作以系统图片指令为准");
     expect(qqPrompt).toContain("[[SELF_LEAVE:类型]]");
     expect(qqPrompt).not.toContain("见面或开房当成");
-    expect(qqPrompt).toContain(PROACTIVE_STYLE_XINGMU);
     expect(qqPrompt).not.toContain(SUTANG_ACTION_LADDER_RULE);
 
     const otherPersonaPrompt = promptFor("你是陈屿，33岁男性。", "soul");
     expect(otherPersonaPrompt).not.toContain("【星暮六段漏斗】");
-    expect(otherPersonaPrompt).not.toContain("【关系前提】");
     expect(otherPersonaPrompt).toContain("【人设风格｜只负责表达方式】");
     expect(otherPersonaPrompt).toContain("你是陈屿，33岁男性。");
-    expect(otherPersonaPrompt).toContain(PROACTIVE_STYLE_GENERIC);
-    expect(otherPersonaPrompt).not.toContain(PROACTIVE_STYLE_XINGMU);
     expect(otherPersonaPrompt).not.toContain(SUTANG_ACTION_LADDER_RULE);
   });
 

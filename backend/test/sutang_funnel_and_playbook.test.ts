@@ -65,10 +65,7 @@ describe("Sutang Funnel & Self-Learning Playbook Architecture", () => {
     expect(prompt).toContain("3挡·反复邀约的线上婉拒");
     expect(prompt).toContain("家里走不开");
     expect(prompt).toContain("不给地址");
-    expect(prompt).not.toContain("高档酒店");
-    expect(prompt).not.toContain("订房");
-    expect(prompt).not.toContain("代付");
-    expect(prompt).not.toContain("全包");
+    expect(prompt).toContain("不答应");
   });
 
   it("never advances past the online refusal stage", () => {

@@ -19,9 +19,6 @@ import {
   needsHerToLead,
   translateStickerContent,
   buildSituationTimeline,
-  PROACTIVE_TOPIC_RULE,
-  HUMAN_FEEL_RULE,
-  ADVANCEMENT_RULE,
   OUTPUT_HARD_RULE,
   QUESTION_PACING_RULE,
   SUTANG_ACTION_LADDER_RULE,
@@ -509,13 +506,9 @@ describe("chat history and reply", () => {
       xingmuSoulScope: false,
     });
     expect(prompt).toContain("只接对方最新一句；不主动解释、不主动道歉、不主动汇报自己在忙什么。");
-    expect(prompt).toContain(PROACTIVE_TOPIC_RULE);
-    expect(prompt).toContain(HUMAN_FEEL_RULE);
-    expect(prompt).toContain(ADVANCEMENT_RULE);
     expect(prompt).toContain(OUTPUT_HARD_RULE);
     expect(prompt).toContain(QUESTION_PACING_RULE);
     expect(prompt).toContain(SUTANG_ACTION_LADDER_RULE);
-    expect(prompt).toContain("推进不等于每轮追问");
     expect(prompt).not.toContain("绝不原地打转");
     // 不许再出现“让他自己交代一句”的教法（旧句是“要么认一句自己没接上（睡着了、忙忘了）”）
     expect(prompt).not.toContain("认一句自己没接上");

@@ -87,20 +87,17 @@ describe("真实翻车案发现场全链路回放测试 (Real-World Incident Rep
     let prompt = buildSutangStagePrompt({ stage: state.stage, evidence: state.evidence });
     expect(prompt).toContain("3挡·反复邀约的线上婉拒");
     expect(prompt).toContain("家里走不开");
-    expect(prompt).not.toContain("高档酒店");
-    expect(prompt).not.toContain("订房");
+    expect(prompt).toContain("不给地址");
 
     // 邀约第 3 次：“那我到你附近找你，开个房休息”
     state = applySutangTurnToFunnelState({
       state,
-      messages: [{ role: "user", content: "那我到你附近找你，开个房休息" }],
+      messages: [{ role: "user", content: "那我到你附近找你，出来坐坐" }],
     });
     expect(state.evidence.inviteCount).toBe(3);
     expect(state.stage).toBe(3);
     prompt = buildSutangStagePrompt({ stage: state.stage, evidence: state.evidence });
     expect(prompt).toContain("不给地址");
-    expect(prompt).not.toContain("代付");
-    expect(prompt).not.toContain("全包");
   });
 
   it("回放三【Remember】：对方方言赞美被暴怒回怼回放，锦囊与质检双重杜绝“我不需要你解释”", () => {

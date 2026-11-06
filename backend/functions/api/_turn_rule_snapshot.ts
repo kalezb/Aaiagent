@@ -2,7 +2,6 @@ import { loadAgentRuleState } from "./_agent_rule_runtime";
 import {
   effectivePersonaDrawers,
   loadEffectivePersonaFacts,
-  stripRetiredSutangDrawers,
 } from "./_persona_runtime";
 import {
   loadProgramRules,
@@ -32,12 +31,6 @@ export async function loadTurnRuleSnapshot(
     loadAgentRuleState(db, normalizedPersonaId),
     kv.get(`persona:drawers:${normalizedPersonaId}`, "json"),
   ]);
-  const drawerCleanup = normalizedPersonaId === "female_sutang"
-    ? stripRetiredSutangDrawers(drawerValue)
-    : { changed: false, value: drawerValue };
-  if (drawerCleanup.changed && typeof kv?.put === "function") {
-    await kv.put(`persona:drawers:${normalizedPersonaId}`, JSON.stringify(drawerCleanup.value));
-  }
 
   return {
     personaId: normalizedPersonaId,
@@ -49,6 +42,6 @@ export async function loadTurnRuleSnapshot(
     personaFacts,
     programRules,
     agentRuleState,
-    drawers: effectivePersonaDrawers(normalizedPersonaId, drawerCleanup.value),
+    drawers: effectivePersonaDrawers(normalizedPersonaId, drawerValue),
   };
 }

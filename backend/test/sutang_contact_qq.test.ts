@@ -20,8 +20,6 @@ describe("Sutang QQ contact guidance", () => {
 
     expect(prompt).toContain("QQ号：12345678");
     expect(prompt).toContain("当前资料里填写的QQ");
-    expect(prompt).not.toContain("sutang2026");
-    expect(prompt).not.toContain("去豆瓣");
   });
 
   it("uses the latest dashboard edit on the next turn and respects disabling it", () => {

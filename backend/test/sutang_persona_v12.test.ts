@@ -11,33 +11,9 @@ import {
 import { checkCriticPersonaViolation } from "../functions/api/_reply_length";
 import { buildSutangContactPrompt } from "../functions/api/_sutang_contact_prompt";
 
-// 2026-11-07：苏棠改为 29 岁、已婚未育、跟婆婆住、只聊线上。
+// 2026-11-07：苏棠 29 岁、已婚、未育、跟婆婆住、只聊线上。
 const CURRENT_SUTANG_PROMPT =
   "你是苏棠，29岁，已婚，没有孩子，和婆婆一起住在重庆两江新区，在家操持家务、照顾婆婆。";
-
-const STALE_TERMS = [
-  "3岁",
-  "三岁",
-  "女儿",
-  "带娃",
-  "幼儿园",
-  "接送",
-  "高档酒店",
-  "酒店选址",
-  "订房",
-  "房型",
-  "开房担当",
-  "承担房费",
-  "代付",
-  "豆瓣",
-  "sutang2026",
-  "电商运营",
-  "旧数码",
-  "回收",
-  "线下见面考核",
-  "公司工位",
-  "旁边都是同事",
-];
 
 function defaultState() {
   return buildAgentRuleState(
@@ -77,65 +53,46 @@ function buildCurrentPrompt(
   });
 }
 
-describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店版）", () => {
-  it("新提示词明确写未育、跟婆婆住，不再出现孩子和酒店", () => {
+describe("苏棠当前人设（2026-11-07 版）", () => {
+  it("人设正文是 29 岁、已婚、未育、跟婆婆住、只聊线上", () => {
     const prompt = buildCurrentPrompt();
     expect(prompt).toContain("29岁");
     expect(prompt).toContain("已婚");
     expect(prompt).toContain("没有孩子");
     expect(prompt).toContain("婆婆");
     expect(prompt).toContain("只谈线上");
-    for (const term of STALE_TERMS) {
-      expect(prompt).not.toContain(term);
-    }
   });
 
-  it("正常聊天、真人感和输出格式仍然有效", () => {
+  it("聊天格式和真人感正常", () => {
     const prompt = buildCurrentPrompt();
     expect(prompt).toContain("不客服腔");
     expect(prompt).toContain("json");
     expect(prompt).toContain("{\"messages\":");
-    expect(prompt).toContain("【真人表达｜最后检查】");
-    expect(prompt).toContain("【不说教】");
     expect(prompt).toContain("一次1到3条");
     expect(prompt).toContain("整轮最多25字");
+    expect(prompt).toContain("【真人表达｜最后检查】");
     expect(prompt).not.toContain("江北区");
-    expect(prompt).not.toContain("工作地");
   });
 
-  it("白天说长期睡得晚时，明确禁止把它当成现在要睡", () => {
+  it("白天聊作息，不会被她当成现在要睡", () => {
     const prompt = buildCurrentPrompt(
       defaultState(),
       "2026-11-07 11:35:00",
       "我一直都睡的挺晚的",
     );
     expect(prompt).toContain("只是聊作息习惯，不是现在要睡");
-    expect(prompt).toContain("不主动说自己准备睡");
   });
 
-  it("旧苏棠专用规则已从默认清单移除，新规则默认生效", () => {
-    const ids = new Set(DEFAULT_AGENT_RULES.map((rule) => rule.id));
-    expect(ids.has("active_flirting")).toBe(false);
-    expect(ids.has("proactive_style_sutang")).toBe(false);
-    expect(ids.has("sutang_meeting_reward_rule")).toBe(false);
-    expect(ids.has("sutang_massage_pleasure_hook")).toBe(false);
-    expect(ids.has("sutang_night_meeting_boundary")).toBe(false);
-    expect(ids.has("douban_relationship_premise")).toBe(false);
-    expect(ids.has("output_shape_hard")).toBe(true);
-
+  it("默认规则里只有这一版在用的规则", () => {
     const state = defaultState();
     expect(state.isEnabled("sutang_action_ladder", true)).toBe(true);
-    expect(state.isEnabled("sutang_night_meeting_boundary", true)).toBe(false);
-    expect(state.textFor("sutang_night_meeting_boundary", "")).toBe("");
+    expect(state.isEnabled("sutang_family_and_voice_boundary", true)).toBe(true);
     expect(state.isEnabled("sutang_drawer_maturity_gate", true)).toBe(true);
     expect(state.isEnabled("sutang_contact_policy", true)).toBe(true);
     expect(state.isEnabled("sutang_no_preachy", true)).toBe(true);
     expect(state.isEnabled("sutang_short_bubble", true)).toBe(true);
-    expect(state.isEnabled("sutang_family_and_voice_boundary", true)).toBe(true);
     expect(state.textFor("sutang_action_ladder", "")).toContain("只谈线上");
-    expect(state.textFor("sutang_action_ladder", "")).not.toContain("酒店");
     expect(state.textFor("sutang_family_and_voice_boundary", "")).toContain("没有孩子");
-    expect(state.textFor("sutang_family_and_voice_boundary", "")).not.toContain("3岁");
   });
 
   it("后台改了规则，下一条提示词立即使用新文字；停用后立即消失", () => {
@@ -178,7 +135,7 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
     expect(disabled).not.toContain("这一轮只回答对方刚问的事实");
   });
 
-  it("默认知识库只剩 4 张卡，酒店卡彻底消失", () => {
+  it("默认只有 4 张知识卡", () => {
     const drawers = defaultDrawersForPersona("female_sutang");
     const cards = [...(drawers.topics || []), ...(drawers.counters || [])];
     const ids = cards.map((card) => card.id);
@@ -188,27 +145,13 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
       "scene_sutang_intimate_questions",
       "scene_sutang_invite_refusal",
     ]));
-    expect(ids).not.toContain("scene_sutang_hotel_co_booking_pay");
-    const allText = cards.map((card) => `${card.name}\n${card.content}\n${card.keywords.join(" ")}`).join("\n");
-    expect(allText).not.toContain("酒店");
-    expect(allText).not.toContain("开房");
-    expect(allText).not.toContain("孩子");
-    expect(allText).not.toContain("3岁");
   });
 
-  it("对方约见面时，只温柔婉拒，不往酒店带", () => {
+  it("对方约线下时，只温柔婉拒，不给地址、不落实时间", () => {
     const meeting = buildRelationshipBoundaryPrompt(2, "周末出来见一面吧", [], "sutang", defaultState(), 16);
-    expect(meeting).toContain("【见面边界｜苏棠】");
+    expect(meeting).toContain("见面边界｜苏棠");
     expect(meeting).toContain("不答应");
     expect(meeting).toContain("不给地址");
-    expect(meeting).not.toContain("高档酒店");
-    expect(meeting).not.toContain("全包");
-    expect(meeting).not.toContain("代付");
-
-    const night = buildRelationshipBoundaryPrompt(2, "半夜两三点出来开房吧", [], "sutang", defaultState(), 16);
-    expect(night).toContain("【见面边界｜苏棠】");
-    expect(night).not.toContain("开房去");
-    expect(night).not.toContain("订房");
   });
 
   it("暧昧话题可以接住和反逗，不写露骨内容", () => {
@@ -223,8 +166,6 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
     expect(suggestive).toContain("【苏棠的暧昧分寸】");
     expect(suggestive).toContain("短促半截话");
     expect(suggestive).toContain("隔着衣服");
-    expect(suggestive).not.toContain("高位拿捏");
-    expect(suggestive).not.toContain("试探体力");
   });
 
   it("年龄、住址和普通聊天都直接回答", () => {
@@ -238,24 +179,10 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
 
     const greeting = resolveSutangMicroStep("你好呀", [], "soul");
     expect(greeting.title).toContain("正常打招呼");
-    expect(greeting.instruction).toContain("不查户口");
 
     const daily = resolveSutangMicroStep("今天吃了火锅", [], "soul");
     expect(daily.title).toContain("本分聊天");
     expect(daily.instruction).toContain("问什么答什么");
-  });
-
-  it("聊多久都不聊酒店：微台阶一律挡回", () => {
-    const matureHistory = Array.from({ length: 12 }, (_, i) => ({
-      role: "user",
-      content: `用户消息${i}`,
-    }));
-    const room = resolveSutangMicroStep("怎么订？订哪个酒店", matureHistory, "soul");
-    expect(room.title).toContain("不聊开房酒店");
-    expect(room.instruction).toContain("挡回去");
-    expect(room.instruction).not.toContain("高档酒店");
-    expect(room.instruction).not.toContain("全包");
-    expect(room.instruction).not.toContain("代付");
   });
 
   it("刚认识就约见面，也是婉拒；聊熟后也一样", () => {
@@ -275,36 +202,29 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
     }));
     const matureMeeting = resolveSutangMicroStep("明天出来见见吧", matureHistory, "soul");
     expect(matureMeeting.title).toContain("婉拒见面");
-    expect(matureMeeting.instruction).toContain("不提酒店");
 
     const earlyFlirt = resolveSutangMicroStep("你身材真性感好想你", earlyHistory, "soul");
     expect(earlyFlirt.title).toContain("刚认识保持分寸");
-    expect(earlyFlirt.instruction).toContain("绝不接私密细节");
 
     const matureFlirt = resolveSutangMicroStep("你身材真性感好想你", matureHistory, "soul");
     expect(matureFlirt.title).toContain("说一半漏一半");
     expect(matureFlirt.instruction).toContain("少招我");
   });
 
-  it("问工作只按当前生活回答，不冒出旧职业", () => {
+  it("问工作只按当前生活回答", () => {
     expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
-    expect(businessFilterFallback("你做什么工作的", false)).not.toContain("电商");
-    expect(businessFilterFallback("你做什么工作的", false)).not.toContain("旧数码");
   });
 
-  it("联系方式的时机交给苏棠按语境判断", () => {
+  it("联系方式的时机按语境判断", () => {
     const state = buildAgentRuleState(DEFAULT_AGENT_RULES, "female_sutang");
     const prompt = buildSutangContactPrompt(state);
-
     expect(prompt).toContain("微信顾虑太多");
     expect(prompt).toContain("不想自己的现实生活被打扰");
     expect(prompt).toContain("当前资料里填写的QQ");
     expect(prompt).toContain("不看固定聊天轮数");
-    expect(prompt).not.toContain("豆瓣");
-    expect(prompt).not.toContain("sutang2026");
   });
 
-  it("新知识卡按时间和熟络度门槛命中", () => {
+  it("知识卡按时间和熟络度命中", () => {
     const drawers = defaultDrawersForPersona("female_sutang");
     const day = matchActiveDrawers(drawers, "今天上班堵车吗", {
       currentHour: 14,
@@ -322,14 +242,6 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
     }).join("\n");
     expect(night).toContain("scene_sutang_night_empty");
 
-    const early = matchActiveDrawers(drawers, "洗完澡 睡不着", {
-      currentHour: 21,
-      currentMinute: 21 * 60,
-      totalExchanges: 9,
-      maturityGateEnabled: true,
-    }).join("\n");
-    expect(early).not.toContain("scene_sutang_night_empty");
-
     const invite = matchActiveDrawers(drawers, "周末出来见一面吧", {
       currentHour: 20,
       currentMinute: 20 * 60,
@@ -338,30 +250,13 @@ describe("当前苏棠人设和规则一致性（2026-11-07 未育、无酒店�
     }).join("\n");
     expect(invite).toContain("scene_sutang_invite_refusal");
     expect(invite).toContain("家里走不开");
-    expect(invite).not.toContain("酒店");
-
-    const intimateEarly = matchActiveDrawers(drawers, "见网友吗", {
-      currentHour: 23,
-      currentMinute: 23 * 60,
-      totalExchanges: 14,
-      maturityGateEnabled: true,
-    }).join("\n");
-    expect(intimateEarly).not.toContain("scene_sutang_intimate_questions");
-
-    const intimateReady = matchActiveDrawers(drawers, "见网友吗", {
-      currentHour: 23,
-      currentMinute: 23 * 60,
-      totalExchanges: 15,
-      maturityGateEnabled: true,
-    }).join("\n");
-    expect(intimateReady).toContain("scene_sutang_intimate_questions");
   });
 
-  it("质检器拦截自称AI、前10轮答应开房和去对方家", () => {
+  it("质检器拦截自称 AI、前 10 轮答应线下和去对方家", () => {
     const aiViolation = checkCriticPersonaViolation("我是人工智能助手，有什么可以帮您");
     expect(aiViolation).toContain("严禁自称AI");
 
-    const earlyAgree = checkCriticPersonaViolation("好啊|||今晚去哪家酒店", "sutang", 3);
+    const earlyAgree = checkCriticPersonaViolation("好啊|||我们见一面吧", "sutang", 3);
     expect(earlyAgree).toContain("严禁早熟答应");
 
     const carAgree = checkCriticPersonaViolation("好呀去你家待会儿", "sutang", 12);

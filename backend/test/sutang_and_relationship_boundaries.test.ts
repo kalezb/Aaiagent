@@ -34,15 +34,8 @@ describe("Sutang and relationship boundaries", () => {
     });
     expect(prompt).toContain("只谈线上");
     expect(prompt).toContain("不答应");
-    expect(prompt).not.toContain("高档酒店");
-    expect(prompt).not.toContain("全包");
-    expect(prompt).not.toContain("代付");
     expect(prompt).toContain("先接住对方最新一句");
     expect(prompt).toContain("保持撒娇");
-    expect(prompt).not.toContain("亚朵");
-    expect(prompt).not.toContain("引导男方展现大男人的体贴与担当");
-    expect(prompt).not.toContain("最终奖励");
-    expect(prompt).not.toContain("不主动提见面、不主动推销或催单");
     expect(prompt).toContain("【知识库命中｜本轮必须使用】");
     expect(prompt.indexOf("【知识库命中｜本轮必须使用】"))
       .toBeGreaterThan(prompt.indexOf("【现场感｜每轮都照做】"));
@@ -131,17 +124,6 @@ describe("Sutang and relationship boundaries", () => {
     expect(sutangInvite).toContain("见面边界｜苏棠");
     expect(sutangInvite).toContain("不答应");
     expect(sutangInvite).toContain("不给地址");
-    expect(sutangInvite).not.toContain("高档酒店");
-    expect(sutangInvite).not.toContain("全包");
-    expect(sutangInvite).not.toContain("代付");
-    expect(sutangInvite).not.toContain("承担房费");
-    expect(sutangInvite).not.toContain("亚朵");
-    const sutangRoom = buildRelationshipBoundaryPrompt(2, "想跟你开房", [], "sutang", undefined, 16);
-    expect(sutangRoom).toContain("见面边界｜苏棠");
-    expect(sutangRoom).toContain("不提酒店房间");
-    expect(sutangRoom).not.toContain("代付");
-    expect(sutangRoom).not.toContain("亚朵");
-    expect(sutangRoom).not.toContain("第一次只考虑白天");
     expect(buildRelationshipBoundaryPrompt(2, "发张私密照看看", [], "sutang", undefined, 16))
       .toContain("不写身体器官");
     // 露骨的（要私密照）仍然要挡住

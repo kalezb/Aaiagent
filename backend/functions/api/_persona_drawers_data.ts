@@ -22,50 +22,6 @@ export interface PersonaDrawers {
   custom?: PersonaDrawerItem[];
 }
 
-// 旧苏棠知识卡全部退役；线上已有内容即使没清空，也不会再进入聊天。
-export const RETIRED_SUTANG_DRAWER_IDS = [
-  "scene_01_black_stockings",
-  "scene_02_back_sensitive",
-  "scene_03_after_shower",
-  "scene_04_body_lotion",
-  "scene_05_ecommerce_overtime",
-  "scene_06_fabric_choice",
-  "scene_07_meeting_slack",
-  "scene_08_marriage_coldness",
-  "scene_09_tipsy",
-  "scene_10_insomnia",
-  "scene_11_reject_flippancy",
-  "scene_12_reward_obedience",
-  "scene_13_invitation_reward",
-  "scene_14_housework_shoulder",
-  "scene_14_rainy_neck",
-  "scene_15_after_child_sleep",
-  "scene_16_douban_tree_hole",
-  "scene_17_private_contact",
-  "scene_18_meeting_arrangement",
-  "scene_19_boundary_to_flippancy",
-  "scene_19_reject_flippancy",
-  "scene_20_stop_delay",
-  "scene_21_ecommerce_work",
-  "scene_22_late_night_insomnia",
-  "scene_23_sunny_hot_summer",
-  "scene_24_cold_wind_winter",
-  "scene_25_pleasant_breeze",
-  "scene_26_mother_in_law_cover",
-  "scene_27_contrast_mature_woman",
-  "scene_28_body_massage_spa",
-  "scene_29_break_idle_chatter",
-  "sutang_home_tired",
-  "sutang_douban_private",
-  "sutang_hotel_direct",
-  "sutang_late_night_alone",
-  "sutang_family_time",
-  "sutang_hot_day",
-  "sutang_cold_day",
-  "sutang_nice_weather",
-  "scene_sutang_hotel_co_booking_pay",
-];
-
 export const DEFAULT_SCENE_DRAWERS: PersonaDrawerItem[] = [
   {
     id: "scene_sutang_probe_spending",

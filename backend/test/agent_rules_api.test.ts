@@ -71,21 +71,9 @@ describe("agent rules API", () => {
     expect(db.agentRuleRows.get(target.id)?.source).toBe("dashboard");
   });
 
-  it("removes retired Su Tang cards from stored dashboard data", async () => {
+  it("lists the current dashboard rules", async () => {
     const db = new MockD1();
     const kv = new MockKV();
-    await kv.put("persona:drawers:female_sutang", JSON.stringify({
-      topics: [
-        {
-          id: "scene_18_meeting_arrangement",
-          name: "旧见面卡",
-          keywords: ["酒店"],
-          content: "第一次就白天找个公开地方",
-          enabled: true,
-        },
-      ],
-      custom: [],
-    }));
     const env = { DB: db, KV: kv, DASHBOARD_PASSWORD: "dashboard-secret" };
     const listed = await handleAgentRulesRequest({
       request: request("/api/agent-rules", "GET"),
@@ -94,12 +82,7 @@ describe("agent rules API", () => {
       method: "GET",
     });
     const body = await listed!.json();
-    const stored = await kv.get("persona:drawers:female_sutang", "json");
-
-    expect(body.sutang_health.summary).toMatchObject({
-      retired_cards_total: 40,
-      retired_cards_removed: 40,
-    });
-    expect(stored.topics.some((card: any) => card.id === "scene_18_meeting_arrangement")).toBe(false);
+    expect(body.sutang_health.summary.rewritten_ok).toBe(10);
+    expect(body.sutang_health.summary.cards_ok).toBe(4);
   });
 });

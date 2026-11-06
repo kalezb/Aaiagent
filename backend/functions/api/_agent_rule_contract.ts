@@ -1,5 +1,3 @@
-import { RETIRED_AGENT_RULE_IDS } from "./_agent_rule_inventory";
-
 export interface ActiveAgentRule {
   id: string;
   legacy_rule_id: string;
@@ -32,13 +30,6 @@ export const EMPTY_AGENT_RULE_STATE: AgentRuleState = {
 
 const EXPLICIT_AGENT_RULE_IDS = new Set([
   "late_reply_current_only",
-  "proactive_topic_rule",
-  "human_feel_rule",
-  "advancement_rule",
-  "proactive_style_xingmu",
-  "proactive_style_sutang",
-  "active_flirting",
-  "proactive_style_generic",
   "sutang_action_ladder",
   "sutang_drawer_maturity_gate",
   "sutang_contact_policy",
@@ -48,10 +39,8 @@ const EXPLICIT_AGENT_RULE_IDS = new Set([
   "output_shape_hard",
   "question_pacing",
   "emoji_pragmatic_booster",
-  "sutang_meeting_reward_rule",
   "intimate_label_consistency",
   "exit_marker",
-  "no_sleep_topic",
   "quote_reply",
   "third_party_ownership",
   "platform_not_user",
@@ -61,39 +50,25 @@ const EXPLICIT_AGENT_RULE_IDS = new Set([
   "no_customer_service",
   "casual_punctuation",
   "self_leave_marker",
-  "communication_style",
   "no_ai_debate",
-  "xingmu_dialogue_advancement",
-  "funnel_tone_separation",
-  "xingmu_fact_boundary",
-  "generic_fact_boundary",
   "sutang_fact_boundary",
   "cross_platform_memory",
-  "topic_boundary",
   "answer_old_message",
-  "relationship_premise",
   "new_contact_pacing",
-  "new_contact_pacing_xingmu",
   "history_consistency",
   "facts_override_persona",
   "location_scope",
-  "xingmu_identity",
   "fixed_age",
   "his_photo_memory",
   "her_photo_memory",
-  "douban_relationship_premise",
-  "sutang_contact_refusal_wechat",
   "sutang_explicit_boundary",
-  "sutang_night_meeting_boundary",
   "sutang_family_and_voice_boundary",
   "sutang_contrast_mature_hook",
-  "sutang_massage_pleasure_hook",
 ]);
 
 const SYSTEM_ACTION_RULE_IDS = new Set([
   "married_excluded",
   "no_contact_leak",
-  "business_contact_boundary",
   "media_group_selection",
   "voice_call_boundary",
   "his_photo_memory",
@@ -166,14 +141,12 @@ const DEFAULT_RULE_TRIGGERS: Record<string, RegExp> = {
   fixed_age: /(?:多大|几岁|哪年|年龄)/u,
   children_facts: /(?:孩子|娃|儿子|女儿)/u,
   location_scope: /(?:住哪|哪里人|哪个区|在哪|地址|远不远)/u,
-  xingmu_identity: /(?:你是谁|你叫什么|星暮|王雅慧|你多大|你结婚|你离)/u, // persona-guard: ok
   exit_marker: /(?:去睡|睡觉|晚安|去忙|先忙|出门|吃饭|改天|下次聊|不聊了)/u,
   self_leave_marker: /(?:去睡|睡觉|晚安|去忙|先忙|出门|吃饭|改天|下次聊|不聊了)/u,
   emoji_pragmatic_booster: /(?:\[[^\]]+\]|表情|贴纸|互动)/u,
   no_ai_debate: /(?:AI|人工智能|机器人|自动回复)/iu,
   explicit_boundary: /(?:裸照|裸体|做爱|上床|性|开房|情趣|身体|腿照|私密照)/u,
   no_contact_leak: /(?:微信|QQ|Q|电话|手机号|联系方式|加你|加个)/iu,
-  business_contact_boundary: /(?:微信|QQ|Q|电话|手机号|联系方式|加你|加个)/iu,
   married_excluded: /(?:结婚|已婚|老婆|媳妇|单身|未婚|离婚|离异)/u,
   photo_only_explicit: /(?:照片|自拍|看看你|长什么样|闪照|图片)/u,
   no_video: /(?:视频|打视频|视频通话)/u,
@@ -187,14 +160,10 @@ const DEFAULT_RULE_TRIGGERS: Record<string, RegExp> = {
   platform_not_user: /(?:平台提示|系统通知|官方消息|已读|正在输入)/u,
   third_party_ownership: /(?:我妈|我爸|我朋友|我弟弟|我同事|我家人|你家|你朋友)/u,
   quote_reply: /(?:你说|你说过|引用|刚才那句)/u,
-  business_scope: /(?:旧手机|旧数码|回收|二手|报价|评估|寄件|上门)/u, // persona-guard: ok
-  no_sales_pressure: /(?:旧手机|旧数码|回收|二手|报价|评估|寄件|上门)/u, // persona-guard: ok
-  sutang_contact_refusal_wechat: /(?:微信|加个|联系方式)/u,
   sutang_explicit_boundary: /(?:裸照|裸体|做爱|上床|性|开房|情趣|身体|腿照|私密照)/u,
   sutang_family_and_voice_boundary: /(?:老公|家庭|语音|打电话)/u,
   sutang_contrast_mature_hook: /(?:另一面|反差|成熟|姐姐)/u,
   new_contact_pacing: /(?:你好|在吗|认识|第一次|刚加)/u,
-  new_contact_pacing_xingmu: /(?:你好|在吗|认识|第一次|刚加)/u,
 };
 
 export function ruleMatchesTurnContext(rule: ActiveAgentRule, context: any = {}) {
@@ -234,7 +203,6 @@ export function buildAgentRuleState(
     rules: applicable,
     isEnabled: (legacyRuleId, fallback = true) => {
       const id = String(legacyRuleId || "").trim();
-      if (RETIRED_AGENT_RULE_IDS.has(id)) return false;
       if (deletedLegacyIds.has(id)) return false;
       const rule = applicableByLegacyId.get(id);
       if (rule) return rule.enabled !== false;
@@ -242,7 +210,6 @@ export function buildAgentRuleState(
     },
     textFor: (legacyRuleId, fallback = "") => {
       const id = String(legacyRuleId || "").trim();
-      if (RETIRED_AGENT_RULE_IDS.has(id)) return "";
       if (deletedLegacyIds.has(id)) return "";
       const rule = applicableByLegacyId.get(id);
       if (rule) {

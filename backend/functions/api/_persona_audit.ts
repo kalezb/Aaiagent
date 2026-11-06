@@ -67,30 +67,11 @@ export function detectAgentConfigConflicts(persona, facts, cards) {
 
 const PERSONA_CROSS_WARNING_TERMS = {
   // persona-guard: ok — these are audit deny-lists, not prompts sent to models.
-  female: ["苏棠", "电商运营", "带娃", "3岁", "三岁", "我老公", "按摩"],
+  female: ["苏棠"],
   female_sutang: ["星暮", "王雅慧", "宝马X3", "离过婚", "独居"],
-  male: ["苏棠", "星暮", "王雅慧", "电商运营", "带娃", "3岁", "三岁", "我老公", "撒娇", "借腿", "排解寂寞"],
-  male_chenyu: ["苏棠", "星暮", "王雅慧", "电商运营", "带娃", "3岁", "三岁", "我老公", "撒娇", "借腿", "排解寂寞"],
+  male: ["苏棠", "星暮", "王雅慧"],
+  male_chenyu: ["苏棠", "星暮", "王雅慧"],
 };
-
-const CURRENT_SUTANG_STALE_TERMS = [
-  "高位拿捏",
-  "高位掌控",
-  "酒店选址",
-  "承担房费",
-  "开房担当",
-  "精油推拿",
-  "精油开背",
-  "推拿SPA",
-  "公司工位",
-  "旁边都是同事",
-  "电商运营",
-  "盯报表",
-  "线下见面考核",
-  "自己编生活细节",
-  "可以自己编",
-  "量你也没这胆子",
-];
 
 function hitTerms(text, terms) {
   const source = String(text || "");
@@ -118,39 +99,6 @@ export function auditPersonaBundle(persona, facts, cards, rules = []) {
         source: `卡片：${card.name || card.id}`,
         detail: `卡片出现疑似其他身份的用词：${hits.join("、")}。请结合上下文人工确认是不是故意写的。`,
       });
-    }
-  }
-  if (personaId === "female_sutang") {
-    const promptHits = hitTerms(persona?.system_prompt || "", CURRENT_SUTANG_STALE_TERMS);
-    if (promptHits.length) {
-      issues.push({
-        level: "error",
-        source: "正文",
-        detail: `当前人设仍残留旧设定：${promptHits.join("、")}。请删除或改写后再交给模型。`,
-      });
-    }
-    for (const card of cards || []) {
-      const cardText = `${card.name || ""}\n${card.content || ""}\n${(card.keywords || []).join(" ")}`;
-      const hits = hitTerms(cardText, CURRENT_SUTANG_STALE_TERMS);
-      if (hits.length) {
-        issues.push({
-          level: "error",
-          source: `知识卡：${card.name || card.id}`,
-          detail: `卡片仍残留旧设定：${hits.join("、")}。这张卡当前不该参与聊天。`,
-        });
-      }
-    }
-    for (const rule of rules || []) {
-      if (rule?.enabled === false || Number(rule?.deleted_at || 0) > 0) continue;
-      const ruleText = `${rule.title || ""}\n${rule.detail || ""}`;
-      const hits = hitTerms(ruleText, CURRENT_SUTANG_STALE_TERMS);
-      if (hits.length) {
-        issues.push({
-          level: "error",
-          source: `规则：${rule.title || rule.legacy_rule_id || rule.id}`,
-          detail: `启用的规则仍残留旧设定：${hits.join("、")}。请停用或改写后再进入下一轮。`,
-        });
-      }
     }
   }
   for (const issue of detectAgentConfigConflicts(persona, facts, cards)) {

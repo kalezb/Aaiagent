@@ -14,7 +14,6 @@ import { json } from "./_http_runtime";
 import {
   effectivePersonaDrawers,
   loadEffectivePersonaFacts,
-  stripRetiredSutangDrawers,
 } from "./_persona_runtime";
 import { buildSutangRuleHealth } from "./_sutang_rule_health";
 
@@ -28,11 +27,7 @@ export async function handleAgentRulesRequest({ request, env, path, method }) {
     const rawStoredCards = typeof env.KV?.get === "function"
       ? await env.KV.get("persona:drawers:female_sutang", "json")
       : null;
-    const cleanup = stripRetiredSutangDrawers(rawStoredCards);
-    if (cleanup.changed && typeof env.KV?.put === "function") {
-      await env.KV.put("persona:drawers:female_sutang", JSON.stringify(cleanup.value));
-    }
-    const drawers = effectivePersonaDrawers("female_sutang", cleanup.value);
+    const drawers = effectivePersonaDrawers("female_sutang", rawStoredCards);
     const cards = [...drawers.topics, ...drawers.counters, ...drawers.custom];
     return json({
       rules,

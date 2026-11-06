@@ -97,8 +97,7 @@ function contactRefusalReply(
     if (askedChannel === "qq") return "QQ真不行|||婆婆常拿我手机";
     if (askedChannel === "phone") return "电话不行|||家里查得紧";
     const wechatRefusal = "微信顾虑太多|||不想现实生活被打扰";
-    const ruleKey = "sutang_contact_refusal_wechat";
-    return agentRuleState.textFor(ruleKey, wechatRefusal) || wechatRefusal;
+    return wechatRefusal;
   }
   if (requestCount <= 1) {
     // 他问什么渠道就回什么渠道，别答非所问。

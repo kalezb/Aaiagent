@@ -8,8 +8,6 @@ import {
   defaultDrawersForPersona,
   parsePersonaDrawers,
 } from "./_persona_drawers";
-import { RETIRED_SUTANG_DRAWER_IDS } from "./_persona_drawers_data";
-
 export function normalizeDrawerKeywords(value) {
   if (Array.isArray(value)) {
     return value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 40);
@@ -102,24 +100,6 @@ export function effectivePersonaDrawers(personaId, storedValue) {
     counters: visible(mergeDrawerCards(defaults.counters || [], stored.counters, "counter", { includeUnknown: false })),
     custom: visible(mergeDrawerCards([], stored.custom, "lore")),
   };
-}
-
-export function stripRetiredSutangDrawers(storedValue: unknown) {
-  const stored = parsePersonaDrawers(storedValue);
-  const retired = new Set(RETIRED_SUTANG_DRAWER_IDS);
-  let changed = false;
-  const cleanGroup = (list = []) => list.filter((item) => {
-    const remove = retired.has(String(item?.id || ""));
-    if (remove) changed = true;
-    return !remove;
-  });
-  const value = {
-    ...stored,
-    topics: cleanGroup(stored.topics || []),
-    counters: cleanGroup(stored.counters || []),
-    custom: cleanGroup(stored.custom || []),
-  };
-  return { changed, value };
 }
 
 export async function loadPublishedPersonaSnapshot(db, personaId) {

@@ -45,11 +45,11 @@ describe("Reflexion Playbook & Self-Learning Engine", () => {
     expect(hitsVulgar.some((h) => h.includes("绝对禁止顺从迎合"))).toBe(true);
     expect(hitsVulgar.some((h) => h.includes("拉高身价"))).toBe(true);
 
-    // 5. Kid status & distance boundary
-    const hitsKid = matchPlaybookCards("female_sutang", "你今天不送孩子去幼儿园吗？", {});
-    expect(hitsKid.length).toBeGreaterThan(0);
-    expect(hitsKid.some((h) => h.includes("绝对禁止编造孩子"))).toBe(true);
-    expect(hitsKid.some((h) => h.includes("不答应、不给地址"))).toBe(true);
+    // 5. 家庭与线下边界
+    const hitsFamily = matchPlaybookCards("female_sutang", "你婆婆在家吗", {});
+    expect(hitsFamily.length).toBeGreaterThan(0);
+    expect(hitsFamily.some((h) => h.includes("不编造经历"))).toBe(true);
+    expect(hitsFamily.some((h) => h.includes("不答应、不给地址"))).toBe(true);
   });
 
   it("saves and matches a custom vernacular card in real time", async () => {

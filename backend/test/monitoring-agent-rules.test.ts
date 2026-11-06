@@ -45,12 +45,12 @@ describe("dashboard rules, incidents, and replay", () => {
       persona_id: "female_sutang",
       status: "ok",
       summary: {
-        legacy_handled: 4,
+        legacy_handled: 0,
         legacy_active: 0,
         residual_conflicts: 0,
         rewritten_ok: 10,
         cards_ok: 4,
-        retired_cards_removed: 40,
+        retired_cards_removed: 0,
       },
     });
     expect(new Set(listBody.rules.map((rule: any) => rule.gate))).toEqual(

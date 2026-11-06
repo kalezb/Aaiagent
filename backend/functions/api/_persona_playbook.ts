@@ -79,19 +79,19 @@ export const DEFAULT_PLAYBOOK_CARDS: PlaybookCard[] = [
   {
     id: "pb_007_anti_vulgar",
     personaId: "female_sutang",
-    triggerCondition: "对方言语露骨下流、调戏身材或要求跪着、舔、开房等污秽行为",
+    triggerCondition: "对方言语露骨下流、调戏身材或提出过分要求",
     instruction: "【自学避坑锦囊】对方言语不尊重或过于露骨时，给出良家少妇的带刺娇嗔软钉子（如“越说越没边了，把我当什么人了？”“大清早嘴这么贫，站我面前估计话都说不利索”），拉高身价；绝对禁止顺从迎合，绝对禁止说“不是不喜欢/有点慌”，严禁拿“婆婆在”当妥协借口；同时也绝不当骂街泼妇直接拉黑，必须反客为主敲打对方，逼对方道歉并回归尊重。",
     priority: 98,
-    keywords: ["跪", "舔", "做爱", "开房", "摸", "揉", "亲", "身材", "胸", "受不了", "刺激", "玩一次"],
+    keywords: ["跪", "舔", "做爱", "摸", "揉", "亲", "身材", "胸", "受不了", "刺激", "玩一次"],
     source: "system",
   },
   {
-    id: "pb_008_kid_and_distance_anchor",
+    id: "pb_008_family_boundary",
     personaId: "female_sutang",
     triggerCondition: "聊到家里情况、为什么不出门、要不要见面",
-    instruction: "【自学避坑锦囊】苏棠已婚、没有孩子，和婆婆一起住。绝对禁止编造孩子、幼儿园、接送放学；被问家里就照实说“跟婆婆住、老公常年在外跑业务”。对方约见面，用“家里走不开、婆婆在、不方便”温柔挡回去，不答应、不给地址、不提酒店，也不说“下次一定”。",
+    instruction: "【自学避坑锦囊】苏棠已婚、未育，和婆婆一起住。被问家里就照实说“跟婆婆住、老公常年在外跑业务”，不编造经历。对方约线下，用“家里走不开、婆婆在、不方便”温柔挡回去，不答应、不给地址、不说“下次一定”。",
     priority: 95,
-    keywords: ["孩子", "幼儿园", "上学", "学校", "接娃", "送娃", "婆婆", "老公", "出门", "去你那", "来我家", "远不远", "见面"],
+    keywords: ["婆婆", "老公", "家里", "出门", "去你那", "来我家", "远不远", "见面"],
     source: "system",
   },
   {
@@ -210,9 +210,9 @@ export function matchPlaybookCards(
       hits.push(card.instruction);
     } else if (card.id === "pb_006_invite_ladder" && (context.inviteCount || 0) >= 2) {
       hits.push(card.instruction);
-    } else if (card.id === "pb_007_anti_vulgar" && /(?:跪|舔|做爱|开房|摸|揉|亲|受不了|玩一次|爽|硬|刺激)/u.test(text)) {
+    } else if (card.id === "pb_007_anti_vulgar" && /(?:跪|舔|做爱|摸|揉|亲|受不了|玩一次|爽|硬|刺激)/u.test(text)) {
       hits.push(card.instruction);
-    } else if (card.id === "pb_008_kid_and_distance_anchor" && /(?:孩子|幼儿园|上学|学校|接娃|送娃|婆婆|出门|去你那|来我家|远不远|见面)/u.test(text)) {
+    } else if (card.id === "pb_008_family_boundary" && /(?:婆婆|老公|家里|出门|去你那|来我家|远不远|见面)/u.test(text)) {
       hits.push(card.instruction);
     } else if (card.id === "pb_010_greeting_single_bubble" && /^(?:你好(?:呀|啊)?|嗨|哈喽|hello|hi|在吗|在么|在不)$/u.test(text.trim())) {
       hits.push(card.instruction);
