@@ -19,7 +19,6 @@ import {
   localVoiceReply,
   parseSocialExitInstruction,
   resolveContactRequestPolicy,
-  sanitizeBusinessTopicDrift,
   sanitizeBoundaryConsistency,
   sanitizeNewContactBusinessReply,
   XINGMU_PRODUCT_REPLY,
@@ -798,17 +797,6 @@ describe("chat boundaries", () => {
     )).toBe("新旧手机和老年机都能收");
   });
 
-  it("does not resurface an old device sale question when the latest message is unrelated", () => {
-    expect(sanitizeBusinessTopicDrift(
-      "现在这行情，能稳住就不错了 你那16pro到底是自用还是想出嘛",
-      "打的太严了 好多事都不能做",
-    )).toBe("现在这行情，能稳住就不错了");
-    expect(sanitizeBusinessTopicDrift(
-      "你那16pro到底是自用还是想出嘛",
-      "16pro还出吗",
-    )).toBe("你那16pro到底是自用还是想出嘛");
-  });
-
   it("answers direct work questions instead of replacing them with a generic fallback", () => {
     expect(isDirectWorkQuestion("做啥工作")).toBe(true);
     expect(isDirectWorkQuestion("你做什么工作的")).toBe(true);
@@ -816,7 +804,6 @@ describe("chat boundaries", () => {
     expect(isDirectWorkQuestion("今天工作累死了")).toBe(false);
 
     const workReply = "做二手手机和旧数码回收，主要线上寄件和同城上门";
-    expect(sanitizeBusinessTopicDrift(workReply, "做啥工作")).toBe(workReply);
     expect(sanitizeNewContactBusinessReply(workReply, 1, "做啥工作")).toBe(workReply);
   });
 
@@ -830,12 +817,6 @@ describe("chat boundaries", () => {
     const workReply = "认识一下可以啊，我平时做旧数码回收，主要看机子情况";
 
     expect(incomingTurnText).toContain("你是做什么的");
-    expect(sanitizeBusinessTopicDrift(
-      workReply,
-      "认识一下",
-      [],
-      incomingTurnText,
-    )).toBe(workReply);
     expect(sanitizeNewContactBusinessReply(
       workReply,
       1,
@@ -907,21 +888,6 @@ describe("chat boundaries", () => {
     expect(body.reply).not.toBe("嗯，你刚说的这个我记住了。");
   });
 
-  it("uses a contextual fallback instead of repeating the old listening phrase", () => {
-    expect(sanitizeBusinessTopicDrift(
-      "手机啊，二手回收这块，你手上有闲置的没",
-      "自己开店，太强了",
-    )).not.toContain("我在听");
-    expect(sanitizeBusinessTopicDrift(
-      "嗯，那说点别的，你平时都收哪些机子",
-      "好",
-    )).toBe("嗯 行");
-    expect(sanitizeBusinessTopicDrift(
-      "我平时做旧数码回收，有空来店里看看",
-      "认识一下",
-    )).toBe("行啊 聊聊呗");
-  });
-
   it("does not reverse a boundary just established in the previous reply", () => {
     const history = [{ role: "assistant", content: "别叫我女神，怪不好意思的" }];
     expect(sanitizeBoundaryConsistency(
@@ -935,21 +901,6 @@ describe("chat boundaries", () => {
       "其实还好吧",
       [],
     )).toBe("没啥不好意思的，重庆妹儿都经夸");
-  });
-
-  it("keeps ordinary phone mentions while removing explicit business hooks", () => {
-    expect(sanitizeBusinessTopicDrift(
-      "你也可以带着手机去吧",
-      "你也可以带着手机去吧",
-    )).toBe("你也可以带着手机去吧");
-    expect(sanitizeBusinessTopicDrift(
-      "这个手机镜头拍得挺清爽",
-      "刚扔了张照片过来",
-    )).toBe("这个手机镜头拍得挺清爽");
-    expect(sanitizeBusinessTopicDrift(
-      "现在这行情能稳住就不错了 你那16pro到底是自用还是想出嘛",
-      "打的太严了 好多事都不能做",
-    )).toBe("现在这行情能稳住就不错了");
   });
 
   it("uses the exact six-stage funnel guidance", () => {

@@ -7,7 +7,6 @@ import {
   evaluateSutangTurnSignals,
 } from "../functions/api/_sutang_funnel";
 import { matchPlaybookCards } from "../functions/api/_persona_playbook";
-import { checkCriticPersonaViolation } from "../functions/api/_reply_length";
 
 describe("Sutang Funnel & Self-Learning Playbook Architecture", () => {
   it("progresses stage from ice_break to resonance after enough turns or deep empathy", () => {
@@ -112,11 +111,5 @@ describe("Sutang Funnel & Self-Learning Playbook Architecture", () => {
     expect(cards.length).toBeGreaterThan(0);
     expect(cards[0]).toContain("害羞娇嗔接住");
     expect(cards[0]).toContain("禁止反驳说“我不需要你解释”");
-  });
-
-  it("Critic guardrail catches aggressive rebuttals before sending to client", () => {
-    const violation = checkCriticPersonaViolation("我不需要你解释意思", "sutang", 10);
-    expect(violation).not.toBeNull();
-    expect(violation).toContain("严禁攻击怼客户");
   });
 });

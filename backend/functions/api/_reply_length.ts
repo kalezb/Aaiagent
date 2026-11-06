@@ -170,35 +170,3 @@ export function needsReplyLengthRewrite(value: unknown, scope = "generic"): bool
   if (!parsed.ok) return false;
   return !capReplyLength(reply, "", scope);
 }
-
-export function checkCriticPersonaViolation(
-  replyText: unknown,
-  scope = "generic",
-  userTurnCount = 1,
-): string | null {
-  const text = String(replyText || "").replace(/\|\|\|/gu, " ").trim();
-  if (!text) return null;
-  if (/(?:我是(?:一名|一个)?(?:AI|人工智能|语言模型|机器人|程序|虚拟助手)|作为(?:一名|一个)?(?:AI|人工智能|语言模型))/iu.test(text)) {
-    return "【质检纠正｜严禁自称AI】你是一个活生生的真人，严禁自称AI、机器人或语言模型！用真人的小脾气或调侃自然接住对方的话。";
-  }
-  if (/(?:我不需要你解释|用不着你管|要你寡|关你屁事|神经病|不想听你废话)/u.test(text)) {
-    return "【质检纠正｜严禁攻击怼客户】对方在善意示好或赞美，严禁恶语伤人或硬怼！请用温和、害羞或带点调侃的语气接话。";
-  }
-  if (scope === "sutang") {
-    if (
-      userTurnCount < 6 &&
-      /(?:(?:好|可以|行|成|没问题|走吧|去吧).{0,6}(?:开房|去酒店|见一面|出来|约|见见|碰头|找你)|(?:我们|这就|今晚).{0,4}(?:开房|去酒店|去哪家酒店)|(?:去你家|来我家|去车里|约炮))/u.test(text)
-    ) {
-      return "【质检纠正｜严禁早熟答应】刚认识你是本分良家少妇，绝对不许答应开房、见面或去私密地方！必须礼貌委婉给软钉子拒绝。";
-    }
-    if (
-      /(?:去你家|来我家|去车里|在车里|小旅馆|民房).{0,4}(?:好|可以|行|成|没问题|吧|呀|啊)/u.test(text) ||
-      /^(?:好啊|好呀|行啊|可以呀).{0,6}(?:去你家|去车里)/u.test(text)
-    ) {
-      // persona-guard: ok — 只在苏棠范围内的危险地点分支。
-      return "【质检纠正｜严禁去危险地方】苏棠绝不去车里、去对方家或小旅馆民房！守住良家底线，委婉拒绝。";
-    }
-  }
-  return null;
-}
-

@@ -75,7 +75,6 @@ import {
   splitContractReplyParts,
 } from "./_chat_contract";
 import {
-  checkCriticPersonaViolation,
   needsReplyLengthRewrite,
   parseStructuredReply,
 } from "./_reply_length";
@@ -1635,19 +1634,13 @@ export async function handleChatRequest({ request, env, context, path, method })
         .map((part) => part.trim())
         .filter(Boolean);
       let settledReply = settledBubbles.join("|||");
-      const userTurnCount = (Array.isArray(historyMessages) ? historyMessages : []).filter((m) => m?.role === "user").length + 1;
-      let criticViolation = checkCriticPersonaViolation(settledReply, activePersonaScope, userTurnCount);
-      let safeReply = criticViolation
-        ? ""
-        : splitContractReplyParts(capReplyLength(settledReply, incomingText, activePersonaScope)).join("|||");
-      if (!safeReply && typeof callLlm === "function" && (criticViolation || needsReplyLengthRewrite(settledReply, activePersonaScope))) {
+      let safeReply = splitContractReplyParts(capReplyLength(settledReply, incomingText, activePersonaScope)).join("|||");
+      if (!safeReply && typeof callLlm === "function" && needsReplyLengthRewrite(settledReply, activePersonaScope)) {
         const repairStartedAt = Date.now();
         timing.repair_attempted = true;
-        const lengthRepairPrompt = systemPrompt + (criticViolation
-          ? `\n\n${criticViolation}请重新回答，严禁破防或违背人设，只返回要求的 JSON。`
-          : (activePersonaScope === "lihui"
-              ? "\n\n【只改长度｜最后一次重说】回复太长或没有自然断句。按李辉的打字铁律重新说：每次回复 1 到 2 条，不要一次发长段，单条通常 6 到 18 个字，整轮不超过 35 个字。像微信随手单手敲字自然断句，少用句号，多用空格和逗号，严禁堆砌‘哈哈’。只返回要求的 JSON。"
-              : "\n\n【只改长度｜最后一次重说】上一条回复超过 15 个字，又不适合自然拆分成完整短句。不要硬切半截话，也不要改变原本要表达的意思、人物态度和事实。按这些限制重新说：每次回复 1 到 3 条，通常 1 到 2 条；每条通常 3 到 10 个字；只有一句必须解释清楚、又确实拆不开时，才允许单条到 15 个字；整轮最多 25 个字；“嗯、好、在的、对呀、哈哈”这类自然短回应允许 1 到 2 个字。只返回要求的 JSON。"));
+        const lengthRepairPrompt = systemPrompt + (activePersonaScope === "lihui"
+          ? "\n\n【只改长度｜最后一次重说】回复太长或没有自然断句。按李辉的打字铁律重新说：每次回复 1 到 2 条，不要一次发长段，单条通常 6 到 18 个字，整轮不超过 35 个字。像微信随手单手敲字自然断句，少用句号，多用空格和逗号，严禁堆砌‘哈哈’。只返回要求的 JSON。"
+          : "\n\n【只改长度｜最后一次重说】上一条回复超过 15 个字，又不适合自然拆分成完整短句。不要硬切半截话，也不要改变原本要表达的意思、人物态度和事实。按这些限制重新说：每次回复 1 到 3 条，通常 1 到 2 条；每条通常 3 到 10 个字；只有一句必须解释清楚、又确实拆不开时，才允许单条到 15 个字；整轮最多 25 个字；“嗯、好、在的、对呀、哈哈”这类自然短回应允许 1 到 2 个字。只返回要求的 JSON。");
         const repairResult = await callLlm(
           buildLlmMessages(false, lengthRepairPrompt),
           effectiveLlmMaxTokens,
@@ -1662,10 +1655,7 @@ export async function handleChatRequest({ request, env, context, path, method })
               .map((part) => part.trim())
               .filter(Boolean)
               .join("|||");
-            criticViolation = checkCriticPersonaViolation(settledReply, activePersonaScope, userTurnCount);
-            safeReply = criticViolation
-              ? ""
-              : splitContractReplyParts(capReplyLength(settledReply, incomingText, activePersonaScope)).join("|||");
+            safeReply = splitContractReplyParts(capReplyLength(settledReply, incomingText, activePersonaScope)).join("|||");
           }
           await recordTokenUsage(
             env.DB,

@@ -4,7 +4,6 @@ import {
   buildSituationTimeline,
   buildTurnBrief,
   conversationStageInstruction,
-  resolveSutangMicroStep,
 } from "./_reply_policy";
 import { buildSutangContactPrompt } from "./_sutang_contact_prompt";
 import {
@@ -163,18 +162,8 @@ export function buildLeanConversationPrompt({
             });
             return [stagePrompt, ...playbook].filter(Boolean).join("\n");
           }
-          const contactAccount = String(facts?.contact_qq || "").trim();
-          const hasSeenPhoto = Boolean(hisPhotoOnFile || customerSlots?.hisPhotoKnown);
-          const microStep = resolveSutangMicroStep(
-            incoming,
-            historyMessages,
-            platform,
-            contactAccount,
-            hasSeenPhoto,
-            customerSlots,
-          );
           const fallbackPlaybook = matchPlaybookCards("female_sutang", incoming, {});
-          return [`${microStep.title}：${microStep.instruction}`, ...fallbackPlaybook].filter(Boolean).join("\n");
+          return fallbackPlaybook.join("\n");
         })()
       : lihui
         ? (() => {

@@ -6,9 +6,7 @@ import {
   buildLayeredSystemPrompt,
   buildRelationshipBoundaryPrompt,
   businessFilterFallback,
-  resolveSutangMicroStep,
 } from "../functions/api/_reply_policy";
-import { checkCriticPersonaViolation } from "../functions/api/_reply_length";
 import { buildSutangContactPrompt } from "../functions/api/_sutang_contact_prompt";
 
 // 2026-11-07：苏棠 29 岁、已婚、未育、跟婆婆住、只聊线上。
@@ -168,49 +166,6 @@ describe("苏棠当前人设（2026-11-07 版）", () => {
     expect(suggestive).toContain("隔着衣服");
   });
 
-  it("年龄、住址和普通聊天都直接回答", () => {
-    const age = resolveSutangMicroStep("你多大了", [], "soul");
-    expect(age.title).toContain("回答年龄");
-    expect(age.instruction).toContain("29岁");
-
-    const location = resolveSutangMicroStep("你住哪边", [], "soul");
-    expect(location.title).toContain("回答住址");
-    expect(location.instruction).toContain("两江新区");
-
-    const greeting = resolveSutangMicroStep("你好呀", [], "soul");
-    expect(greeting.title).toContain("正常打招呼");
-
-    const daily = resolveSutangMicroStep("今天吃了火锅", [], "soul");
-    expect(daily.title).toContain("本分聊天");
-    expect(daily.instruction).toContain("问什么答什么");
-  });
-
-  it("刚认识就约见面，也是婉拒；聊熟后也一样", () => {
-    const earlyHistory = [
-      { role: "user", content: "在吗" },
-      { role: "assistant", content: "在的" },
-      { role: "user", content: "你好呀" },
-      { role: "assistant", content: "你好" },
-    ];
-    const earlyMeeting = resolveSutangMicroStep("明天见一面呗", earlyHistory, "soul");
-    expect(earlyMeeting.title).toContain("婉拒见面");
-    expect(earlyMeeting.instruction).toContain("不答应");
-
-    const matureHistory = Array.from({ length: 12 }, (_, i) => ({
-      role: "user",
-      content: `用户消息${i}`,
-    }));
-    const matureMeeting = resolveSutangMicroStep("明天出来见见吧", matureHistory, "soul");
-    expect(matureMeeting.title).toContain("婉拒见面");
-
-    const earlyFlirt = resolveSutangMicroStep("你身材真性感好想你", earlyHistory, "soul");
-    expect(earlyFlirt.title).toContain("刚认识保持分寸");
-
-    const matureFlirt = resolveSutangMicroStep("你身材真性感好想你", matureHistory, "soul");
-    expect(matureFlirt.title).toContain("说一半漏一半");
-    expect(matureFlirt.instruction).toContain("少招我");
-  });
-
   it("问工作只按当前生活回答", () => {
     expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
   });
@@ -252,17 +207,4 @@ describe("苏棠当前人设（2026-11-07 版）", () => {
     expect(invite).toContain("家里走不开");
   });
 
-  it("质检器拦截自称 AI、前 10 轮答应线下和去对方家", () => {
-    const aiViolation = checkCriticPersonaViolation("我是人工智能助手，有什么可以帮您");
-    expect(aiViolation).toContain("严禁自称AI");
-
-    const earlyAgree = checkCriticPersonaViolation("好啊|||我们见一面吧", "sutang", 3);
-    expect(earlyAgree).toContain("严禁早熟答应");
-
-    const carAgree = checkCriticPersonaViolation("好呀去你家待会儿", "sutang", 12);
-    expect(carAgree).toContain("严禁去危险地方");
-
-    const safeReply = checkCriticPersonaViolation("你想太多了吧|||我们才刚认识", "sutang", 3);
-    expect(safeReply).toBeNull();
-  });
 });

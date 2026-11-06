@@ -4,8 +4,6 @@ import {
   buildRelationshipBoundaryPrompt,
   businessFilterFallback,
   isIntimateTopic,
-  normalizeAssistantReplyPresentation,
-  sanitizeIntimateTopicReply,
 } from "../functions/api/_reply_policy";
 
 describe("Sutang and relationship boundaries", () => {
@@ -137,29 +135,10 @@ describe("Sutang and relationship boundaries", () => {
     expect(stageOneBoundary).toContain("隐晦");
     expect(stageOneBoundary).toContain("不要追问是哪方面");
     expect(stageOneBoundary).toContain("不要硬挡");
-
-    // 2026-10-06 用户选 C 方案：不再用固定拒绝句。单段内容删掉后没别的可留，就保留模型原话。
-    expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 1))
-      .toBe("哪方面啊，说清楚点");
-    expect(sanitizeIntimateTopicReply(
-      "弟弟，那你直说。我这边一个人住，听着呢？",
-      "弟弟",
-      previousIntimateMessage,
-      1,
-    )).toBe("弟弟，那你直说。我这边一个人住，听着呢？");
-    // 固定拒绝句不许再出现
-    expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 1))
-      .not.toContain("我接不住");
   });
 
 
   it("问工作只按当前生活回答", () => {
     expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
-  });
-
-  it("does not replace contextual replies with a generic fallback", () => {
-    expect(sanitizeIntimateTopicReply("嗯，我听着呢。", "今天有点累", [], 1)).toBe("嗯，我听着呢。");
-    expect(sanitizeIntimateTopicReply("嗯，你说吧。", "今天有点累", [], 1)).toBe("嗯，你说吧。");
-    expect(normalizeAssistantReplyPresentation("啊")).toBe("啊");
   });
 });

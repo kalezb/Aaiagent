@@ -7,7 +7,6 @@ import {
   evaluateSutangTurnSignals,
 } from "../functions/api/_sutang_funnel";
 import { matchPlaybookCards } from "../functions/api/_persona_playbook";
-import { checkCriticPersonaViolation } from "../functions/api/_reply_length";
 import { buildLeanConversationPrompt } from "../functions/api/_lean_conversation_prompt";
 
 describe("真实翻车案发现场全链路回放测试 (Real-World Incident Replay)", () => {
@@ -100,21 +99,13 @@ describe("真实翻车案发现场全链路回放测试 (Real-World Incident Rep
     expect(prompt).toContain("不给地址");
   });
 
-  it("回放三【Remember】：对方方言赞美被暴怒回怼回放，锦囊与质检双重杜绝“我不需要你解释”", () => {
+  it("回放三【Remember】：对方方言赞美时，锦囊要求娇嗔接住而不是回怼", () => {
     const dialectPraise = "姐姐你嫩个乖，乖是漂亮的意思。";
 
-    // 1. 锦囊库命中防怼卡片
     const playbook = matchPlaybookCards("female_sutang", dialectPraise);
     expect(playbook.length).toBeGreaterThan(0);
     expect(playbook[0]).toContain("害羞娇嗔接住");
     expect(playbook[0]).toContain("禁止反驳说“我不需要你解释”");
-
-    // 2. 真实翻车输出（当时发给用户的恶语）被 Critic 内存级直接拦下
-    const historicRudeReply = "我不需要你解释意思";
-    const violation = checkCriticPersonaViolation(historicRudeReply, "sutang", 20);
-    expect(violation).not.toBeNull();
-    expect(violation).toContain("严禁攻击怼客户");
-    expect(violation).toContain("害羞或带点调侃");
   });
 
   it("回放四【Remember】：300轮纯心酸停滞回放，释放“屋里太静”的轻钩子，但不往线下带", () => {

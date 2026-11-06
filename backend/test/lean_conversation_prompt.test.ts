@@ -78,31 +78,4 @@ describe("lean conversation prompt", () => {
     expect(prompt).toContain("整轮最多 25 个字");
   });
 
-  it("injects dynamic micro-step ladder into lean prompt for Su Tang", () => {
-    const earlyPrompt = buildLeanConversationPrompt({
-      ...base,
-      personaId: "female_sutang",
-      activePersonaScope: "sutang",
-      messages: [{ role: "user", content: "今晚出来开房不" }],
-      historyMessages: [
-        { role: "user", content: "在吗" },
-        { role: "assistant", content: "在的" },
-      ],
-    });
-    expect(earlyPrompt).toContain("【本轮接话重点｜不聊线下私密安排】");
-    expect(earlyPrompt).toContain("挡回去");
-
-    const matureHistory = Array.from({ length: 12 }, (_, i) => ({
-      role: "user",
-      content: `聊过的话题${i}`,
-    }));
-    const maturePrompt = buildLeanConversationPrompt({
-      ...base,
-      personaId: "female_sutang",
-      activePersonaScope: "sutang",
-      messages: [{ role: "user", content: "今晚想见你" }],
-      historyMessages: matureHistory,
-    });
-    expect(maturePrompt).toContain("【本轮接话重点｜婉拒见面】");
-  });
 });

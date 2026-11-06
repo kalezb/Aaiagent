@@ -20,10 +20,6 @@ export {
   replyOpeningHint,
 };
 import {
-  BUSINESS_ACTION_PATTERN,
-  BUSINESS_ACTION_SOURCE,
-  BUSINESS_DEVICE_PATTERN,
-  BUSINESS_DEVICE_SOURCE,
   isExplicitBusinessIntent,
 } from "./_business_scope";
 export { isExplicitBusinessIntent };
@@ -576,8 +572,6 @@ export function buildRelationshipBoundaryPrompt(
   return "【过往关系边界】关系稳后可以简短说一句真正怕的是又变成一直主动的人，说完自己收；不主动倒苦水。";
 }
 
-const SPOKEN_CHAT_PATTERN = /(?:我在听|我听着(?:呢|了)?|听着呢|听你说|你说我听|你直说|继续说|接着说|展开说|说出来|你说吧|说吧|有事(?:就)?说)/u;
-const PRIVATE_DETAIL_INTERROGATION_PATTERN = /(?:哪方面|哪种方面|哪种|怎么个难受|怎么难受|哪里难受|说清楚点|说清楚|具体说说|具体点|再说详细点|没头没尾|没头没脑|没听懂|没听明白|听不懂|没看懂|看不明白)/u;
 
 // 旧数码/回收那套话术只属于星暮；苏棠落到这一层时用当前生活口径挡话，
 // 否则性话题边界会莫名冒出"你家那堆旧数码"，直接人设穿帮。
@@ -586,22 +580,6 @@ const PRIVATE_DETAIL_INTERROGATION_PATTERN = /(?:哪方面|哪种方面|哪种|�
 // 还会答非所问（他挑明了，她回“你最近是不是也没休息好”）。
 // 现在只保留“删掉不合适的那一段”，删光就保留模型原话；怎么接由提示词规则和人设卡片决定。
 
-export function sanitizeIntimateTopicReply(value, incomingText, historyMessages = [], stage = 1, starSoulScope = true) {
-  const reply = String(value || "").trim();
-  if (!reply) return reply;
-
-  if (!isIntimateTopic(incomingText, historyMessages)) {
-    return reply;
-  }
-
-  const kept = reply
-    .split(/\|\|\||\r?\n/u)
-    .map((part) => part.trim())
-    .filter((part) => part && !SPOKEN_CHAT_PATTERN.test(part) && !PRIVATE_DETAIL_INTERROGATION_PATTERN.test(part));
-  // 删光了也不再顶固定句，保留模型原话（用户选的 C 方案）。
-  return kept.length ? kept.join("|||") : reply;
-}
-
 export function isDirectWorkQuestion(value) {
   const text = compactQuestionText(value);
   if (!text) return false;
@@ -609,10 +587,6 @@ export function isDirectWorkQuestion(value) {
   return WORK_QUESTION_TERMS.test(text);
 }
 
-const BUSINESS_DEVICE = BUSINESS_DEVICE_SOURCE;
-const BUSINESS_ACTION = BUSINESS_ACTION_SOURCE;
-const BUSINESS_DRIFT_PATTERN = new RegExp(`(?:${BUSINESS_DEVICE}[^，,。!?！？\\n|]{0,20}${BUSINESS_ACTION}|${BUSINESS_ACTION}[^，,。!?！？\\n|]{0,20}${BUSINESS_DEVICE})`, "iu");
-const BUSINESS_DRIFT_TAIL = new RegExp(`(?:[。!?！？]|\\s)(?:你|那|对了)?[^，,。!?！？\\n|]{0,20}${BUSINESS_DEVICE}[^，,。!?！？\\n|]{0,24}${BUSINESS_ACTION}[^，,。!?！？\\n|]*`, "giu");
 
 // 全链最后一道兜底：前面所有规则把回复清空时用这句。
 // 必须留一句（否则可能把不该说的内容发出去），但要说人话：
@@ -641,64 +615,6 @@ export const SUTANG_NO_PREACHY_RULE = "【不说教】不许像居委会大妈�
 export const SUTANG_SHORT_BUBBLE_RULE = "【苏棠短句目标】系统硬限制仍按一次1到3条、通常1到2条、每条通常3到10字、必要的单条最多15字、整轮最多25字。苏棠平时优先写3到8字，尽量整轮不超过15字，说一半留一半。";
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
-export function resolveSutangMicroStep( // persona-guard: ok — 该函数只处理苏棠人设。
-  incomingText: string,
-  historyMessages: any[] = [],
-  platform = "soul",
-  contactAccount = "",
-  hasSeenPhoto = true,
-  customerSlots: CustomerDialogueSlots | null = null,
-): { step: number; title: string; instruction: string } {
-  const text = String(incomingText || "").toLowerCase();
-  const isDouban = String(platform || "").toLowerCase() === "douban";
-  void historyMessages;
-  void contactAccount;
-  void hasSeenPhoto;
-  void customerSlots;
-
-
-  // 统计历史消息中对方说话的轮次，刚认识前 10 轮死死守住本分良家底线，防止早熟穿帮
-  const userTurns = (Array.isArray(historyMessages) ? historyMessages : []).filter((m) => m?.role === "user").length + 1;
-  const isEarlyMaturity = userTurns < 10;
-  if (/(?:多大(?:了|啦|呀|啊|呢)?|几岁|几几年|多大年纪)/u.test(text)) {
-    return { step: 2, title: "【本轮接话重点｜回答年龄】", instruction: "直接答清自己29岁，可以自然接一句“你呢”，不绕弯、不卖关子、不挑逗。" };
-  }
-  if (/(?:住(?:在)?哪(?:边|个区|里)?|在哪个区|离我远不远|你哪里的|是本地人吗)/u.test(text)) {
-    return { step: 2, title: "【本轮接话重点｜回答住址】", instruction: "按看板精度直接答清自己在两江新区，不主动追问对方住址；对方接着聊再自然回答。" };
-  }
-  if (/(?:开房|酒店|开个房|订房|房号)/u.test(text)) { // persona-guard: ok
-    return { step: 2, title: "【本轮接话重点｜不聊线下私密安排】", instruction: "对方提线下私密安排，一律用半截话轻轻挡回去（如“你想什么呢”“大晚上的净说胡话”），不接这个话题、不问细节、不谈地点，也不说教，自然转回聊天。" };
-  }
-  if (/(?:去哪待|去你家|来我家|家里|车里|民房|小旅馆|偏僻|私密地方|过夜)/u.test(text)) { // persona-guard: ok
-    return { step: 2, title: "【本轮接话重点｜不去私密地方】", instruction: "不去对方家、也不让他来家里，不去车里、民房或偏僻地方。用一句带态度的短话挡回去，不解释太多，也不反过来撩。" };
-  }
-  if (/(?:见一面|见见|出来|想见你|见个面|约你|找你|喝一杯|出来坐坐|出来玩|聚聚|吃个饭|明天见)/u.test(text)) { // persona-guard: ok
-    return { step: 2, title: "【本轮接话重点｜婉拒见面】", instruction: "对方提见面、约你出去：先接住他的心意，再用半截话婉拒（家里走不开、婆婆在、不方便），不答应、不问在哪、不约时间、不提线下地点，也不长篇解释。" };
-  }
-  if (/(?:安全感|个子|斤|块头|借肩膀|有分寸|不破坏|不介入)/u.test(text)) {
-    return { step: 2, title: "【本轮接话重点｜回应分寸感】", instruction: "先正面回应他那句，不评论体力，不往身体或私密话题上带。对方问分寸，就平静说清自己有家庭、不想被打扰现实生活。" };
-  }
-  if (/(?:跪|舔|做爱|受不了|床上|舒服吗|调教|奴)/u.test(text)) {
-    return {
-      step: 2,
-      title: "【本轮接话重点｜带刺娇嗔软钉子】",
-      instruction: "对方言语过于露骨或提出下流要求时，以良家本分少妇身份给出带刺娇嗔的软钉子（例如“越说越没边了啊，把我当什么人了”“大清早嘴这么贫，站我面前估计话都说不利索”），拉高身价与尊严。严禁顺从迎合，绝对严禁说“不是不喜欢/有点慌”，严禁把“婆婆在”当妥协借口；也不当骂街泼妇直接拉黑，反客为主敲打对方，逼对方道歉并回归情感尊重与线下诚意。"
-    };
-  }
-  if (/(?:身材|抱抱|好性感|好美|喜欢你|想你|运动|健身|腹肌|肌肉|硬|厉害|耐力|猛|按摩|揉|手滑|推油|碰你|摸|咬|亲|撩|聊点(?:开心|刺激|好玩|别|有意思)的|寻开心)/u.test(text)) {
-    return isEarlyMaturity
-      ? { step: 1, title: "【本轮接话重点｜刚认识保持分寸】", instruction: "刚认识前10轮不撩骚、不接露骨话题。对方试探夸赞时，只当普通玩笑轻描淡写带过，或者给软钉子，绝不接私密细节。" }
-      : { step: 2, title: "【本轮接话重点｜说一半漏一半】", instruction: "用极短半截话接住，带矜持与娇嗔（例如“少招我”），对方过于露骨给软钉子“越说越没边了啊”反客为主，绝不顺从迎合，绝不说“不是不喜欢/有点慌”。不写身体器官和下流动作，不追问细节。" };
-  }
-  if (/(?:爱好|平时干嘛|喜欢什么|无聊|性格|情绪价值|看电影|听歌|咖啡)/u.test(text)) { // persona-guard: ok
-    return { step: 2, title: "【本轮接话重点｜展现苏棠生活与情感世界】", instruction: "带出操持家务之余的生活细节：收拾完家里，在阳台喝冰美式发呆看花的小独处，喜欢烘焙做蛋挞、听老歌看悬疑片。表达自己喜欢成熟松弛、能互相给情绪价值的人，讨厌说教与吹牛。" };
-  }
-  if (/^(?:你好(?:呀|啊)?|嗨|哈喽|hello|hi|在吗|在么|在不|晚上好|早(?:上好)?|下午好|在干嘛|在做啥|干啥呢)$/u.test(text.trim())) {
-    return { step: 1, title: "【本轮接话重点｜正常打招呼】", instruction: "像真人随手接住问候，自然简短不查户口，只发1条简短招呼（如“你好呀”或“嗨在呢”），绝不硬凑两句。等对方开启话题。" };
-  }
-  return { step: 1, title: "【本轮接话重点｜本分聊天】", instruction: "紧扣对方刚说的内容自然接话，问什么答什么，不装老练、不主动撩。先了解对方工作与生活节奏，偏好成熟稳重的成年人。" };
-}
-
 function editableRule(
   state: AgentRuleState,
   ruleId: string,
@@ -755,31 +671,6 @@ export function businessFilterFallback(incomingText, personaScopeOrBoolean = tru
     return "听着就累 你也不容易";
   }
   return "刚看到 你接着说";
-}
-
-export function sanitizeBusinessTopicDrift(
-  value,
-  incomingText,
-  historyMessages = [],
-  incomingTurnText = incomingText,
-  personaScopeOrBoolean = true,
-) {
-  const personaScope = normalizePersonaScope(personaScopeOrBoolean);
-  const reply = String(value || "").trim();
-  const currentTurn = String(incomingTurnText || incomingText || "").trim();
-  if (
-    !reply ||
-    isExplicitBusinessIntent(currentTurn) ||
-    isDirectWorkQuestion(currentTurn) ||
-    isIntimateTopic(incomingText, historyMessages)
-  ) return reply;
-  const withoutOldDeviceHook = reply.replace(BUSINESS_DRIFT_TAIL, "");
-  const kept = withoutOldDeviceHook
-    .split(/\|\|\||\r?\n/u)
-    .map((part) => part.trim())
-    .filter((part) => part && !BUSINESS_DRIFT_PATTERN.test(part));
-  if (kept.length) return kept.join("|||");
-  return businessFilterFallback(incomingText, personaScope);
 }
 
 const BOUNDARY_KEEPING_REPLY = /(?:别叫(?:我)?(?:女神|宝贝|亲爱的)|别这么叫|不好意思|不用夸|别夸)/u;
@@ -2746,9 +2637,6 @@ export function buildLayeredSystemPrompt({
     : "";
 
   const fragmentGuidance = sutangScope ? buildFragmentedMessageGuidance(incoming, historyMessages) : "";
-  const contactAccount = String(normalizedFacts?.contact_qq || "").trim();
-  const hasSeenPhoto = hisPhotoAlreadySent || Boolean(customerSlots?.hisPhotoKnown);
-  const sutangMicroStep = sutangScope ? resolveSutangMicroStep(incoming, historyMessages, platform, contactAccount, hasSeenPhoto, customerSlots) : null;
   const customOrBase = editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE);
   const sutangActionLadderPrompt = customOrBase;
   const sutangPresence = [
@@ -2795,9 +2683,6 @@ export function buildLayeredSystemPrompt({
     programRules as ProgramRulesConfig,
     messagesWithKind,
   );
-  const actionLadderTaskPrompt = sutangScope && sutangMicroStep
-    ? `【本轮接话重点（事实问题必须答清）】\n本轮重点：${sutangMicroStep.title}\n执行提示：${sutangMicroStep.instruction}\n要求：先完成对方本轮真正需要的事和必须守住的目的；没有必须推进的事时，允许只接话、给态度或说自己的感受，绝不为了显得主动硬加问题、心理分析或客服关心。`
-    : "";
   const slotsConstraintPrompt = (customerSlots && agentRuleState.isEnabled("known_slots_anti_repetition", true))
     ? buildCustomerSlotsConstraintPrompt(customerSlots)
     : "";
@@ -2816,6 +2701,5 @@ export function buildLayeredSystemPrompt({
     outputRuleStagePrompt,
     knowledgePrompt,
     humanVoicePrompt,
-    actionLadderTaskPrompt,
   ].filter(Boolean).join("\n\n");
 }
