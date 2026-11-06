@@ -37,7 +37,6 @@ const EXPLICIT_AGENT_RULE_IDS = new Set([
   "sutang_short_bubble",
   "knowledge_match_priority",
   "output_shape_hard",
-  "question_pacing",
   "emoji_pragmatic_booster",
   "intimate_label_consistency",
   "exit_marker",

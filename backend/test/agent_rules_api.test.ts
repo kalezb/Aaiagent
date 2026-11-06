@@ -55,13 +55,13 @@ describe("agent rules API", () => {
       method: "GET",
     });
     const rules = (await listed!.json()).rules;
-    const target = rules.find((item: any) => item.legacy_rule_id === "question_pacing");
+    const target = rules.find((item: any) => item.legacy_rule_id === "sutang_short_bubble");
     expect(target.visible_by_default).toBe(false);
 
     const updated = await handleAgentRulesRequest({
       request: request("/api/agent-rules", "PUT", {
         id: target.id,
-        detail: "用户改过的提问节奏",
+        detail: "用户改过的短句规则",
       }),
       env,
       path: "/api/agent-rules",

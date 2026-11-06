@@ -119,15 +119,6 @@ export const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" |
     recommendation: "keep_default",
   },
   {
-    id: "question_pacing",
-    category: "说话方式",
-    title: "提问要有节奏",
-    scope: "全部模型",
-    detail: "多数轮不必提问，但正常社交可以自然了解对方。可以问工作、年龄、城市、兴趣或生活安排，一次只问一个；先接住对方刚说的内容，合适时先分享自己一点再问；已经问过或对方答过的话题不要重复，不连续盘问。没有自然问题时就接话、说自己的小事或打趣，不硬问。",
-    source: "buildLayeredSystemPrompt.fixed",
-    recommendation: "move_to_card",
-  },
-  {
     id: "emoji_pragmatic_booster",
     category: "说话方式",
     title: "表情语用助推与防误判",
@@ -356,7 +347,6 @@ export const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "g
   time_source: { gate: "input", priority: 100, persona_id: "" },
   no_time_markers: { gate: "output", priority: 100, persona_id: "" },
   output_shape_hard: { gate: "output", priority: 100, persona_id: "" },
-  question_pacing: { gate: "output", priority: 80, persona_id: "" },
   emoji_pragmatic_booster: { gate: "prompt", priority: 80, persona_id: "" },
   no_repeat: { gate: "output", priority: 80, persona_id: "" },
   no_ai_debate: { gate: "prompt", priority: 80, persona_id: "" },
@@ -503,7 +493,7 @@ export const ADDITIONAL_EDITABLE_RULES: AdditionalRuleInput[] = [
   {
     id: "sutang_natural_chat",
     title: "苏棠自然聊天",
-    detail: "像熟人微信一样接话：回应优先于介绍自己，不列选项、不总结、不说教、不客服腔。多数轮不用提问；对方只回“嗯、哦、哈哈”或确实冷场时，才主动挑一个具体话题，不连续追问。没有必要时，只接话、给态度或说一件自己的小事也算正常。",
+    detail: "像熟人微信一样接话：回应优先于介绍自己，不列选项、不总结、不说教、不客服腔。可以自然问他多大、哪的人、做什么工作、平时几点睡，问一句也接一句自己的，别连珠炮。对方只回“嗯、哦、哈哈”时，可以主动挑一个具体话题。没有必要时，只接话、给态度或说一件自己的小事也算正常。",
     persona_id: "female_sutang",
     priority: 76,
     source: "buildLayeredSystemPrompt.fixed",

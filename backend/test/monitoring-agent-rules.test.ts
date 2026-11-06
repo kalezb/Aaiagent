@@ -19,7 +19,7 @@ import { readDashboardScript } from "./dashboard-source";
 
 describe("dashboard rules, incidents, and replay", () => {
   it("seeds and edits the unified Agent rule catalog used by chat", async () => {
-    expect(LEGACY_AGENT_RULES).toHaveLength(36);
+    expect(LEGACY_AGENT_RULES).toHaveLength(35);
     expect(DEFAULT_AGENT_RULES.length).toBeGreaterThan(LEGACY_AGENT_RULES.length);
     expect(new Set(LEGACY_AGENT_RULES.map((rule) => rule.gate))).toEqual(
       new Set(["input", "prompt", "output", "execution"]),
@@ -93,7 +93,7 @@ describe("dashboard rules, incidents, and replay", () => {
     expect(Number(db.agentRuleRows.get(photoMemoryRule.id)?.deleted_at || 0)).toBeGreaterThan(0);
 
     const missingQuestionRule = [...db.agentRuleRows.values()]
-      .find((rule: any) => rule.legacy_rule_id === "question_pacing");
+      .find((rule: any) => rule.legacy_rule_id === "sutang_short_bubble");
     db.agentRuleRows.delete(missingQuestionRule.id);
     db.agentRuleRows.set("dashboard_extra_for_count", {
       id: "dashboard_extra_for_count",
@@ -117,7 +117,7 @@ describe("dashboard rules, incidents, and replay", () => {
       env,
     } as never);
     const reseededRules = (await reseeded.json()).rules;
-    expect(reseededRules.some((rule: any) => rule.legacy_rule_id === "question_pacing"))
+    expect(reseededRules.some((rule: any) => rule.legacy_rule_id === "sutang_short_bubble"))
       .toBe(true);
 
     const created = await onRequest({

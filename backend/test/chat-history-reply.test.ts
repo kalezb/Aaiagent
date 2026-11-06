@@ -20,7 +20,6 @@ import {
   translateStickerContent,
   buildSituationTimeline,
   OUTPUT_HARD_RULE,
-  QUESTION_PACING_RULE,
   SUTANG_ACTION_LADDER_RULE,
 } from "../functions/api/_reply_policy";
 import {
@@ -507,7 +506,6 @@ describe("chat history and reply", () => {
     });
     expect(prompt).toContain("只接对方最新一句；不主动解释、不主动道歉、不主动汇报自己在忙什么。");
     expect(prompt).toContain(OUTPUT_HARD_RULE);
-    expect(prompt).toContain(QUESTION_PACING_RULE);
     expect(prompt).toContain(SUTANG_ACTION_LADDER_RULE);
     expect(prompt).not.toContain("绝不原地打转");
     // 不许再出现“让他自己交代一句”的教法（旧句是“要么认一句自己没接上（睡着了、忙忘了）”）
