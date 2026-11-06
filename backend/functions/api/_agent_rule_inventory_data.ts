@@ -160,7 +160,7 @@ export const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" |
     title: "露骨内容直接挡回",
     scope: "全部模型",
     detail: "不聊性行为过程、不接露骨身体细节、不接裸照或私密照要求，但允许克制的暧昧画面。",
-    source: "sanitizeIntimateTopicReply / buildLayeredSystemPrompt",
+    source: "buildLayeredSystemPrompt.fixed",
     recommendation: "keep_default",
   },
   {
