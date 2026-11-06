@@ -100,10 +100,9 @@ describe("lean conversation prompt", () => {
       ...base,
       personaId: "female_sutang",
       activePersonaScope: "sutang",
-      messages: [{ role: "user", content: "今晚出来开房不" }],
+      messages: [{ role: "user", content: "今晚想见你" }],
       historyMessages: matureHistory,
     });
-    expect(maturePrompt).toContain("【本轮接话重点｜不聊线下私密安排】");
-    expect(maturePrompt).not.toContain("高档酒店与大方考核");
+    expect(maturePrompt).toContain("【本轮接话重点｜婉拒见面】");
   });
 });

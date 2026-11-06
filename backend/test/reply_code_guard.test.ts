@@ -42,7 +42,7 @@ describe("reply machine code & JSON guard", () => {
       expect(isMachineCodeOrJson("喜欢 1+1=2 这样的默契")).toBe(false);
       expect(isMachineCodeOrJson("[[SEND_MEDIA:daily]]")).toBe(false);
       expect(isMachineCodeOrJson("[[SEND_MEDIA:daily]] 刚拍的给你看")).toBe(false);
-      expect(isMachineCodeOrJson("前阵子在豆瓣看影评，发现里面挺清静还能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026")).toBe(false);
+      expect(isMachineCodeOrJson("前阵子在家看老电影，发现一个人挺清静还能聊天|||看你说话真诚上道，今天破例只给你一个人")).toBe(false);
     });
   });
 

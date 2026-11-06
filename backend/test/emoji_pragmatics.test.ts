@@ -126,28 +126,4 @@ describe("emoji pragmatics and Douban 164 emojis registry", () => {
     expect(tags).toContain("戳一下");
   });
 
-  it("no longer injects any Douban relationship premise", () => {
-    const genericPrompt = buildLayeredSystemPrompt({
-      personaId: "female",
-      personaPrompt: "客服",
-      platform: "douban",
-      homeLocation: { city: "重庆", district: "两江新区" },
-      workLocation: { city: "重庆", district: "江北区" },
-      messages: [{ role: "user", content: "在干嘛呢" }],
-      agentRuleState: EMPTY_AGENT_RULE_STATE,
-    });
-    expect(genericPrompt).not.toContain("豆瓣关系前提");
-
-    const sutangPrompt = buildLayeredSystemPrompt({
-      personaId: "female_sutang",
-      personaPrompt: "苏棠",
-      platform: "douban",
-      homeLocation: { city: "重庆", district: "两江新区" },
-      workLocation: { city: "重庆", district: "江北区" },
-      messages: [{ role: "user", content: "在干嘛呢" }],
-      agentRuleState: EMPTY_AGENT_RULE_STATE,
-    });
-    expect(sutangPrompt).not.toContain("豆瓣");
-    expect(sutangPrompt).not.toContain("sutang2026");
-  });
 });

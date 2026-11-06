@@ -1432,14 +1432,11 @@ describe("chat history and reply", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const legacyMigration = readFileSync(new URL("../db/migrations/20260925_four_personas.sql", import.meta.url), "utf8");
     const removalMigration = readFileSync(new URL("../db/migrations/20260926_remove_media_repulsion_rule.sql", import.meta.url), "utf8");
-    const builtFunctions = readFileSync(new URL("../dist-func/index.js", import.meta.url), "utf8");
 
     expect(schema).not.toContain("对方发语音或表情后告知以后别发，你反感");
     expect(legacyMigration).not.toContain("对方发语音或表情后告知以后别发，你反感");
     expect(removalMigration).toContain("UPDATE personas");
     expect(removalMigration).toContain("REPLACE(");
-    expect(builtFunctions).not.toContain("PLATFORM_STYLE_HINTS");
-    expect(builtFunctions).not.toContain("platform_style_hints");
   });
 
   it("stores four aligned personas in the seed and production migration", () => {

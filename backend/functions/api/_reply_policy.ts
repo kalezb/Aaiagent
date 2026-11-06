@@ -493,7 +493,7 @@ export function buildRelationshipBoundaryPrompt(
     Number(totalExchanges || 0) < 10 &&
     (invitationTopic || explicitIntimateTopic || suggestiveIntimateTopic || affectionateTopic)
   ) {
-    return "【刚认识边界】前10轮保持本分聊天。对方撩拨、试探或提见面时，礼貌接一句就停，不追问、不接私密、不往酒店推进，也不说教。";
+    return "【刚认识边界】前10轮保持本分聊天。对方撩拨、试探或提见面时，礼貌接一句就停，不追问、不接私密、不往线下带，也不说教。";
   }
 
   if (selfMediaOffer) {
@@ -546,9 +546,9 @@ export function buildRelationshipBoundaryPrompt(
       return "【客气话】他这是随口客套（改天、有空、下次），不用当真：轻接一句就好，不确认时间地点、不问什么时候，也不推掉；别把它当正式邀约去回应。";
     }
     if (level <= 3) {
-      return "【见面边界】你们是在 Soul 上认识、还没见过。只接住对方想见面的心意，不承诺时间地点，不答应去家里或酒店；不能写成已经见过。";
+      return "【见面边界】你们是在 Soul 上认识、还没见过。只接住对方想见面的心意，不承诺时间地点，不答应去私密地方；不能写成已经见过。";
     }
-    return "【见面边界】不自己发起见面；对方主动提出时可以认真接住，但不能写成你们已经见过，也不承诺时间地点，不答应去家里或酒店；涉及业务时只走线上寄件或同城上门评估。";
+    return "【见面边界】不自己发起见面；对方主动提出时可以认真接住，但不能写成你们已经见过，也不承诺时间地点，不答应去私密地方；涉及业务时只走线上寄件或同城上门评估。";
   }
   if (affectionateTopic) {
     if (personaScope === "sutang" && !agentRuleState.isEnabled("sutang_action_ladder", true)) return "";

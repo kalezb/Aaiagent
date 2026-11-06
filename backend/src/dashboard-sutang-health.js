@@ -34,7 +34,7 @@ function renderSutangHealthItem(item, kind) {
   } else if (kind === "legacy") {
     detail = ok ? "已经不会再进入苏棠对白" : "这条旧规则还在生效";
   } else if (item.state === "active" || item.state === "enabled") {
-    detail = ok ? "内容符合当前酒店推进口径" : "需要打开检查";
+    detail = ok ? "内容符合当前人设口径" : "需要打开检查";
   } else {
     detail = "当前不会进入正常聊天";
   }
@@ -146,13 +146,13 @@ function renderSutangRuleHealth() {
     + '<div class="rule-health-group" style="margin-top:16px;background:rgba(99,102,241,0.04);border:1px solid rgba(99,102,241,0.15);border-radius:8px;padding:12px 14px;">'
     + '<h4 style="margin:0 0 6px 0;font-size:14px;color:#4f46e5;">📋 当前人设推进主线与三段式底色</h4>'
     + '<div style="font-size:13px;line-height:1.6;color:var(--text,#1e293b);">'
-    + '<p style="margin:3px 0;"><b>1. 身份底色：</b>29岁已婚少妇，住在重庆两江新区，带3岁儿子做家务，性格温和有分寸，短句作答（3-8字），想偷吃又怕毁家庭的真实拉扯。</p>'
-    + '<p style="margin:3px 0;"><b>2. 四步主线：</b>破冰良家 ➔ 情感共鸣与停滞破局（主动叹被窝冷破局） ➔ 邀约拉扯（前2次推脱，第3次限顺路酒店） ➔ 高档酒店邀约落地（大方收网）。</p>'
-    + '<p style="margin:3px 0;"><b>3. 绝对红线：</b>微信因现实生活顾虑太多而拒绝；私下联系只认后台填写的QQ，并在时机合适时自然给；绝不去车里或对方家；男方发过照片后绝不催照；对方夸赞娇嗔接话绝不回怼。</p>'
+    + '<p style="margin:3px 0;"><b>1. 身份底色：</b>29岁已婚未育，和婆婆住在重庆两江新区，在家操持家务，性格温和有分寸，短句作答（3-8字）。</p>'
+    + '<p style="margin:3px 0;"><b>2. 三段主线：</b>本分破冰 ➔ 情感共鸣与暧昧拉扯 ➔ 反复邀约时温柔婉拒，关系留在线上。</p>'
+    + '<p style="margin:3px 0;"><b>3. 绝对红线：</b>微信因现实生活顾虑太多而拒绝；私下联系只认后台填写的QQ，并在时机合适时自然给；不答应见面、不给地址；男方发过照片后绝不催照；对方夸赞娇嗔接话绝不回怼。</p>'
     + '</div></div>'
 
     + '<details class="rule-health-group" style="margin-top:14px;background:rgba(0,0,0,0.02);border:1px dashed #cbd5e1;border-radius:8px;padding:8px 12px;">'
-    + '<summary style="cursor:pointer;font-weight:600;color:#64748b;font-size:13px;">📦 历史 60 次代码更新的旧规则与补丁已全量安全归档（点击展开查看明细）</summary>'
+    + '<summary style="cursor:pointer;font-weight:600;color:#64748b;font-size:13px;">📦 其他规则与卡片状态（点击展开查看明细）</summary>'
     + '<div style="margin-top:10px;">'
     + (ruleRows ? '<div class="small-muted" style="margin-bottom:4px;">关键规则：</div><div class="rule-health-list">' + ruleRows + '</div>' : '')
     + (legacyRows ? '<div class="small-muted" style="margin:8px 0 4px 0;">已停用或已吸收旧规则：</div><div class="rule-health-list">' + legacyRows + '</div>' : '')

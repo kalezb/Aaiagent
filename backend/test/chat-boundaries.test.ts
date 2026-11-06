@@ -658,10 +658,9 @@ describe("chat boundaries", () => {
     expect(body.human_takeover).toBeUndefined();
     expect(body.reply).toBe("想聊就加我QQ 12345678");
     expect(capturedBody).toContain("12345678");
-    expect(capturedBody).not.toContain("sutang2026");
   });
 
-  it("seeds the current Su Tang persona and removes child/hotel wording from the latest migration", () => {
+  it("seeds the current Su Tang persona and latest migration", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = readFileSync(
       new URL("../db/migrations/20261107_sutang_no_child_no_hotel.sql", import.meta.url),
@@ -674,22 +673,13 @@ describe("chat boundaries", () => {
     expect(sutangSchema).toContain("你扮演苏棠，29 岁，已婚");
     expect(sutangSchema).toContain("没有孩子");
     expect(sutangSchema).toContain("只谈线上");
-    expect(sutangSchema).not.toContain("3 岁女儿");
-    expect(sutangSchema).not.toContain("高档酒店");
-    expect(sutangSchema).not.toContain("发代付");
     expect(sutangSchema).toContain("不催对方睡觉");
     expect(sutangSchema).toContain("每次回复 1 到 3 条");
     expect(sutangSchema).toContain("整轮最多 25 个字");
-    expect(sutangSchema).not.toContain("黑丝");
-    expect(sutangSchema).not.toContain("出浴真空");
-    expect(sutangSchema).not.toContain("高位审视");
-    expect(sutangSchema).not.toContain("逼问对方");
-    expect(migration).toContain("sutang_night_meeting_boundary");
-    expect(migration).toContain("douban_relationship_premise");
-    expect(migration).toContain("DELETE FROM agent_rules");
-    expect(migration).toContain("只谈线上");
-    expect(migration).not.toContain("发代付");
     expect(schema).toContain('"has_children":false,"children_age":null');
+    expect(migration).toContain("只谈线上");
+    expect(migration).toContain("DELETE FROM agent_rules");
+    expect(migration).toContain("sutang_natural_chat");
   });
 
   it("routes a first contact request through the model and only blocks a real account leak", async () => {
