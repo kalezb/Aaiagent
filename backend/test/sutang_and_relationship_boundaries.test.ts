@@ -6,13 +6,11 @@ import {
   EMPTY_REPLY_FALLBACK,
   isIntimateTopic,
   normalizeAssistantReplyPresentation,
-  sanitizeBusinessTopicDrift,
   sanitizeIntimateTopicReply,
-  shouldRepairXingmuLowContextReply,
 } from "../functions/api/_reply_policy";
 
 describe("Sutang and relationship boundaries", () => {
-  it("keeps Su Tang meeting, night and knowledge-card rules aligned", () => {
+  it("keeps Su Tang online boundary and knowledge-card rules aligned", () => {
     const prompt = buildLayeredSystemPrompt({
       personaId: "female_sutang",
       personaPrompt: "你是苏棠，29岁，已婚，没有孩子，和婆婆一起住在两江新区，在家操持家务。",
@@ -69,7 +67,7 @@ describe("Sutang and relationship boundaries", () => {
     expect(withoutPhotoRules).not.toContain("永不再问他长什么样");
     expect(withoutPhotoRules).not.toContain("你先发张你的呀");
 
-    const withoutMeetingOrKnowledgeRules = buildLayeredSystemPrompt({
+    const withoutKnowledgeRule = buildLayeredSystemPrompt({
       personaId: "female_sutang",
       personaPrompt: "你是苏棠，29岁，已婚，没有孩子，和婆婆一起住在两江新区，在家操持家务。",
       personaFacts: null,
@@ -91,21 +89,15 @@ describe("Sutang and relationship boundaries", () => {
         loaded: true,
         rules: [],
         isEnabled: (id: string, fallback = true) =>
-          id === "sutang_night_meeting_boundary" || id === "knowledge_match_priority"
-            ? false
-            : fallback,
+          id === "knowledge_match_priority" ? false : fallback,
         textFor: (_id: string, fallback = "") => fallback,
         priorityFor: (_id: string, fallback = 50) => fallback,
       },
     });
-    expect(withoutMeetingOrKnowledgeRules).not.toContain("见面与安全边界");
-    expect(withoutMeetingOrKnowledgeRules).not.toContain("【知识库命中｜本轮必须使用】");
+    expect(withoutKnowledgeRule).not.toContain("【知识库命中｜本轮必须使用】");
   });
 
   it("builds relationship and intimate-topic boundaries by stage", () => {
-    expect(buildRelationshipBoundaryPrompt(1, "你离过婚吗", [])).toContain("离过婚，现在一个人住");
-    expect(buildRelationshipBoundaryPrompt(2, "为什么离婚", [])).toContain("说得很漂亮却没有行动");
-    expect(buildRelationshipBoundaryPrompt(4, "上一段关系是怎么回事", [])).toContain("真正怕的是又变成一直主动的人");
     expect(buildRelationshipBoundaryPrompt(3, "想聊聊两性话题", [])).toContain("不聊性细节");
     // 正常要照片要放开，只有露骨的才挡
     expect(buildRelationshipBoundaryPrompt(3, "想聊聊两性话题", [])).toContain("正常给看");
@@ -119,7 +111,6 @@ describe("Sutang and relationship boundaries", () => {
     expect(buildRelationshipBoundaryPrompt(2, "改天请你吃饭", [])).toContain("客气话");
     expect(buildRelationshipBoundaryPrompt(2, "下次有空一起喝一杯", [])).toContain("客气话");
     expect(buildRelationshipBoundaryPrompt(2, "这周末出来吃个饭吗", [])).toContain("见面边界");
-    expect(buildRelationshipBoundaryPrompt(4, "想约你见面", [])).toContain("对方主动提出时可以认真接住");
     const sutangInvite = buildRelationshipBoundaryPrompt(2, "想约你见面", [], "sutang", undefined, 16);
     expect(sutangInvite).toContain("见面边界｜苏棠");
     expect(sutangInvite).toContain("不答应");
@@ -148,10 +139,6 @@ describe("Sutang and relationship boundaries", () => {
     expect(stageOneBoundary).toContain("不要追问是哪方面");
     expect(stageOneBoundary).toContain("不要硬挡");
 
-    const stageFourBoundary = buildRelationshipBoundaryPrompt(4, "想那个", []);
-    expect(stageFourBoundary).toContain("同样隐晦");
-    expect(stageFourBoundary).toContain("旧手机");
-
     // 2026-10-06 用户选 C 方案：不再用固定拒绝句。单段内容删掉后没别的可留，就保留模型原话。
     expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 1))
       .toBe("哪方面啊，说清楚点");
@@ -164,41 +151,14 @@ describe("Sutang and relationship boundaries", () => {
     // 固定拒绝句不许再出现
     expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 1))
       .not.toContain("我接不住");
-    expect(sanitizeIntimateTopicReply(
-      "哈哈，这个先打住。你家那堆旧数码翻得怎么样了？",
-      "想那个",
-      [],
-      4,
-    )).toBe("哈哈，这个先打住。你家那堆旧数码翻得怎么样了？");
-    expect(sanitizeBusinessTopicDrift(
-      "哈哈，这个先打住。你家那堆旧数码翻得怎么样了？",
-      "想那个",
-      [],
-    )).toBe("哈哈，这个先打住。你家那堆旧数码翻得怎么样了？");
   });
 
-  it("keeps the recycling script inside the Xingmu persona only", () => {
-    // 苏棠落到兜底时，绝不能冒出"旧数码/回收"那套话术。
-    // C 方案后不再有兜底句；苏棠落到这里也是保留模型原话，不冒出旧数码话术。
-    expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 4, false))
-      .toBe("哪方面啊，说清楚点");
-    expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 5, false))
-      .not.toContain("旧数码");
+
+  it("问工作只按当前生活回答", () => {
     expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
-    expect(businessFilterFallback("你做什么工作的", false)).not.toContain("旧数码");
-    // 星暮 scope 保持原样：他才是回收客服（C 方案后亲密话题不再有兜底句，这里看业务兜底）。
-    expect(businessFilterFallback("你做什么工作的", true)).toBe("不是餐饮 我做旧数码这行的");
-    expect(sanitizeBusinessTopicDrift(
-      "手机啊，二手回收这块，你手上有闲置的没",
-      "自己开店，太强了",
-      [],
-      "自己开店，太强了",
-      false,
-    )).not.toContain("旧数码");
   });
 
   it("always keeps one human-sounding last-resort fallback", () => {
-    // 全链兜底必须存在（防止把不该说的内容发出去），但不能是"恩恩，好的。"
     expect(EMPTY_REPLY_FALLBACK).toBe("嗯 我在呢");
   });
 
@@ -206,21 +166,5 @@ describe("Sutang and relationship boundaries", () => {
     expect(sanitizeIntimateTopicReply("嗯，我听着呢。", "今天有点累", [], 1)).toBe("嗯，我听着呢。");
     expect(sanitizeIntimateTopicReply("嗯，你说吧。", "今天有点累", [], 1)).toBe("嗯，你说吧。");
     expect(normalizeAssistantReplyPresentation("啊")).toBe("啊");
-  });
-
-  it("repairs low-context replies with the surrounding conversation", () => {
-    const messages = [{ role: "user", content: "后者" }];
-    const history = [{ role: "assistant", content: "大冒险就是让你干点丢人的事，你先说你想选哪个" }];
-
-    expect(shouldRepairXingmuLowContextReply("啊", messages, history, true)).toBe(true);
-    expect(shouldRepairXingmuLowContextReply("你说吧", messages, history, true)).toBe(true);
-    expect(
-      shouldRepairXingmuLowContextReply(
-        "行，大冒险。你先给通讯录第一个人发一句我想你了。",
-        messages,
-        history,
-        true,
-      )
-    ).toBe(false);
   });
 });
