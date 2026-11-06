@@ -30,3 +30,25 @@ data class ReplyTask(
 )
 
 data class ReplyTaskResponse(val task: ReplyTask?)
+
+data class VisualGroundingPoint(
+    val x: Int = 0,
+    val y: Int = 0
+)
+
+data class VisualGroundingNormalizedPoint(
+    val x: Double = 0.0,
+    val y: Double = 0.0
+)
+
+data class VisualGroundingResponse(
+    val success: Boolean = false,
+    @SerializedName("has_popup") val hasPopup: Boolean = false,
+    @SerializedName("popup_kind") val popupKind: String = "none",
+    val action: String = "none",
+    @SerializedName("target_point") val targetPoint: VisualGroundingPoint? = null,
+    @SerializedName("normalized_point") val normalizedPoint: VisualGroundingNormalizedPoint? = null,
+    val confidence: Double = 0.0,
+    val reason: String = "",
+    val error: String? = null
+)

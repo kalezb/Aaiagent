@@ -125,7 +125,10 @@ class ConversationEntryCoordinatorTest {
 
         // 推进 61 秒（超过 60 秒间隔）
         clock.advance(61000)
-        ui.nextIdentities = listOf(ui.identityWang)
+        ui.nextIdentities = listOf(ui.identityWang.copy(
+            preview = "又给你发了一条",
+            lastMessageTime = "12:37",
+        ))
         val second = coordinator.openVisibleNext()
         assertTrue(second is ConversationEntryOutcome.Opened)
         assertEquals("小王", (second as ConversationEntryOutcome.Opened).identity.displayName)
@@ -150,9 +153,33 @@ class ConversationEntryCoordinatorTest {
 
         // 过去 4 秒（超过 3 秒结算）：单人热聊允许进入，不需要等 60 秒
         clock.advance(3000)
+        ui.nextIdentities = listOf(ui.identityWang.copy(
+            preview = "你还在吗",
+            lastMessageTime = "12:37",
+        ))
         val second = coordinator.openVisibleNext()
         assertTrue(second is ConversationEntryOutcome.Opened)
         assertEquals("小王", (second as ConversationEntryOutcome.Opened).identity.displayName)
+    }
+
+    @Test
+    fun `unchanged unread badge is not treated as a new message`() = runBlocking {
+        val ui = FakeMultiContactUi()
+        val clock = FakeClock(1000L)
+        val coordinator = ConversationEntryCoordinator(ui = ui, clock = clock)
+
+        ui.nextIdentities = listOf(ui.identityWang)
+        val first = coordinator.openVisibleNext()
+        assertTrue(first is ConversationEntryOutcome.Opened)
+        val opened = first as ConversationEntryOutcome.Opened
+        coordinator.markComplete(opened.identity.key, opened.identity)
+
+        clock.advance(61_000L)
+        ui.nextIdentities = listOf(ui.identityWang)
+        val again = coordinator.openVisibleNext()
+
+        assertEquals(ConversationEntryOutcome.NoWork, again)
+        assertEquals(1, ui.openCalls)
     }
 
     @Test

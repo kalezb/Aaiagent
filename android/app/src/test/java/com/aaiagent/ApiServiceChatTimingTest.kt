@@ -1,6 +1,7 @@
 package com.aaiagent
 
 import com.aaiagent.network.ApiService
+import com.aaiagent.network.ChatMessagePayload
 import com.aaiagent.network.ChatRequest
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -63,6 +64,8 @@ class ApiServiceChatTimingTest {
             val sentBody = sent.body.readUtf8()
             assertTrue(sentBody.contains("\"conversation_stage\":\"first_contact\""))
             assertTrue(sentBody.contains("\"relationship_origin\":\"match\""))
+            assertTrue(sentBody.contains("\"schema_version\":2"))
+            assertTrue(sentBody.contains("\"transcript_status\":\"not_applicable\""))
         } finally {
             server.shutdown()
         }
@@ -154,11 +157,18 @@ class ApiServiceChatTimingTest {
             conversationStage = conversationStage,
             relationshipOrigin = relationshipOrigin,
             messages = listOf(
-                mapOf(
-                    "role" to "user",
-                    "content" to "hello",
-                    "timestamp" to "",
-                    "created_at" to 0L
+                ChatMessagePayload(
+                    role = "user",
+                    content = "hello",
+                    type = "text",
+                    kind = "text",
+                    transcript = "",
+                    transcriptStatus = "not_applicable",
+                    sequence = 0,
+                    clientMessageId = "seq:0",
+                    timestamp = "",
+                    createdAt = 0L,
+                    timestampTrusted = false,
                 )
             )
         )

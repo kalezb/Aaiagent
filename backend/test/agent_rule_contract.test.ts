@@ -79,6 +79,68 @@ describe("agent rule and model contract", () => {
       .toBeLessThan(prompt.indexOf("【优先级10】【custom_low】低优先级内容"));
   });
 
+  it("only sends default rules that match this turn while user rules stay active", () => {
+    const state = buildAgentRuleState([
+      rule("photo_only_explicit", {
+        title: "照片规则",
+        detail: "只有这一轮要照片才带上",
+      }),
+      rule("business_scope", {
+        persona_id: "female",
+        title: "业务规则",
+        detail: "只有聊旧手机才带上",
+      }),
+      rule("custom_always", {
+        source: "dashboard",
+        title: "用户自定义规则",
+        detail: "用户保存的规则必须生效",
+      }),
+    ], "female");
+
+    const prompt = buildCustomAgentRulesPrompt(state, "female", {
+      incomingText: "能发张你的照片看看吗",
+      currentMessages: [{ role: "user", content: "能发张你的照片看看吗" }],
+      historyMessages: [],
+    });
+
+    expect(prompt).toContain("照片规则");
+    expect(prompt).toContain("用户自定义规则");
+    expect(prompt).not.toContain("业务规则");
+  });
+
+  it("matches contact and video defaults only when the turn mentions them", () => {
+    const state = buildAgentRuleState([
+      rule("no_contact_leak", {
+        gate: "execution",
+        title: "联系方式规则",
+        detail: "只在要联系方式时带上",
+      }),
+      rule("no_video", {
+        gate: "output",
+        title: "视频规则",
+        detail: "只在要视频时带上",
+      }),
+    ], "female");
+
+    const contactPrompt = buildAgentRuleStagePrompt(
+      state,
+      "female",
+      "execution",
+      "【执行】",
+      { incomingText: "加个微信吧" },
+    );
+    const normalOutput = buildAgentRuleStagePrompt(
+      state,
+      "female",
+      "output",
+      "【输出】",
+      { incomingText: "今天下班了" },
+    );
+
+    expect(contactPrompt).toContain("联系方式规则");
+    expect(normalOutput).not.toContain("视频规则");
+  });
+
   it("passes custom input, output and execution rules to their matching stage", () => {
     const state = buildAgentRuleState([
       rule("custom_input", { source: "dashboard", gate: "input", detail: "先处理内容" }),

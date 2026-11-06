@@ -27,26 +27,26 @@ describe("persona scope runtime", () => {
       account: "qq-main",
     });
     expect(resolveContactConfig(env, false, null, false, true)).toEqual({
-      channel: "douban",
-      account: "douban-main",
+      channel: "qq",
+      account: "",
     });
   });
 
-  it("uses the Douban account saved in the shared persona facts", () => {
-    const env = { CONTACT_DOUBAN: "douban-main" };
-    const facts = { contact_qq: "douban-device" };
-    expect(resolveContactConfig(env, false, facts, false, true).account).toBe("douban-device");
-    expect(resolveContactConfig(env, false, facts, true, true).account).toBe("douban-device");
+  it("uses only the QQ account saved in the shared persona facts", () => {
+    const env = { CONTACT_QQ: "99999999" };
+    const facts = { contact_qq: "12345678" };
+    expect(resolveContactConfig(env, false, facts, false, true).account).toBe("12345678");
+    expect(resolveContactConfig(env, false, facts, true, true).account).toBe("12345678");
   });
 
-  it("falls back to default sutang Douban account when neither facts nor env has an account", () => {
+  it("does not invent a fallback account when Sutang QQ is empty", () => {
     expect(resolveContactConfig({}, false, null, false, true)).toEqual({
-      channel: "douban",
-      account: "sutang2026",
+      channel: "qq",
+      account: "",
     });
     expect(resolveContactConfig({}, false, { contact_qq: "" }, false, true)).toEqual({
-      channel: "douban",
-      account: "sutang2026",
+      channel: "qq",
+      account: "",
     });
   });
 });

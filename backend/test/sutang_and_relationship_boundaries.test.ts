@@ -15,7 +15,7 @@ describe("Sutang and relationship boundaries", () => {
   it("keeps Su Tang meeting, night and knowledge-card rules aligned", () => {
     const prompt = buildLayeredSystemPrompt({
       personaId: "female_sutang",
-      personaPrompt: "你是苏棠，29岁，重庆人，做电商运营。",
+      personaPrompt: "你是苏棠，29岁，已婚，没有孩子，和婆婆一起住在两江新区，在家操持家务。",
       personaFacts: null,
       platform: "soul",
       profileContext: "",
@@ -30,24 +30,26 @@ describe("Sutang and relationship boundaries", () => {
       messages: [{ role: "user", content: "今晚有点睡不着" }],
       historyMessages: [],
       xingmuSoulScope: false,
-      matchedDrawerTips: ["【知识库命中｜参考表达】【id:scene_10_insomnia】【深夜失眠与空间失重】睡不着"],
+      matchedDrawerTips: ["【知识库命中｜参考表达】【id:scene_sutang_night_empty】【深夜私密与反差空虚】睡不着"],
     });
-    expect(prompt).toContain("苏棠遇到见面、独处、酒店或现实安排时");
-    expect(prompt).toContain("在Soul上严格筛选，男方真诚愿意付出、达成酒店独处共识后才放行豆瓣自留地");
-    expect(prompt).toContain("先听懂对方这轮完整意思");
-    expect(prompt).not.toContain("高位反问制止");
-    expect(prompt).toContain("300元以上像样的舒适型连锁");
-    expect(prompt).toContain("排查针孔偷拍等设备保护隐私");
+    expect(prompt).toContain("只谈线上");
+    expect(prompt).toContain("不答应");
+    expect(prompt).not.toContain("高档酒店");
+    expect(prompt).not.toContain("全包");
+    expect(prompt).not.toContain("代付");
+    expect(prompt).toContain("先接住对方最新一句");
+    expect(prompt).toContain("保持撒娇");
+    expect(prompt).not.toContain("亚朵");
+    expect(prompt).not.toContain("引导男方展现大男人的体贴与担当");
     expect(prompt).not.toContain("最终奖励");
     expect(prompt).not.toContain("不主动提见面、不主动推销或催单");
-    expect(prompt).not.toContain("【别拿睡觉当话题】");
     expect(prompt).toContain("【知识库命中｜本轮必须使用】");
     expect(prompt.indexOf("【知识库命中｜本轮必须使用】"))
       .toBeGreaterThan(prompt.indexOf("【现场感｜每轮都照做】"));
 
     const withoutPhotoRules = buildLayeredSystemPrompt({
       personaId: "female_sutang",
-      personaPrompt: "你是苏棠，29岁，重庆人，做电商运营。",
+      personaPrompt: "你是苏棠，29岁，已婚，没有孩子，和婆婆一起住在两江新区，在家操持家务。",
       personaFacts: null,
       platform: "soul",
       profileContext: "",
@@ -76,7 +78,7 @@ describe("Sutang and relationship boundaries", () => {
 
     const withoutMeetingOrKnowledgeRules = buildLayeredSystemPrompt({
       personaId: "female_sutang",
-      personaPrompt: "你是苏棠，29岁，重庆人，做电商运营。",
+      personaPrompt: "你是苏棠，29岁，已婚，没有孩子，和婆婆一起住在两江新区，在家操持家务。",
       personaFacts: null,
       platform: "soul",
       profileContext: "",
@@ -91,19 +93,19 @@ describe("Sutang and relationship boundaries", () => {
       messages: [{ role: "user", content: "想约你见面" }],
       historyMessages: [],
       xingmuSoulScope: false,
-      matchedDrawerTips: ["【知识库命中｜参考表达】【id:scene_13_invitation_reward】【面对邀约与最终奖励】内容"],
+      matchedDrawerTips: ["【知识库命中｜参考表达】【id:scene_sutang_invite_refusal】【被反复邀约的线上婉拒】家里走不开 婆婆在"],
       agentRuleState: {
         loaded: true,
         rules: [],
         isEnabled: (id: string, fallback = true) =>
-          id === "sutang_meeting_reward_rule" || id === "knowledge_match_priority"
+          id === "sutang_night_meeting_boundary" || id === "knowledge_match_priority"
             ? false
             : fallback,
         textFor: (_id: string, fallback = "") => fallback,
         priorityFor: (_id: string, fallback = 50) => fallback,
       },
     });
-    expect(withoutMeetingOrKnowledgeRules).not.toContain("【邀约与最终奖励】");
+    expect(withoutMeetingOrKnowledgeRules).not.toContain("见面与安全边界");
     expect(withoutMeetingOrKnowledgeRules).not.toContain("【知识库命中｜本轮必须使用】");
   });
 
@@ -125,16 +127,23 @@ describe("Sutang and relationship boundaries", () => {
     expect(buildRelationshipBoundaryPrompt(2, "下次有空一起喝一杯", [])).toContain("客气话");
     expect(buildRelationshipBoundaryPrompt(2, "这周末出来吃个饭吗", [])).toContain("见面边界");
     expect(buildRelationshipBoundaryPrompt(4, "想约你见面", [])).toContain("对方主动提出时可以认真接住");
-    const sutangInvite = buildRelationshipBoundaryPrompt(2, "想约你见面", [], "sutang");
-    expect(sutangInvite).toContain("邀约与线下独处推进");
-    expect(sutangInvite).toContain("坦荡正视成年人吸引力与私密需求");
-    expect(sutangInvite).toContain("300元以上像样舒适型连锁");
-    expect(sutangInvite).toContain("排查针孔偷拍等设备保护隐私");
-    const sutangRoom = buildRelationshipBoundaryPrompt(2, "想跟你开房", [], "sutang");
-    expect(sutangRoom).toContain("300元以上像样舒适型连锁");
-    expect(sutangRoom).toContain("在Soul上严禁出现“代付”二字");
-    expect(sutangRoom).not.toContain("不答应见面");
-    expect(buildRelationshipBoundaryPrompt(2, "发张私密照看看", [], "sutang")).toContain("不发裸照私密照");
+    const sutangInvite = buildRelationshipBoundaryPrompt(2, "想约你见面", [], "sutang", undefined, 16);
+    expect(sutangInvite).toContain("见面边界｜苏棠");
+    expect(sutangInvite).toContain("不答应");
+    expect(sutangInvite).toContain("不给地址");
+    expect(sutangInvite).not.toContain("高档酒店");
+    expect(sutangInvite).not.toContain("全包");
+    expect(sutangInvite).not.toContain("代付");
+    expect(sutangInvite).not.toContain("承担房费");
+    expect(sutangInvite).not.toContain("亚朵");
+    const sutangRoom = buildRelationshipBoundaryPrompt(2, "想跟你开房", [], "sutang", undefined, 16);
+    expect(sutangRoom).toContain("见面边界｜苏棠");
+    expect(sutangRoom).toContain("不提酒店房间");
+    expect(sutangRoom).not.toContain("代付");
+    expect(sutangRoom).not.toContain("亚朵");
+    expect(sutangRoom).not.toContain("第一次只考虑白天");
+    expect(buildRelationshipBoundaryPrompt(2, "发张私密照看看", [], "sutang", undefined, 16))
+      .toContain("不写身体器官");
     // 露骨的（要私密照）仍然要挡住
     expect(buildRelationshipBoundaryPrompt(3, "发张私密照看看", [])).toContain("不发裸照私密照");
     expect(buildRelationshipBoundaryPrompt(2, "今天天气不错", [])).toBe("");
@@ -187,13 +196,13 @@ describe("Sutang and relationship boundaries", () => {
   });
 
   it("keeps the recycling script inside the Xingmu persona only", () => {
-    // 苏棠（电商运营）落到兜底时，绝不能冒出"旧数码/回收"那套话术。
+    // 苏棠落到兜底时，绝不能冒出"旧数码/回收"那套话术。
     // C 方案后不再有兜底句；苏棠落到这里也是保留模型原话，不冒出旧数码话术。
     expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 4, false))
       .toBe("哪方面啊，说清楚点");
     expect(sanitizeIntimateTopicReply("哪方面啊，说清楚点", "那方面难受", [], 5, false))
       .not.toContain("旧数码");
-    expect(businessFilterFallback("你做什么工作的", false)).toBe("做电商运营的，平时挺忙");
+    expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
     expect(businessFilterFallback("你做什么工作的", false)).not.toContain("旧数码");
     // 星暮 scope 保持原样：他才是回收客服（C 方案后亲密话题不再有兜底句，这里看业务兜底）。
     expect(businessFilterFallback("你做什么工作的", true)).toBe("不是餐饮 我做旧数码这行的");

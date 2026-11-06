@@ -8,9 +8,9 @@ package com.aaiagent.adapter
  * 以前身份里带着 millis/clock，标签一变整条消息就变成“新消息”——
  * 真机上表现为：旧消息被当成刚发来的，重复回复、顺序错乱。
  *
- * 现在只按“谁发的 + 类型 + 内容”认身份；时间只用来给模型看，不参与身份。
- * 代价：同一人连发两条一模一样的话（如“哈哈”“哈哈”）会被当成一条，
- * 这种极少见，而且比“旧消息被当新的”危害小得多。
+ * 现在只按“谁发的 + 类型 + 内容”得到页面原始身份；时间只用来给模型看，
+ * 不参与身份。后续 ConversationMessageLedger 会再用对话位置区分同一句话
+ * 在前后不同时间重复出现的情况。
  */
 object SoulMessageIdentity {
     private const val SEPARATOR = "\u001F"
@@ -25,8 +25,12 @@ object SoulMessageIdentity {
     }
 
     /** 界面上到底有没有写出时间（写了才算“他发送的时间”，没写就是我们读到的）。 */
-    fun hasExplicitTime(timestampText: String, timestampMillis: Long?): Boolean {
-        if (timestampMillis != null && timestampMillis > 0L) return true
-        return timestampText.trim().isNotEmpty()
+    fun hasExplicitTime(
+        timestampText: String,
+        timestampMillis: Long?,
+        timestampTrusted: Boolean,
+    ): Boolean {
+        return timestampTrusted && timestampMillis != null && timestampMillis > 0L &&
+            timestampText.trim().isNotEmpty()
     }
 }

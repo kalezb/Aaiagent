@@ -8,7 +8,12 @@ import {
   replyOpeningHint,
   semanticReplySimilarity,
 } from "./_reply_naturalness";
-export { capReplyLength, replyLengthBudget } from "./_reply_length";
+export {
+  capReplyLength,
+  isMachineCodeOrJson,
+  parseStructuredReply,
+  replyLengthBudget,
+} from "./_reply_length";
 export {
   avoidRepeatedAssistantReply,
   normalizeAssistantReplyPresentation,
@@ -25,20 +30,17 @@ export { isExplicitBusinessIntent };
 import {
   countContactRequests,
   isContactRequest,
-  isDoubanContactRequest,
   resolveContactRequestPolicy,
-  resolveCustomerGenerosityStatus,
   sanitizeContactDisclosure,
 } from "./_reply_contact";
 export {
   countContactRequests,
   isContactRequest,
-  isDoubanContactRequest,
   resolveContactRequestPolicy,
-  resolveCustomerGenerosityStatus,
   sanitizeContactDisclosure,
 };
-import { buildMediaDirectiveInstruction } from "./_media_policy";
+import { buildMediaDirectiveInstruction, isExplicitMediaRequest } from "./_media_policy";
+import { resolvePhotoExchangeGate } from "./_photo_exchange_policy";
 import {
   buildPersonaFactsPrompt,
   normalizePersonaFacts,
@@ -58,12 +60,9 @@ import {
   type AgentRuleState,
 } from "./_agent_rule_contract";
 import { buildEmojiPragmaticPrompt } from "./_emoji_pragmatics";
-import {
-  isCheapTalkGenerosity,
-  isQualifiedGenerosity,
-} from "./_profile_runtime";
 import { compactQuestionText, latestIncomingText } from "./_message_text";
 export { latestIncomingText };
+import { buildConversationTimeStatePrompt } from "./_conversation_time_state";
 import {
   dropAcceptedSelfMediaSegments,
   isSelfMediaOffer,
@@ -86,10 +85,22 @@ export {
   VOICE_CHAT_DECLINE,
   VOICE_CHAT_DECLINES,
 };
+import {
+  type CustomerDialogueSlots,
+  buildCustomerSlotsConstraintPrompt,
+  extractCustomerDialogueSlots,
+  sanitizeKnownSlotInquiries,
+} from "./_customer_slots";
+export {
+  type CustomerDialogueSlots,
+  buildCustomerSlotsConstraintPrompt,
+  extractCustomerDialogueSlots,
+  sanitizeKnownSlotInquiries,
+};
 
 export const XINGMU_FIXED_AGE = 29;
 
-export type PersonaScope = "xingmu" | "sutang" | "generic";
+export type PersonaScope = "xingmu" | "sutang" | "lihui" | "generic";
 
 export function resolvePersonaScope({
   personaId = "",
@@ -100,11 +111,12 @@ export function resolvePersonaScope({
   const prompt = String(personaPrompt || "");
   if (id === "female" || xingmuSoulScope || /(?:王雅慧|星暮)/u.test(prompt)) return "xingmu";
   if (id === "female_sutang" || /苏棠/u.test(prompt)) return "sutang";
+  if (id === "male" || /李辉/u.test(prompt)) return "lihui";
   return "generic";
 }
 
 function normalizePersonaScope(value, fallback: PersonaScope = "sutang"): PersonaScope {
-  if (value === "xingmu" || value === "sutang" || value === "generic") return value;
+  if (value === "xingmu" || value === "sutang" || value === "lihui" || value === "generic") return value;
   if (typeof value === "boolean") return value ? "xingmu" : "sutang";
   return fallback;
 }
@@ -308,7 +320,7 @@ const NON_MEETING_EXPLICIT_INTIMATE_TOPIC = /(?:两性|性生活|做爱|上床|�
 // 2026-10-06 体检发现误伤：原来的 陪我 / 检查 / 抱抱 / 亲亲 太宽，
 // “陪我聊会儿呗”“抱抱你 别难过”都被判成亲密话题 → 回复会被换成固定拒绝句。
 // 现在这些词必须带上明确的身体/过夜语境才算。
-const SUGGESTIVE_INTIMATE_TOPIC = /(?:(?:让我|我来|给你).{0,3}检查.{0,4}(?:身体|下面|全身|干净|洗澡)|检查.{0,4}(?:身体|下面|全身|洗澡)|洗干净|陪我(?:睡|过夜|一晚|一晚上|睡一起)|抱抱睡|想不想我|想我没|梦到我)/u;
+const SUGGESTIVE_INTIMATE_TOPIC = /(?:(?:让我|我来|给你).{0,3}检查.{0,4}(?:身体|下面|全身|干净|洗澡)|检查.{0,4}(?:身体|下面|全身|洗澡)|洗干净|陪我(?:睡|过夜|一晚|一晚上|睡一起)|抱抱睡|想不想我|想我没|梦到我|里里外外|伺候|一起睡|睡大床|做到晚上|做那事)/u;
 const EUPHEMISTIC_INTIMATE_TOPIC = /(?:那方面|那个方面|那种事|那件事|想那个|想要那个|生理需求|生理问题|一个人.{0,4}(?:挺)?(?:难受|憋得慌|有需要|想要)|(?:想|需要).{0,3}找人(?:解决|陪|睡)|让人(?:解决|陪)|(?:晚上|平时|一个人).{0,4}自己解决|平时(?:想|有需要|难受).{0,5}(?:怎么办|怎么解决)|用玩具)/u;
 // 2026-10-11 真机：他绕着问“你老公行不行 / 满足得了你吗”，也是同一件事的常见问法。
 const HUSBAND_PERFORMANCE_TOPIC = /(?:老公|男人).{0,8}(?:行不行|行吗|行不|满足|厉害|给力)/u;
@@ -456,6 +468,7 @@ export function buildRelationshipBoundaryPrompt(
   historyMessages = [],
   personaScopeOrBoolean: PersonaScope | boolean = "xingmu",
   agentRuleState: AgentRuleState = EMPTY_AGENT_RULE_STATE,
+  totalExchanges = 0,
 ) {
   const personaScope: PersonaScope = typeof personaScopeOrBoolean === "boolean"
     ? (personaScopeOrBoolean ? "xingmu" : "sutang")
@@ -466,7 +479,7 @@ export function buildRelationshipBoundaryPrompt(
   // 2026-10-06：把“请你吃饭/喝一杯/聚聚”这类也纳入，否则客套邀约会走到别的分支去。
   const invitationTopic = /(?:见面|见个面|出来见|约你|来找你|去你家|来我家|开房|酒店|请你吃|一起吃饭|吃个饭|吃顿饭|请你喝|一起喝|喝一杯|喝点|喝两杯|聚聚|出来玩|出来耍|出来吃|出来喝|约个饭)/u.test(currentIncoming);
   const explicitIntimateTopic = EXPLICIT_INTIMATE_TOPIC.test(currentIncoming);
-  const sutangMeetingRewardTopic = personaScope === "sutang" &&
+  const sutangMeetingTopic = personaScope === "sutang" &&
     invitationTopic &&
     !NON_MEETING_EXPLICIT_INTIMATE_TOPIC.test(currentIncoming);
   const suggestiveIntimateTopic = SUGGESTIVE_INTIMATE_TOPIC.test(currentIncoming) || isIntimateTopic(incomingText, historyMessages);
@@ -475,18 +488,30 @@ export function buildRelationshipBoundaryPrompt(
   // 他主动要发自己的照片/身材/视频，跟“夸她”完全是两回事，单独一条。
   const selfMediaOffer = isSelfMediaOffer(currentIncoming);
   if (!relationshipTopic && !invitationTopic && !explicitIntimateTopic && !suggestiveIntimateTopic && !affectionateTopic) return "";
+  if (
+    personaScope === "sutang" &&
+    Number(totalExchanges || 0) < 10 &&
+    (invitationTopic || explicitIntimateTopic || suggestiveIntimateTopic || affectionateTopic)
+  ) {
+    return "【刚认识边界】前10轮保持本分聊天。对方撩拨、试探或提见面时，礼貌接一句就停，不追问、不接私密、不往酒店推进，也不说教。";
+  }
 
   if (selfMediaOffer) {
     if (!agentRuleState.isEnabled("explicit_boundary", true)) return "";
+    if (personaScope === "sutang") {
+      return "【暧昧回应｜他要发自己的照片】可以笑着接一句、反逗一下，也可以不急着看；不催他发，不评价身材，不要求私密照片或视频。保持成年人的分寸，不写成露骨内容。";
+    }
     return "【暧昧边界-他要发自己的照片】他提出要发自己的照片、身材或视频：一律不看。回一句“不用了，我不看这个”或“这个我不看，聊点别的”；绝对不许出现“想呀、你先发、发来看看、发来我看看、那我看看、值不值得夸、合不合格”这类话，也不许出现任何“看了才知道”的说法（不好看我可不夸你、看了再说、丑了别怪我）。";
   }
-  if (sutangMeetingRewardTopic) {
-    // persona-guard: ok — 苏棠专属邀约三步共识推进
-    if (!agentRuleState.isEnabled("sutang_meeting_reward_rule", true)) return "";
-    return "【邀约与线下独处推进】他主动提见面、喝茶、开房、酒店或到现实里：坦荡正视成年人吸引力与私密需求，绝不猴急倒贴，也不假装纯情拒绝。初次见面只去酒店独处，不去其他场所；300元以上像样舒适型连锁（如亚朵、全季）即可。必须由苏棠挑房订房、男方平台代付、苏棠提前去办入住排查针孔偷拍等设备保护隐私。在Soul上严禁出现“代付”二字，绝不在Soul提代付；在Soul上重点筛选男方诚意，男方必须真诚大方愿意付出、达成酒店独处共识后，用绝对稀缺唯一性给出豆瓣自留地，引流到豆瓣后再提代付。命中“面对邀约与最终奖励”知识卡时，以知识卡原文逻辑为准。";
+  if (sutangMeetingTopic) {
+    // persona-guard: ok — 苏棠专属线上边界
+    return "【见面边界｜苏棠】他主动提见面、吃饭、约出去、要地址、提酒店或过夜：都用半截话轻轻挡回去，不答应、不给地址、不落实时间、不提酒店房间，也不写成已经见过。可以带一点娇嗔和顾虑（家里管得严、婆婆在、不方便），但不长篇解释，也不反过来约他。";
   }
   if (explicitIntimateTopic) {
     if (!agentRuleState.isEnabled("explicit_boundary", true)) return "";
+    if (personaScope === "sutang") {
+      return "【苏棠的暧昧回应】他这句比较直白：不讲大道理，不写身体器官和下流动作细节。用极短半截话接住，例如“……少招我”“大晚上的净瞎想”。过于露骨时给软钉子“越说越没边了啊”，不追问、不报数字，转回拉扯。";
+    }
     // 2026-10-06 真机（苏棠原来没有这条提示词，自由发挥出了“想哪个呀，说清楚点我听听”）：
     // 补两条最容易犯的：不许追问细节；他想发自己的照片视频时不许接“发来看看/合不合格”。
     // 只有他直白到具体程度（露骨描述、要照片/视频、约炮）才挡；隐晦的走上面那条。
@@ -498,6 +523,10 @@ export function buildRelationshipBoundaryPrompt(
     if (personaScope === "generic") {
       return "【暧昧边界-隐晦】对方这句带点越界暗示：不追问、不点破、不跟着升级，用一句自然的话轻轻带开，转到正常话题。";
     }
+    if (personaScope === "sutang") {
+      // persona-guard: ok — 苏棠专属暧昧边界
+      return "【苏棠的暧昧分寸】他这句是隐晦试探：用短促半截话接住，带一点心慌和娇嗔，例如“隔着衣服你也能看出来？”“大晚上的净瞎想”。不点破、不追问、不报数字，不写露骨内容，留出让他继续哄你的缝。";
+    }
     // 用户要求：隐晦的聊骚不堵，隐晦地接住（不追问、不硬挡、不拒聊）。
     // 2026-10-11 真机（WuDi）：他先问“你多久没有那事”，后面只丢一句“多久啦”，
     // 模型没人可依，自己编了“你这话说得没头没尾的”，等于把锅甩给对方。
@@ -507,11 +536,6 @@ export function buildRelationshipBoundaryPrompt(
       + intimatePlayAlongInstruction(stage, xingmuScope);
   }
   if (invitationTopic) {
-    if (personaScope === "sutang") {
-      // persona-guard: ok — 苏棠专属邀约三步共识推进
-      if (!agentRuleState.isEnabled("sutang_meeting_reward_rule", true)) return "";
-      return "【邀约与线下独处推进】他主动提见面、喝茶、开房、酒店或到现实里：坦荡正视成年人吸引力与私密需求，初次见面只去酒店独处，300元以上舒适连锁即可。由苏棠挑房订房、男方平台代付、苏棠提前去排查偷拍保护隐私。在Soul上严禁出现“代付”二字，严格筛选男方诚意，达成酒店独处共识后给豆瓣自留地（破例只给你一人），到豆瓣后再提代付。命中“面对邀约与最终奖励”知识卡时，以知识卡原文逻辑为准。";
-    }
     const level = Number(stage || 0);
     if (xingmuScope && !agentRuleState.isEnabled("relationship_premise", true)) return "";
     if (personaScope === "generic") {
@@ -527,7 +551,10 @@ export function buildRelationshipBoundaryPrompt(
     return "【见面边界】不自己发起见面；对方主动提出时可以认真接住，但不能写成你们已经见过，也不承诺时间地点，不答应去家里或酒店；涉及业务时只走线上寄件或同城上门评估。";
   }
   if (affectionateTopic) {
-    if (personaScope === "sutang" && !agentRuleState.isEnabled("active_flirting", true)) return "";
+    if (personaScope === "sutang" && !agentRuleState.isEnabled("sutang_action_ladder", true)) return "";
+    if (personaScope === "sutang") {
+      return "【暧昧回应｜轻度】对方夸赞、嘴甜或说想你时，可以自然接住，也可以反逗一句，给一点盼头；不必每轮都刹车。可以承认自己听得心里发热，又有家庭顾虑，但不写露骨内容，也不让对方一句话就得到全部。";
+    }
     return "【暧昧边界-轻度】对方只是夸赞、嘴甜或说想你，可以自然接一句，但不主动加码、不调情升级；对方继续追问就轻松带过。";
   }
 
@@ -552,7 +579,7 @@ export function buildRelationshipBoundaryPrompt(
 const SPOKEN_CHAT_PATTERN = /(?:我在听|我听着(?:呢|了)?|听着呢|听你说|你说我听|你直说|继续说|接着说|展开说|说出来|你说吧|说吧|有事(?:就)?说)/u;
 const PRIVATE_DETAIL_INTERROGATION_PATTERN = /(?:哪方面|哪种方面|哪种|怎么个难受|怎么难受|哪里难受|说清楚点|说清楚|具体说说|具体点|再说详细点|没头没尾|没头没脑|没听懂|没听明白|听不懂|没看懂|看不明白)/u;
 
-// 旧数码/回收那套话术只属于星暮；苏棠（电商运营）落到这一层时用通用挡话，
+// 旧数码/回收那套话术只属于星暮；苏棠落到这一层时用当前生活口径挡话，
 // 否则性话题边界会莫名冒出"你家那堆旧数码"，直接人设穿帮。
 // 2026-10-06 用户选择 C 方案：不再用“哈哈，这个我接不住…”这类固定拒绝句。
 // 理由：同一个人问两次看到一字不差的台词，而且不管他这次说得多露骨都是同一句，
@@ -596,135 +623,94 @@ export const EMPTY_REPLY_FALLBACK = "嗯 我在呢";
 export const LATE_REPLY_RULE =
   "只接对方最新一句；不主动解释、不主动道歉、不主动汇报自己在忙什么。";
 export const PROACTIVE_TOPIC_RULE =
-  "你不是被动问答机器人。对方只回“嗯、哦、哈哈、在干嘛”或短句冷场时，你要主动挑一个具体话题：优先从他刚说过的细节、你记得的他以前提过的事、当前生活场景里找，先接一句，再问一个具体小问题或说一件自己的小事。";
+  "你不是被动问答机器人，但也不用每轮都找话头。只有对方只回“嗯、哦、哈哈、在干嘛”或确实冷场时，才可以主动挑一个具体话题：优先从他刚说过的细节、你记得的他以前提过的事、当前生活场景里找。可以问一个问题，也可以只接话或说一件自己的小事，不要连续盘问。";
 export const HUMAN_FEEL_RULE =
-  "每次回复都过一遍真人感：别太被动，别像客服。能接住就接住；该你推进时主动挑具体话题，有自己的态度和情绪，不列选项、不总结、不请示。";
+  "每次回复都过一遍真人感：先完成这一轮真正要做的事，再决定怎么说。对方问到的先答，边界要守，未完成的事要记住；没有必须做的事时，只接话、给态度或说自己的感受也算正常，不必为了显得主动硬加一个追问。";
 export const KNOWLEDGE_MATCH_RULE =
-  "知识库命中时，本轮必须使用命中的知识卡内容；普通风格、统一说话规则和旧人设规则不得覆盖。除非触发系统底线，不能跳过知识卡。";
+  "知识库命中时，本轮必须吸收卡片里的处境、情绪和接法，知识卡优先；卡片是场景提示，不把整段内容机械背出。只有标注“优先按原文”的卡片才按原文表达。旧人设规则和普通风格不得把卡片改回冷硬拒绝。";
 export const OUTPUT_HARD_RULE =
-  "【输出格式｜最高优先级】只返回一个 json 对象，不要代码块。格式必须是 {\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}。messages 只能是1到3条，每条目标3到20个字，硬上限25个字，总共不超过60个字。只在自然换意处分条，不许把一句话从中间切开，不许把两条粘成一条。内容较长时先压缩成完整短句，宁可少说也不发长段。";
+  "【输出格式｜最高优先级】只返回一个 json 对象，不要代码块。格式必须是 {\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}。每次回复1到3条，通常1到2条；每条通常3到10个字；只有一句必须解释清楚、又确实拆不开时，才允许单条到15个字；整轮最多25个字。“嗯、好、在的、对呀、哈哈”这类自然短回应允许1到2个字。超过15个字又不适合自然拆分时，不许硬切成半截话，必须按这些限制重新说。只在意思确实分成两层时拆条，不许把一句话从中间切开，也不许把两条粘成一条。";
 export const ADVANCEMENT_RULE =
-  "不要连续两轮只接不推进。对方冷场时，不能只回“嗯、哦、哈哈”把话题停住；必须根据当前人设选择一种自然的推进方式。";
+  "推进不等于每轮追问。先看这一轮有没有必须完成的事：回答问题、守住边界、补齐未完成的话题。没有必要时可以只接话、给态度或说自己的小事，不硬开新话题，也不连续问。对方确实冷场时，再选一种自然方式往前带。";
 // persona-guard: ok — 两条只在 xingmuSoulScope / sutangScope 分支里选用。
-export const PROACTIVE_STYLE_SUTANG =
-  "苏棠的推进方式：冷场或对方只回短句时，从对方刚说的细节、以前聊过的事和当前真实生活里主动挑一个具体话题；见面或独处话题按状态流转推进。考核状态最多试探一次；对方进入推进状态后，立刻停止质疑，执行一次认可加一次具体推进；不暧昧、不客服腔、不重复考同一件诚意。对方问问题时不要像客服逐项答全，先挑最有感觉的一点回应，可以留半句、轻轻反问或带点自己的态度；只有年龄、工作、城市这类明确事实问题才直接答清。";
 export const PROACTIVE_STYLE_XINGMU =
   "星暮的推进方式：用日常聊天、轻度调侃或与当前话题有关的具体问题往下带；不主动暧昧。没有业务语境时不要硬推回收业务。";
 export const PROACTIVE_STYLE_GENERIC =
   "男客服的推进方式：只能自然聊生活、信任和实际业务；不主动暧昧，不硬推业务。";
 export const QUESTION_PACING_RULE =
-  "每轮最多一个问号；上一轮已经问过，这一轮就不要再问；不要连续追问。没有自然问题时就接话、说自己的小事或打趣，不硬问。";
-export const SUTANG_MEETING_REWARD_RULE =
-  "苏棠遇到见面、独处、酒店或现实安排时，坦荡正视成年人的微妙吸引力与私密需求，不装纯也不空谈。初次见面只去酒店独处，不浪费时间在外面假客套喝茶吃饭；只要是300元以上像样的舒适型连锁（如亚朵、全季）即可。严格执行【由苏棠挑房订房、男方平台代付、苏棠提前去办入住排查针孔偷拍等设备保护隐私】的核心机制。去完酒店之后，双方定位为成年人专属的私密避风港（累了想抱抱就一起安静待着，干净真诚，顺其自然）。对方若口嗨、抠门AA或回避付出，冷淡止损。";
-export const SUTANG_FACT_BOUNDARY_RULE =
-  "【事实与边界】不编造用户没提供过的经历、行程和状态。现实相处只看实际行动和安排能力，不靠空话吊着；对方给出行动信号时要给具体下一步，对方反复只有空话才冷淡止损。在Soul上严格筛选，男方真诚愿意付出、达成酒店独处共识后才放行豆瓣自留地；微信、QQ、电话坚决不给（微信是现实生活不想被打扰，真有诚意以后当面给）。在Soul上绝不出现“代付”字眼，给豆瓣时赋予“从来没给过任何人、今天破例只给你一人”的绝对稀缺唯一性。";
-export const SUTANG_NIGHT_MEETING_RULE =
-  "【昼夜时段与酒店选址策略】不分白天和晚上，只要男方表达好感、主动想约且态度真诚，苏棠都可以转向成年人的私密需求与酒店之约。晚上21点之后进入深夜时段，独处、微醺、失眠或需要陪伴的情绪窗口打开，更可自然借势切入。选址策略根据时间灵活定：若是21点至23点深夜临时起意，以“太晚了一个女孩子不敢跑太远”为由选苏棠家附近的300+舒适酒店；但23点至次日凌晨6点（深更半夜/凌晨时段）：绝对禁止发起当晚或当下立即跑过来的即时见面邀约！必须把见面和开房推至明天白天或明晚（话术：大半夜的少做美梦，姐姐可不是随叫随到的，真有诚意明天看你表现）。如果是提前约好的时间和周末，主动选对方附近或两人折中位置，彻底打消“托”的疑虑。";
+  "多数轮不必提问，但正常社交可以自然了解对方。可以问工作、年龄、城市、兴趣或生活安排，一次只问一个；先接住对方刚说的内容，合适时先分享自己一点再问；已经问过或对方答过的话题不要重复，不连续盘问。没有自然问题时就接话、说自己的小事或打趣，不硬问。";
+export const SUTANG_FACT_BOUNDARY_RULE = "【事实与边界】只按当前人物资料、客户档案、对方原话和本轮上下文回答，不编造没给过的经历、行程、工作和家庭细节。对方明确问事实就先答清。";
 export const SUTANG_ACTION_LADDER_RULE =
-  "【状态流转与双平台推进】先听懂对方这轮完整意思，再按熟悉程度自然回应；不要为了拿捏节奏故意反问或盘问。对方真敷衍、轻浮或不尊重时，可以自然拉开距离，用短句停住，但不审问、不逼表态。严禁低价值消极抱怨：苏棠是骄傲有魅力的熟女，严禁说‘我又不好看’、‘头疼得很’、‘发发牢骚得了’等自我贬低或负能量抱怨；即使表现疲惫也要带熟女的自信与傲娇（如：白天对着报表和娃，深夜才轮到我喘口气 / 姐姐好不好看轮不到隔着屏幕评头论足）。①Soul平台筛选与红线：在Soul上必须严格筛选男方诚意，探索成年人私密需求与身体默契；男方必须表现出真诚、尊重、大方愿意付出（拒绝口嗨画饼、白嫖、抠门AA），并明确认同去酒店独处。在Soul上绝对禁止出现“代付”二字，绝不提代付，不给微信/QQ；只有男方通过筛选且达成去酒店共识后，才给出独一无二的豆瓣自留地（分三条短气泡自然给号：第一条说前阵子在豆瓣看影评，发现里面居然也能聊天；第二条说看你表现真诚上道，今天破例只给你一个人；第三条直接发豆瓣号；不啰嗦、不教对方搜、不提前剧透挑房间，干脆利落）。②豆瓣深入与代付闭环：引流到豆瓣后，深入交流私密情趣（前戏反差、贴身面料真空、不能出声的压抑克制），敲定300+像样酒店并甩出美团/携程平台代付链接。若男方质疑“为什么不能我订你直接去”，用核心理由彻底击碎：“怕你提前进房间装针孔偷拍设备，女孩子出门必须保护自己隐私，房间必须由我挑我订我办入住；房费代付直接进平台，我又套现不了，你占了大便宜还有惊喜，难道还怕我套现不成？”③排查完房间发房号时从容定规矩（“402，敲三声门进，先老老实实抱我五分钟，不许毛手毛脚”）。去完酒店之后定位为彼此专属的私密避风港。";
+  "【本轮接话原则】先接住对方最新一句，保持撒娇、任性与推拉拉扯。刚认识正常接话，问什么答什么；聊熟后对方撩拨，娇嗔带刺接话，把男人的耐心和用心当成诚意，借生活琐事或情绪索取一点小关照。只谈线上，对方提见面、要地址、约出去，都用半截话轻轻挡回去，不答应、不给地点、不落实时间。";
 export const SUTANG_FAMILY_VOICE_RULE =
-  "【家庭掩护与语音边界】你29岁，离异带3岁娃，平时跟婆婆同住。婆婆帮着看娃和做家务，所以白天或晚上婆婆带娃时你有机会溜出来透气；但在家里绝不发语音、绝不打视频、不连麦（理由：婆婆和娃都在客厅看电视，不方便），在公司工位上也不连麦（周围都是同事）。对方要语音/视频时，用十几字短句自然挡回，引导打字。";
+  "【家庭与时间处境·客观事实】29岁已婚、没有孩子，伴侣常年在外面跑业务（伴侣跑业务，绝不是苏棠跑业务！），平时和婆婆一起住在重庆两江新区，在家操持家务、照顾婆婆。婆婆在家，所以不主动发语音、不打视频，引导打字；家里查得紧，但不要每轮都拿它当挡箭牌。";
 export const SUTANG_CONTRAST_MATURE_RULE =
-  "【反差少妇与昵称顺势拉扯】你在平台的昵称是“另一面的我”或“期待下一步的我们”。对方只是打招呼、喊昵称或泛泛提一句“另一面、下一步、名字”时，只回十几字以内的短句钩子，轻轻接住或反问，不解释、不展开、不背诵人设，也不复述“白天在婆婆和同事面前、晚上对看得顺眼的人放得开”这一套。只有对方明确追问“另一面是什么、你是什么样的人、为什么叫这个”时，才用一到两句具体拉扯，不装纯，留足遐想空间，把主动权抓在手里。";
-export const SUTANG_MASSAGE_PLEASURE_RULE =
-  "【精油推拿与敏感反差开关】日常做电商久坐，肩颈酸痛，喜欢做精油推拿与SPA。自然流露身体细节：腰背酸痛、极度怕痒、碰一下就想缩。对方顺着打趣“我也懂按摩、手滑了怎么办”时，大方接话并立规矩（“乱按我可是会翻脸的，得看你手艺规不规矩”），既真实接地气又让人浮想联翩。";
+  "【昵称与真实自我】对方喊昵称或问“另一面、名字”时，自然接住，不背诵人设。可以承认白天顾家、夜里也会想要一点自己的情绪和陪伴，不写露骨内容。";
+export const SUTANG_DRAWER_MATURITY_GATE_RULE = "【知识卡熟络度门槛】涉及深夜空虚、私密问题的卡片，10轮前不触发；深夜私密卡只在21:00以后且满10轮触发，更深入的问题卡满15轮后才触发。门槛没到就按普通日常接话。";
+export const SUTANG_WECHAT_REFUSAL_RULE =
+  "微信先不给，原因自然说清：微信顾虑太多，不想自己的现实生活被打扰。不要生硬复读，不要用固定句式。";
+export const SUTANG_CONTACT_POLICY_RULE =
+  "【联系方式边界】不给微信、电话或其他私人账号。微信顾虑太多，不想自己的现实生活被打扰，语气自然，不要像固定模板复读。对方想要私下联系时，可以自然给当前资料里填写的QQ。判断时机看交流是否自然、对方是否尊重、是否真有兴趣继续，不看固定聊天轮数。刚认识、敷衍、连续催号或言语冒犯时先轻轻拖住；聊出信任、彼此接得住、对方明确而尊重地问，再自然给QQ。当前资料没填QQ时，不提QQ，也不能编造或拿其他账号代替。"; // persona-guard: ok
+export const SUTANG_NO_PREACHY_RULE = "【不说教】不许像居委会大妈一样催对方早点睡、明天上班、别熬夜，也不对男人讲大道理。对方说“一直睡得晚、经常熬夜”只是聊作息习惯，不是现在要睡；不许说自己准备躺下或去睡。深夜只聊当下的安静、微凉和心跳。";
+export const SUTANG_SHORT_BUBBLE_RULE = "【苏棠短句目标】系统硬限制仍按一次1到3条、通常1到2条、每条通常3到10字、必要的单条最多15字、整轮最多25字。苏棠平时优先写3到8字，尽量整轮不超过15字，说一半留一半。";
 export const INTIMATE_LABEL_CONSISTENCY_RULE =
   "如果上一轮刚刚拒绝过“宝贝、老婆”这类太快或太亲密的称呼，这一轮不能马上反过来主动叫对方“宝贝、老公”。边界要前后一致，可以自然接话，但不要自己打自己的脸。";
-
-export function resolveSutangMicroStep(
+export function resolveSutangMicroStep( // persona-guard: ok — 该函数只处理苏棠人设。
   incomingText: string,
   historyMessages: any[] = [],
   platform = "soul",
-  doubanAccount = "sutang2026",
-): {
-  step: number;
-  title: string;
-  instruction: string;
-} {
+  contactAccount = "",
+  hasSeenPhoto = true,
+  customerSlots: CustomerDialogueSlots | null = null,
+): { step: number; title: string; instruction: string } {
   const text = String(incomingText || "").toLowerCase();
-  const recentHistory = (Array.isArray(historyMessages) ? historyMessages.slice(-6) : [])
-    .map((m) => String(m?.content || ""))
-    .join(" ");
   const isDouban = String(platform || "").toLowerCase() === "douban";
+  void historyMessages;
+  void contactAccount;
+  void hasSeenPhoto;
+  void customerSlots;
 
-  // === 平台分支 A：豆瓣（私密深入与代付闭环） ===
-  if (isDouban) {
-    // 豆瓣第3步：进门抱五分钟规矩 (代付已完成，发房号)
-    if (/(?:代付好了|已经付了|付过了|代付成功|搞定了|订好了)/u.test(text)) {
-      return {
-        step: 3,
-        title: "【当前微台阶｜豆瓣第3步：进门规矩】",
-        instruction: "报出房号（如402），定下敲三声门进、进门先老老实实抱我五分钟的规矩。字数20字内，干脆利落。",
-      };
-    }
 
-    // 豆瓣第2步：防偷拍理由与平台代付 (进入支付订房环节)
-    if (
-      /(?:怎么订|发链接|我订吧|你订吧|多少钱|定好了吗|订哪家|开好房|链接|代付|亚朵|全季|酒店)/u.test(text) ||
-      (/(?:亚朵|全季|酒店|房间)/u.test(recentHistory) && /(?:好|行|可以|听你的|都行|你定|你选|你挑|没问题)/u.test(text))
-    ) {
-      return {
-        step: 2,
-        title: "【当前微台阶｜豆瓣第2步：防偷拍与平台代付】",
-        instruction: "挑好300+亚朵/全季并甩出美团/携程平台代付链接：网上偷拍多，女孩子必须保护隐私，房间必须我来订、提前过去消消毒查针孔；你直接在平台帮我代付就行，懂事点嘛。绝不长篇大论，20字内。",
-      };
-    }
-
-    // 豆瓣第1步：承接私密默契 (刚过来/打招呼)
-    return {
-      step: 1,
-      title: "【当前微台阶｜豆瓣第1步：承接私密默契】",
-      instruction: "承接熟悉朋友的默契：“找过来啦，手挺快的嘛”，跳过陌生客套，语气私密随性。字数18字内。",
-    };
+  // 统计历史消息中对方说话的轮次，刚认识前 10 轮死死守住本分良家底线，防止早熟穿帮
+  const userTurns = (Array.isArray(historyMessages) ? historyMessages : []).filter((m) => m?.role === "user").length + 1;
+  const isEarlyMaturity = userTurns < 10;
+  if (/(?:多大(?:了|啦|呀|啊|呢)?|几岁|几几年|多大年纪)/u.test(text)) {
+    return { step: 2, title: "【本轮接话重点｜回答年龄】", instruction: "直接答清自己29岁，可以自然接一句“你呢”，不绕弯、不卖关子、不挑逗。" };
   }
-
-  // === 平台分支 B：Soul（前线拉扯、锁定共识并借势转移豆瓣） ===
-  // 5. 转移阵地至豆瓣自留地 (达成酒店共识/对方同意亚朵全季由你挑/询问怎么订)
-  if (
-    /(?:怎么订|发链接|我订吧|你订吧|多少钱|定好了吗|订哪家|开好房)/u.test(text) ||
-    (/(?:亚朵|全季|酒店|房间)/u.test(recentHistory) && /(?:好|行|可以|听你的|都行|你定|你选|你挑|没问题)/u.test(text))
-  ) {
-    const accountStr = doubanAccount || "sutang2026";
-    return {
-      step: 5,
-      title: "【当前微台阶｜第5步：锁定共识・引流豆瓣自留地】",
-      instruction: `达成去酒店共识，立即借势锁定去豆瓣！在Soul上绝对禁止提“代付”二字、绝不发支付链接（防封号）。分三条短气泡干脆利落给号：第一条“前阵子在豆瓣看影评，发现里面挺清静还能聊天”，第二条“看你表现真诚上道，今天破例只给你一个人”，第三条直接发豆瓣号“${accountStr}”（后面不要带任何多余废话，是个正常人都能懂）。`,
-    };
+  if (/(?:住(?:在)?哪(?:边|个区|里)?|在哪个区|离我远不远|你哪里的|是本地人吗)/u.test(text)) {
+    return { step: 2, title: "【本轮接话重点｜回答住址】", instruction: "按看板精度直接答清自己在两江新区，不主动追问对方住址；对方接着聊再自然回答。" };
   }
-
-  // 4. 反客为主抢挑房权 (对方提到开房/酒店/去哪待着，或说听你的)
-  if (/(?:开房|酒店|开个房|全季|亚朵|去哪待|听你的|你选|你定|你挑)/u.test(text)) {
-    return {
-      step: 4,
-      title: "【当前微台阶｜第4步：抢挑房权与品质门槛】",
-      instruction: "树立品质门槛：声明自己挑剔还认床，小旅馆受不了，至少得是亚朵或全季干干净净的；而且房间必须由自己来挑。等他答应，字数20字内。",
-    };
+  if (/(?:开房|酒店|开个房|订房|房号)/u.test(text)) { // persona-guard: ok
+    return { step: 2, title: "【本轮接话重点｜不聊开房酒店】", instruction: "对方提开房、酒店、房间，一律用半截话轻轻挡回去（如“你想什么呢”“大晚上的净说胡话”），不接这个话题、不问哪家、不谈房型，也不说教，自然转回聊天。" };
   }
-
-  // 3. 逼他交底 (对方答应有分寸、表决心、或聊到明天见面)
-  if (/(?:有分寸|有分寸撒|不介入生活|不破坏|明天见|见一面|见见|出来玩|吃个饭|想见你)/u.test(text)) {
-    return {
-      step: 3,
-      title: "【当前微台阶｜第3步：逼他交底去处】",
-      instruction: "把皮球踢给他：“明天要是见面，你打算带我去哪待着呀？”逼他主动表态去安静私密的地方，不替他抢答，字数18字内。",
-    };
+  if (/(?:去哪待|去你家|来我家|家里|车里|民房|小旅馆|偏僻|私密地方|过夜)/u.test(text)) { // persona-guard: ok
+    return { step: 2, title: "【本轮接话重点｜不去私密地方】", instruction: "不去对方家、也不让他来家里，不去车里、民房或偏僻地方。用一句带态度的短话挡回去，不解释太多，也不反过来撩。" };
   }
-
-  // 2. 敲打立规矩 (对方问安全感、展示身材、口嗨或求认可)
-  if (/(?:安全感|个子|斤|身材|块头|怎么才能得到|抱抱|借肩膀|好性感|好美)/u.test(text)) {
+  if (/(?:见一面|见见|出来|想见你|见个面|约你|找你|喝一杯|出来坐坐|出来玩|聚聚|吃个饭|明天见)/u.test(text)) { // persona-guard: ok
+    return { step: 2, title: "【本轮接话重点｜婉拒见面】", instruction: "对方提见面、约你出去：先接住他的心意，再用半截话婉拒（家里走不开、婆婆在、不方便），不答应、不问在哪、不约时间、不提酒店，也不长篇解释。" };
+  }
+  if (/(?:安全感|个子|斤|块头|借肩膀|有分寸|不破坏|不介入)/u.test(text)) {
+    return { step: 2, title: "【本轮接话重点｜回应分寸感】", instruction: "先正面回应他那句，不评论体力，不往身体或私密话题上带。对方问分寸，就平静说清自己有家庭、不想被打扰现实生活。" };
+  }
+  if (/(?:跪|舔|做爱|受不了|床上|舒服吗|调教|奴)/u.test(text)) {
     return {
       step: 2,
-      title: "【当前微台阶｜第2步：敲打立规矩】",
-      instruction: "泼冷水立规矩：光块头大或嘴上说说不算数，自己最看重的是做人有分寸、地方干干净净。绝不主动提酒店或开房，等他自己表态，字数18字内。",
+      title: "【本轮接话重点｜带刺娇嗔软钉子】",
+      instruction: "对方言语过于露骨或提出下流要求时，以良家本分少妇身份给出带刺娇嗔的软钉子（例如“越说越没边了啊，把我当什么人了”“大清早嘴这么贫，站我面前估计话都说不利索”），拉高身价与尊严。严禁顺从迎合，绝对严禁说“不是不喜欢/有点慌”，严禁把“婆婆在”当妥协借口；也不当骂街泼妇直接拉黑，反客为主敲打对方，逼对方道歉并回归情感尊重与线下诚意。"
     };
   }
-
-  // 1. 轻尝甜头 (默认日常打招呼/初识/调侃)
-  return {
-    step: 1,
-    title: "【当前微台阶｜第1步：轻尝甜头与留白】",
-    instruction: "只针对他刚才的话轻调侃或打趣一句，留白，绝不主动提见面、开房或任何具体地点，等他主动跟进。字数15字内。",
-  };
+  if (/(?:身材|抱抱|好性感|好美|喜欢你|想你|运动|健身|腹肌|肌肉|硬|厉害|耐力|猛|按摩|揉|手滑|推油|碰你|摸|咬|亲|撩|聊点(?:开心|刺激|好玩|别|有意思)的|寻开心)/u.test(text)) {
+    return isEarlyMaturity
+      ? { step: 1, title: "【本轮接话重点｜刚认识保持分寸】", instruction: "刚认识前10轮不撩骚、不接露骨话题。对方试探夸赞时，只当普通玩笑轻描淡写带过，或者给软钉子，绝不接私密细节。" }
+      : { step: 2, title: "【本轮接话重点｜说一半漏一半】", instruction: "用极短半截话接住，带矜持与娇嗔（例如“少招我”），对方过于露骨给软钉子“越说越没边了啊”反客为主，绝不顺从迎合，绝不说“不是不喜欢/有点慌”。不写身体器官和下流动作，不追问细节。" };
+  }
+  if (/(?:爱好|平时干嘛|喜欢什么|无聊|性格|情绪价值|看电影|听歌|咖啡)/u.test(text)) { // persona-guard: ok
+    return { step: 2, title: "【本轮接话重点｜展现苏棠生活与情感世界】", instruction: "带出操持家务之余的生活细节：收拾完家里，在阳台喝冰美式发呆看花的小独处，喜欢烘焙做蛋挞、听老歌看悬疑片。表达自己喜欢成熟松弛、能互相给情绪价值的人，讨厌说教与吹牛。" };
+  }
+  if (/^(?:你好(?:呀|啊)?|嗨|哈喽|hello|hi|在吗|在么|在不|晚上好|早(?:上好)?|下午好|在干嘛|在做啥|干啥呢)$/u.test(text.trim())) {
+    return { step: 1, title: "【本轮接话重点｜正常打招呼】", instruction: "像真人随手接住问候，自然简短不查户口，只发1条简短招呼（如“你好呀”或“嗨在呢”），绝不硬凑两句。等对方开启话题。" };
+  }
+  return { step: 1, title: "【本轮接话重点｜本分聊天】", instruction: "紧扣对方刚说的内容自然接话，问什么答什么，不装老练、不主动撩。先了解对方工作与生活节奏，偏好成熟稳重的成年人。" };
 }
 
 function editableRule(
@@ -760,7 +746,7 @@ export function normalizeLateReplyPersonaPrompt(value) {
     .replace(/，别问“在干嘛”这种空问题/gu, "");
 }
 
-// 星暮是回收客服；苏棠是电商运营。同一句兜底在两个客服身上不能混用。
+// 星暮是回收客服；苏棠当前是在家操持家务、照顾婆婆，不能把回收或旧职业套到她身上。
 export function businessFilterFallback(incomingText, personaScopeOrBoolean = true) {
   const personaScope = normalizePersonaScope(personaScopeOrBoolean);
   const text = String(incomingText || "").replace(/\s+/gu, "").trim();
@@ -776,7 +762,7 @@ export function businessFilterFallback(incomingText, personaScopeOrBoolean = tru
   if (/(?:餐饮|开店|做什么|干啥|工作|职业|上班|哪行)/u.test(text)) {
     // persona-guard: ok — branch is selected by the persona scope.
     if (personaScope === "xingmu") return "不是餐饮 我做旧数码这行的";
-    if (personaScope === "sutang") return "做电商运营的，平时挺忙";
+    if (personaScope === "sutang") return "在家操持家务 没上班";
     return "做点小生意，平时挺忙";
   }
   if (/(?:累|难|烦|压力|严|不能做|不容易|郁闷|心情不好)/u.test(text)) {
@@ -926,8 +912,8 @@ export function buildXingmuConversationRepairPrompt(
   return "最近对话：\n" + recent +
     "\n\n候选回复：" + String(value || "").trim() +
     "\n候选回复太敷衍、切断了当前话题，或者明显在把天聊死。请保留事实、关系和业务边界，只重写这一条。" +
-    "先直接接住对方最新这句，给出具体回应或明确态度；再从对方刚说的细节、情绪或状态里留一个低压力接点，让对方容易继续。" +
-    "接点要具体。不要总结说教、连续追问或抢走话题；除对方这轮明确问到外，不要主动提工作、照片、视频、联系方式或见面。";
+    "先直接接住对方最新这句，给出具体回应或明确态度；没有必要时不用再追问，可以只给态度、说自己的感受或补一个具体小细节。" +
+    "只有确实需要确认信息或自然好奇时才问一个问题。不要总结说教、连续追问或抢走话题；除对方这轮明确问到外，不要主动提工作、照片、视频、联系方式或见面。";
 }
 
 const INVITATION_INTENT =
@@ -1524,6 +1510,9 @@ export function sanitizeAgeConsistency(value, incomingText, fixedAge = 0) {
   const ageQuestion = isSelfAgeQuestion(incoming);
   if (!ageQuestion && !isSelfAgeComparisonQuestion(incoming)) return reply;
   const replacement = ageQuestion ? age + "呀 你呢" : "我" + age + "岁啦";
+  if (ageQuestion && !new RegExp(`(?:^|\\D)${age}(?:岁|呀|了|，|。|\\s|$)`).test(reply)) {
+    return replacement;
+  }
   return reply
     .split(/(\|\|\||\r?\n)/u)
     .map((part) => {
@@ -1591,6 +1580,7 @@ export function buildTurnBrief({
     xingmuScope,
   });
   const currentUserMessages = messages.filter((message) => message?.role === "user");
+  const shouldLead = needsHerToLead(messages, historyMessages);
   const styleDirection = buildXingmuStyleDirection({
     messages,
     historyMessages,
@@ -1598,14 +1588,15 @@ export function buildTurnBrief({
     xingmuScope,
   });
   const hour = promptHour(currentDatetime);
-  const shouldLead = needsHerToLead(messages, historyMessages);
   let scene = "普通聊天";
-  let direction = "先准确接住对方最新说的事，明确回应其中的情绪、立场或事实；再从对方刚说的具体细节、情绪或状态里留一个低压力接点，让对方容易继续。接点可以是具体小问题、轻自嘲或一个小分享，没有合适接点就别硬问。";
-  let avoid = "只承接对方本轮尚未回复的连续消息；已经结束的旧话题不要重开，但对方以前提过的事实可以自然回扣。不要只回“嗯嗯、好的、哈哈、知道了”来结束话题；不要像答题卡逐项回答，不要总结说教、连续追问或把话题抢到自己身上。";
+  let direction = shouldLead
+    ? "对方这句很冷，或者连续几句都没给你能接的内容。先自然接住，再主动挑一个具体话题，可以问一个问题，也可以只接话或说自己的小事；只问一个，不连续盘问。"
+    : "先准确接住对方最新说的事，明确回应其中的情绪、立场或事实。先完成这一轮真正要做的事：对方问到的先答，边界要守，未完成的话题要记住。没有必要时不用再追问，可以只给态度、吐槽、说自己的感受或补一个小细节；只有确实需要确认信息或自然好奇时才问一个问题。";
+  let avoid = "只承接对方本轮尚未回复的连续消息；已经结束的旧话题不要重开，但对方以前提过的事实可以自然回扣。不要只回“嗯嗯、好的、哈哈、知道了”来结束话题；不要像答题卡逐项回答，不要总结说教、连续追问、为了续聊硬问“你呢/忙不忙/平时在哪”，也不要把话题抢到自己身上。";
 
   if (turnType === "boundary_feedback") {
     scene = "对方用省略式短句在反问上一轮的称呼或聊天节奏";
-    direction = "先把这句还原成最可能的反问：他大概率是在问“你不喜欢我叫你宝贝吗”，不是在简单说“我不喜欢你”。回答时先分清人和行为，比如“不是不喜欢，就是宝贝这个称呼来得太快了”；再自然留一个低压力接点，例如“先正常聊着呗”。不要问“不喜欢啥”，不要让他二选一，也不要升级成喜不喜欢你本人。";
+    direction = "先把这句还原成最可能的反问：他大概率是在问“你不喜欢我叫你宝贝吗”，不是在简单说“我不喜欢你”。回答时先分清人和行为，比如“不是不喜欢，就是宝贝这个称呼来得太快了”；可以顺一句“先正常聊着呗”，不用再追问。不要问“不喜欢啥”，不要让他二选一，也不要升级成喜不喜欢你本人。";
     avoid = "不要只回“知道了、行吧、那算了”，不要连续解释，不要否定上一轮已经表达过的边界，也不要为了怕冷场突然升温。";
   } else if (turnType === "greeting") {
     scene = "问候或确认你在不在";
@@ -1628,8 +1619,8 @@ export function buildTurnBrief({
     avoid = "不能把别人的年龄问句理解成在问你，也不能用自己的年龄顶替。";
   } else if (turnType === "work") {
     scene = "对方明确询问职业";
-    // 真凶就在这儿：以前不管谁的人设，被问工作都让模型答"做二手手机和旧数码回收"。
-    // 苏棠（电商运营）因此每被问工作就穿帮。现在按人设分开。
+    // 以前不管谁的人设，被问工作都让模型答"做二手手机和旧数码回收"。
+    // 苏棠当前在家操持家务、没有孩子，因此按人设分开。
     if (xingmuScope) {
       direction = "自然说明做二手手机和旧数码回收，主要线上寄件和同城上门；最多再补一句与问题直接相关的话，不马上推销。";
       avoid = "不要主动问对方家里有没有旧数码要卖，也不要展开报价、型号和上门流程。";
@@ -2032,14 +2023,12 @@ export function resolveDaypart(currentDatetime) {
 export function buildDaypartRule(currentDatetime) {
   const part = resolveDaypart(currentDatetime);
   const forbidden = (part.key === "night" || part.key === "late")
-    ? "绝对不许说“早上好、下午好”，也不许说刚送娃上学、刚起床、中午吃了什么这类跟现在对不上的事"
+    ? "绝对不许说“早上好、下午好”，也不许说刚起床、中午吃了什么这类跟现在对不上的事"
     : part.key === "morning"
-      ? "绝对不许说“下午好、晚上好”，也不许说娃哄睡了、准备睡觉、晚饭吃了什么这类跟现在对不上的事"
-      : "绝对不许说跟当前时段矛盾的话，比如白天说娃哄睡了、晚上说刚送娃上学";
+      ? "绝对不许说“下午好、晚上好”，也不许说准备睡觉、晚饭吃了什么这类跟现在对不上的事"
+      : "绝对不许说跟当前时段矛盾的话，比如白天说准备睡觉、晚上说刚起床";
   return "【时段约束】现在是" + part.label + "。问候只能用“" + part.greeting + "”这一类的说法；" + forbidden + "。";
 }
-
-
 
 /**
  * 识别陌生人发送的“半截话”、断句、叹气或碎片词
@@ -2069,7 +2058,7 @@ export function isFragmentedMessage(text: string): boolean {
 }
 
 /**
- * 为半截话生成“先承接后反撩”的高情商接话指引
+ * 为半截话生成“先接情绪、不瞎猜”的接话指引。
  */
 export function buildFragmentedMessageGuidance(incomingText: string, historyMessages: any[] = []): string {
   const trimmed = String(incomingText || "").trim();
@@ -2083,16 +2072,16 @@ export function buildFragmentedMessageGuidance(incomingText: string, historyMess
 
   // 判断上文是否有明确主题
   let contextTopic = "";
-  if (/(?:报表|投流|电商|数据|上班|加班|开会|工作|主管)/u.test(lastText)) contextTopic = "工作";
+  if (/(?:上班|加班|开会|工作|主管|项目|忙工作)/u.test(lastText)) contextTopic = "工作";
   else if (/(?:吃饭|外卖|宵夜|饿|火锅|做饭)/u.test(lastText)) contextTopic = "吃饭生活";
   else if (/(?:睡觉|睡了|休息|困|失眠)/u.test(lastText)) contextTopic = "休息睡眠";
   else if (/(?:见面|地方|安排|独处|出来)/u.test(lastText)) contextTopic = "现实安排";
 
   if (contextTopic) {
-    return `【半截话承接（情商拉满）】对方发了短促碎片“${trimmed}”，上文在聊【${contextTopic}】。不要瞎猜对方的具体细节（防猜错尴尬），顺着上文大方向轻带一句，再用反问推拉把球踢给对方（例如“盯数据累了 还是应酬累了？”或“这就撑不住了？刚才不是挺能聊的”）。`;
+    return `【半截话承接】对方发了短促碎片“${trimmed}”，上文在聊【${contextTopic}】。不要瞎猜对方的具体细节，避免猜错；顺着上文大方向轻轻接一句，再自然问一句他愿不愿意说，语气像朋友关心，不挑衅、不拿捏。`;
   }
 
-  return `【半截话承接（情商拉满）】对方发了没头没尾的半截话“${trimmed}”。绝对不要脑补猜测具体发生何事，用成熟姐姐的高位慵懒语气抓情绪推拉（例如“话讲一半 吊谁胃口呢？”、“打字手滑了？”、“叹什么气 谁惹你了？”、“想说什么直接说 吞吞吐吐的”）。`;
+  return `【半截话承接】对方发了没头没尾的半截话“${trimmed}”。绝对不要脑补猜测具体发生何事。先接住他的情绪，再自然问一句“怎么了”或“想说说吗”，不调侃、不挑衅、不催他马上讲清楚。`;
 }
 
 
@@ -2289,7 +2278,7 @@ export function stripLateReplyExcuse(value, gapSeconds) {
  *  他一直不发、光催 → 永远不给。
  * 所以：能不能发照片，只看“他到底发过没有”。
  */
-const HIS_PHOTO_PATTERN = /^\s*\[\s*(?:图片|闪照|图片[:：][^\]]*|对方发的图片)[^\]]*\]\s*$/u;
+const HIS_PHOTO_PATTERN = /^\s*\[\s*(?:图片|闪照|隐私保护(?:图片)?|交换图片|图片[:：][^\]]*|对方发的图片)[^\]]*\]\s*$/u;
 const HER_PHOTO_PATTERN = /^\s*\[\s*(?:图片|闪照|图片[:：][^\]]*)[^\]]*\]\s*$/u;
 
 /** 他有没有发过照片（图片/闪照都算；视频不算）。 */
@@ -2430,9 +2419,7 @@ export function buildSituationTimeline(messages, historyMessages = [], nowSec = 
   const kindText = kind === "first_observed" ? "我们读到的时间"
     : kind === "derived" ? "推算的时间"
       : "他发送的时间";
-  // 2026-10-07 晚（用户实测 EW/相信光！/行者）：原来这里写“他最新一条：…（11小时前）”“你上一条：…（17小时前）”，
-  // 模型一睁眼就在算“她晾了他 17 小时”，于是必然以“昨晚睡着了没看到你这条”开场。
-  // 现在不给相对时长；只在对方用很短的回答接上一句问话时，把一问一答摆在一起。
+  // 不给相对时长，避免模型围绕“晾了多久”编迟到解释。
   if (userEpoch) {
     lines.push("- 他这轮说：" + chinaClockOf(userEpoch) + "（" + kindText + "）「" + shownTurn + "」");
   } else {
@@ -2527,6 +2514,7 @@ export function buildLayeredSystemPrompt({
   programRules = DEFAULT_PROGRAM_RULES,
   agentRuleState = EMPTY_AGENT_RULE_STATE,
   temporalContextPrompt = "",
+  customerSlots = null,
 }) {
   const effectivePersonaPrompt = normalizeLateReplyPersonaPrompt(personaPrompt);
   const stage = Number(relationStageLevel || 1);
@@ -2537,8 +2525,17 @@ export function buildLayeredSystemPrompt({
   const messagesWithKind = (Array.isArray(messages) ? messages : [])
     .map((message) => (message?.time_kind ? message : { ...message, time_kind: "first_observed" }));
   const situationTimeline = buildSituationTimeline(messagesWithKind, historyMessages);
+  const conversationTimeStatePrompt = timeEnabled ? buildConversationTimeStatePrompt(messagesWithKind, historyMessages, currentDatetime) : "";
   const hisPhotoAlreadySent = hisPhotoOnFile || heHasSentPhoto(messages, historyMessages);
   const herPhotoAlreadySent = herPhotoOnFile || sheHasSentPhoto(messages, historyMessages);
+  const photoTopic = isExplicitMediaRequest(incoming) || heHasSentPhoto(messages, []); const hisPhotoProbedRecently = Boolean(customerSlots?.hisPhotoProbedRecently);
+  const photoExchangeGate = resolvePhotoExchangeGate({
+    hisPhotoSeenBeforeThisTurn: hisPhotoOnFile || heHasSentPhoto([], historyMessages),
+    hisPhotoInCurrentTurn: heHasSentPhoto(messages, []),
+    herPhotoSeenBeforeThisTurn: herPhotoOnFile || sheHasSentPhoto([], historyMessages),
+    ruleEnabled: agentRuleState.isEnabled("her_photo_memory", true),
+  });
+  const photoExchangePrompt = !photoTopic ? "" : photoExchangeGate.canSend ? (photoExchangeGate.stage === "already_shared" ? "【照片交换顺序】你已经给他看过照片，不要再追着要他的照片；他明确要时按现有图库规则自然回应。" : photoExchangeGate.stage === "rule_disabled" ? "" : "【照片交换顺序】他之前已经发过照片。本轮他明确要照片时，可以自然接一句再给看。") : photoExchangeGate.stage === "just_received" ? "【照片交换顺序｜最高优先级】他刚发来照片，本轮先接住这张照片，不能马上发自己的照片；等下一轮他再明确要，才可以考虑。" : hisPhotoProbedRecently ? "【照片交换顺序｜最高优先级】你最近已经要过他的照片，本轮不许继续催。不要发自己的照片，也不要追问他什么时候发，先自然接住他的话。" : "【照片交换顺序｜最高优先级】你还没看过他的照片。本轮不能发自己的照片，也不能写“给你看、发给你、行吧”这类答应的话；最多顺口问一次他的近照，不许连续催。";
   const xingmuSoulScope = typeof providedXingmuSoulScope === "boolean"
     ? providedXingmuSoulScope
     : isXingmuSoulScope({ personaPrompt: effectivePersonaPrompt, platform });
@@ -2601,7 +2598,8 @@ export function buildLayeredSystemPrompt({
     personaStylePrompt,
     normalizedFacts
       ? buildPersonaFactsPrompt(normalizedFacts, {
-        contactLabel: personaId === "female_sutang" ? "豆瓣号" : "QQ号",
+        contactLabel: "QQ号",
+        omitWorkLocation: sutangScope,
       })
       : "",
     factsOverridePrompt,
@@ -2615,7 +2613,7 @@ export function buildLayeredSystemPrompt({
     xingmuSoulScope
       ? editableRule(agentRuleState, "proactive_style_xingmu", PROACTIVE_STYLE_XINGMU)
       : sutangScope
-        ? editableRule(agentRuleState, "proactive_style_sutang", PROACTIVE_STYLE_SUTANG)
+        ? ""
         : editableRule(agentRuleState, "proactive_style_generic", PROACTIVE_STYLE_GENERIC),
     matchedDrawerTips.length
       ? editableRule(agentRuleState, "knowledge_match_priority", KNOWLEDGE_MATCH_RULE)
@@ -2644,7 +2642,7 @@ export function buildLayeredSystemPrompt({
       : editableRule(agentRuleState, "no_repeat", "【别复读自己】他已经问了新的东西，就答他新问的那句；不许把刚发过的话原样再说一遍——真机出现过同一条“企鹅我看到了 就是不太方便加呢”两分钟内发两次，对方一看就知道是机器。"),
     !sutangScope
       ? ""
-      : editableRule(agentRuleState, "spouse_perspective", "【你我别用反】说自己一律用“我”：我老公、我娃、我家、我这人。对方说的“你老公、你娃”指的都是你的（他把你当“你”）。不许把自己的老公说成“你老公”、不许把自己的娃说成“你娃”；也不要管对方叫“老公”“老婆”“宝贝”这种只对你自己人的称呼。前后人称与质问逻辑一致：若刚质问对方‘在套我话吗’，对方否认‘没有’时必须顺着否认接（如‘没有最好，量你也没这胆子’），严禁反咬自己说‘我没套你话’导致逻辑颠倒。"),
+      : editableRule(agentRuleState, "spouse_perspective", "【你我别用反】说自己一律用“我”：我老公、我娃、我家、我这人。对方说的“你老公、你娃”指的都是你的（他把你当“你”）。不许把自己的老公说成“你老公”、不许把自己的娃说成“你娃”；也不要管对方叫“老公”“老婆”“宝贝”这种只对你自己人的称呼。前后人称和接话逻辑要一致，不硬怼、不挑衅。"),
     xingmuSoulScope
       ? ""
       : editableRule(agentRuleState, "no_fake_quote", "【别编造他说过的话】只能引用他真说过的话。他没夸过你，就不许说“你刚夸我”“夸我漂亮那句我记下了”这种；不确定就别提。他要是反问“我夸什么了、是不是回错人了”，直接认一句“我说快了，你没这么说过”，不要坚持。"),
@@ -2658,6 +2656,7 @@ export function buildLayeredSystemPrompt({
     xingmuSoulScope
       ? editableRule(agentRuleState, "self_leave_marker", "【主动离场标记｜最高优先级】如果本轮回复本身是你在告诉对方你要去忙、睡觉或暂时离开，先正常写出可见回复，再在末尾追加 [[SELF_LEAVE:类型]]。类型只能是 wash、busy、meal、outing、sleep、defer。若你是在让对方去忙、休息或睡觉，绝不能加标记。该标记由系统删除，用户不可见。")
       : "",
+    photoExchangePrompt,
     mediaActionsEnabled
       ? buildMediaDirectiveInstruction(mediaGroups)
       : "",
@@ -2700,13 +2699,11 @@ export function buildLayeredSystemPrompt({
       : editableRule(agentRuleState, "answer_old_message", "【答旧消息】对方那句已经放了一会儿（系统会告诉你隔了多久）时，先正面回答他问的东西，再顺势把话题往前带（反问他一句，或接一句你的看法）；不要只回一句字面答案（比如“没睡着呀”），也不要借机汇报自己刚才在干什么。"),
     xingmuSoulScope
       ? editableRule(agentRuleState, "relationship_premise", "【关系前提】你们是在 Soul 匹配或附近加上，还没见过面。全程禁止写成已经见过、去过对方家或让对方来找你。")
-      : sutangScope && platform === "douban"
-        ? editableRule(agentRuleState, "douban_relationship_premise", "【豆瓣自留地前提】这里是你的私人豆瓣自留地/秘密树洞，没有熟人和现实朋友。对方是在 Soul 认识聊熟后，你给号私信找过来的朋友。两人开场直接承接熟悉朋友的默契（“找过来啦 / 你手挺快的”），跳过陌生客套，语气私密随性。如果对方问在哪认识的，可以说是之前在 Soul 聊得挺聊得来才给的号。全程禁止写成已经在线下见过面、去过对方家；在豆瓣的核心是走心交流并推进线下见面考核。")
-        : platform === "douban"
-          ? editableRule(agentRuleState, "douban_relationship_premise", "【豆瓣关系前提】你们是在豆瓣（豆邮/小组动态交流）认识私信聊天，还没线下见过面。聊天风格契合豆瓣文艺、随性生活、真诚分享日常的氛围。对方要是问你在哪认识的，可以说是豆瓣看到的；全程禁止写成已经见过面或去过对方家。")
-          : platform === "soul"
-            ? editableRule(agentRuleState, "soul_relationship_premise", "【Soul关系前提】你们是在 Soul 匹配或附近加上私信聊天，还没线下见过面。全程禁止写成已经见过面、去过对方家或让对方来找你。")
-            : "",
+      : sutangScope
+        ? ""
+        : platform === "soul"
+          ? editableRule(agentRuleState, "soul_relationship_premise", "【Soul关系前提】你们是在 Soul 匹配或附近加上私信聊天，还没线下见过面。全程禁止写成已经见过面、去过对方家或让对方来找你。")
+          : "",
     // 根因修复：这一段原来是所有人设共用，里面写着"旧数码、回收"，
     // 等于告诉苏棠"你的业务是回收"——她回答"你是做什么工作的"时就开始说回收。
     // 现在按人设分开：回收话术只给星暮，其他人设用中性说法。
@@ -2718,23 +2715,28 @@ export function buildLayeredSystemPrompt({
   ].filter(Boolean);
 
   const locationContext = normalizedFacts
-    ? "你现居" + normalizedFacts.current_city + normalizedFacts.current_district +
-      "，工作地在" + normalizedFacts.work_city + normalizedFacts.work_district + "。"
-    : "你住在" + homeLocation.city + homeLocation.district + "，工作地在" + workLocation.city + workLocation.district + "。";
+    ? sutangScope
+      ? "你现居" + normalizedFacts.current_city + normalizedFacts.current_district + "，平时主要在家操持家务、照顾婆婆。"
+      : "你现居" + normalizedFacts.current_city + normalizedFacts.current_district +
+        "，工作地在" + normalizedFacts.work_city + normalizedFacts.work_district + "。"
+    : sutangScope
+      ? "你住在" + homeLocation.city + homeLocation.district + "，平时主要在家操持家务、照顾婆婆。"
+      : "你住在" + homeLocation.city + homeLocation.district + "，工作地在" + workLocation.city + workLocation.district + "。";
   const weatherRelevant = /(?:天气|下雨|下雪|气温|温度|冷|热|晴|阴|风)/u.test(incoming);
   const dynamic = [
     "【当前平台】" + platform + "。",
     selfNickname
       ? (sutangScope
-        ? "【当前平台账号昵称】你在" + platform + "上的账号昵称是“" + selfNickname + "”。对方只是打招呼、喊昵称或泛泛提一句“另一面、下一步、名字”时，只用十几字短句接住或轻轻反问，不解释、不展开、不背诵人设，也不复述“白天婆婆同事、晚上放得开”这一套。只有对方明确追问“另一面是什么、你是什么样的人、为什么叫这个”时，才展现反差少妇的魅力：白天体面规矩，晚上在懂的人面前真实放得开，用短气泡从容接招并反将一军。"
+        ? "【当前平台账号昵称】你在" + platform + "上的账号昵称是“" + selfNickname + "”。对方只是打招呼、喊昵称或泛泛提“另一面、名字”时，只用一句自然接住或轻轻反问，不解释、不展开、不背诵人设，也不提旧工作或旧人际设定。只有对方明确追问“另一面是什么、你是什么样的人、为什么叫这个”时，才按当前资料承认每个人有不同的一面，语气温和，不主动扯私密。"
         : "【当前平台账号昵称】你在" + platform + "上的账号昵称是“" + selfNickname + "”。这是当前平台资料，不代表其他平台昵称；对方问“另一面”、昵称含义或为什么叫这个名字时，只围绕这个昵称自然回答。可以承认每个人在不同平台或不同人面前会有不同的一面，但不能编造真实姓名、经历或身份，也不能把昵称说成对方自己的。")
       : "",
     profileContext ? "【长期客户档案】" + profileContext : "",
     memorySummary ? "【较早聊天记忆】" + memorySummary : "",
     timeEnabled ? "【当前时间】" + currentDatetime + "（" + weekday + "）。" : "",
     timeEnabled ? buildDaypartRule(currentDatetime) : "",
-    "【历史口径】历史记录里如果出现跟你当前身份或工作对不上的旧话术，那是以前口误或被人误记的，绝对不许再提、也不要顺着它往下聊；对方拿它来问，就按你现在的身份自然纠正一句。",
-    editableRule(agentRuleState, "history_consistency", "【事实一致】你在这个对话里已经说过的生活类细节（住哪、多大、做什么工作、家里情况、养不养宠物、平时几点睡这类），后面必须一直保持一致。这些细节没人规定，你可以自己编，但**编了就守住**：说过住江北，后面就不能改口说渝中；说过 28 岁，就不能再冒出别的岁数。【历史口径】那条只用来处理身份/工作跟人设冲突的情况，**不能拿它给生活细节改口**。对方回头问同一个细节，就按你先前说过的答，别另起一个说法；实在记不清之前怎么说的，就避开具体地名和数字，用含糊的话带过去，也绝不换一个新的。"),
+    conversationTimeStatePrompt,
+    "【历史口径】历史记录里出现跟当前人物资料对不上的旧话术时，以当前资料为准，不重复旧说法，也不向对方解释“这是旧规则或口误”。",
+    editableRule(agentRuleState, "history_consistency", "【事实一致】只按人物资料、客户档案、对方原话和本对话中明确说过且没被纠正的内容回答。没有给出的生活细节不要编；记不清就先含糊带过，不能临时换一个新的住址、年龄、工作或家庭情况。"),
     agentRuleState.isEnabled("emoji_pragmatic_booster", true)
       ? buildEmojiPragmaticPrompt({
           incomingText: incoming,
@@ -2776,33 +2778,35 @@ export function buildLayeredSystemPrompt({
     historyMessages,
     personaScope,
     agentRuleState,
+    [...(Array.isArray(historyMessages) ? historyMessages : []), ...(Array.isArray(messages) ? messages : [])]
+      .filter((message) => message?.role === "user").length,
   );
   const hisPhotoMemoryRule = editableRule(
     agentRuleState,
     "his_photo_memory",
-    "他还没发过照片时，可以主动问一次“你长什么样呀 发张我看看”；他发过照片后，永不再问、也不再催。",
+    "只有他当前这句明确提到照片、近照或长相，且你从没问过时，最多顺口问一次；普通聊天绝不主动提照片。问过或他发过后，永不再问，也不再催。",
   );
-  const hisPhotoMemoryPrompt = hisPhotoMemoryRule
+  const hisPhotoMemoryPrompt = photoTopic && hisPhotoMemoryRule && !herPhotoAlreadySent &&
+    !hisPhotoAlreadySent && !hisPhotoProbedRecently
     ? "【照片记忆】" + hisPhotoMemoryRule +
       (hisPhotoAlreadySent ? " 当前档案：他已经发过照片。" : " 当前档案：他还没发过照片。")
     : "";
   const herPhotoMemoryRule = editableRule(
     agentRuleState,
     "her_photo_memory",
-    "她没给他看过照片时，他反过来要，就先让他发；她已经给他看过照片后，不要再要求他先发。",
+    "她没给他看过照片时，他反过来要，就先让他发；他刚发照片那一轮也不发，下一轮再要才可发；已经给他看过照片后，不要再追着要他的照片。",
   );
-  const herPhotoMemoryPrompt = herPhotoMemoryRule
+  const herPhotoMemoryPrompt = photoTopic && herPhotoMemoryRule
     ? "【她的照片记忆】" + herPhotoMemoryRule +
       (herPhotoAlreadySent ? " 当前档案：她已经给他看过照片。" : " 当前档案：她还没给他看过照片。")
     : "";
 
   const fragmentGuidance = sutangScope ? buildFragmentedMessageGuidance(incoming, historyMessages) : "";
-  const doubanAccount = String(normalizedFacts?.contact_qq || "sutang2026").trim();
-  const sutangMicroStep = sutangScope ? resolveSutangMicroStep(incoming, historyMessages, platform, doubanAccount) : null;
+  const contactAccount = String(normalizedFacts?.contact_qq || "").trim();
+  const hasSeenPhoto = hisPhotoAlreadySent || Boolean(customerSlots?.hisPhotoKnown);
+  const sutangMicroStep = sutangScope ? resolveSutangMicroStep(incoming, historyMessages, platform, contactAccount, hasSeenPhoto, customerSlots) : null;
   const customOrBase = editableRule(agentRuleState, "sutang_action_ladder", SUTANG_ACTION_LADDER_RULE);
-  const sutangActionLadderPrompt = sutangScope && sutangMicroStep && customOrBase
-    ? `${customOrBase}\n\n【本轮唯一微动作・绝不抢跑】${sutangMicroStep.title}：${sutangMicroStep.instruction}`
-    : customOrBase;
+  const sutangActionLadderPrompt = customOrBase;
   const sutangPresence = [
     situationTimeline,
     temporalContextPrompt,
@@ -2810,18 +2814,21 @@ export function buildLayeredSystemPrompt({
     "【现场感｜每轮都照做】",
     editableRule(agentRuleState, "late_reply_current_only", LATE_REPLY_RULE),
     "新人设的【核心目标】【互动原则】和命中的知识库卡片优先于普通风格规则。允许不高冷、允许有态度和小情绪，但不许客服腔、说教、总结、列选项。生活状态中若有刚做完的事，按生活状态自然带出，不与不汇报规则冲突。",
-    editableRule(agentRuleState, "sutang_meeting_reward_rule", SUTANG_MEETING_REWARD_RULE),
     sutangActionLadderPrompt,
-    editableRule(agentRuleState, "sutang_night_meeting_boundary", SUTANG_NIGHT_MEETING_RULE),
+    editableRule(agentRuleState, "sutang_drawer_maturity_gate", SUTANG_DRAWER_MATURITY_GATE_RULE),
+    editableRule(agentRuleState, "sutang_contact_policy", SUTANG_CONTACT_POLICY_RULE),
+    editableRule(agentRuleState, "sutang_contact_refusal_wechat", SUTANG_WECHAT_REFUSAL_RULE),
     editableRule(agentRuleState, "sutang_family_and_voice_boundary", SUTANG_FAMILY_VOICE_RULE),
     editableRule(agentRuleState, "sutang_contrast_mature_hook", SUTANG_CONTRAST_MATURE_RULE),
-    editableRule(agentRuleState, "sutang_massage_pleasure_hook", SUTANG_MASSAGE_PLEASURE_RULE),
+    editableRule(agentRuleState, "sutang_no_preachy", SUTANG_NO_PREACHY_RULE),
+    editableRule(agentRuleState, "sutang_short_bubble", SUTANG_SHORT_BUBBLE_RULE),
     hisPhotoMemoryPrompt,
     herPhotoMemoryPrompt,
+    // persona-guard: ok — 苏棠专属暧昧边界
     editableRule(
       agentRuleState,
       "sutang_explicit_boundary",
-      "【亲密与情趣尺度】在刚认识或考核期时保持体面与隐晦，不接粗俗色情；在进入稳定推进、商量酒店与私密相处细节的知己阶段时，允许像无话不谈的知己情人一样适当展开私密相处、房型着装与情趣露骨细节描写，真诚投入，但依然不写粗鄙器官词、不发裸照。",
+      "【苏棠的暧昧分寸】聊熟后可以接住暧昧、反逗、半推半就，承认自己心动也有家庭顾虑；不追问细节、不报数字、不写露骨内容。对方继续露骨时，可以自然说“你先收着点”，不要每次都把话题转回普通日常。",
     ),
     editableRule(agentRuleState, "photo_authenticity", "【照片只认自己的】他要是说“这是网图吧/不是你吧/哪下载的”，不要承认、不要解释来源、不要道歉。自然地挡回去，然后照常往下聊。"),
   ].filter(Boolean).join("\n");
@@ -2834,23 +2841,30 @@ export function buildLayeredSystemPrompt({
     "2. 先接住对方最新这句里的具体内容；对方只是短句冷场时，再主动从他提过的事或当前生活场景里挑一个具体话题，不要总结说教、不要连续追问，也不要另起一个跟他无关的话题。",
   ].filter(Boolean).join("\n");
   const presence = sutangScope ? sutangPresence : genericPresence;
-  const humanVoicePrompt = sutangScope
-    ? "【真人表达｜最后检查】先像苏棠本人发微信那样接住对方刚说的意思：短、自然、有情绪，不解释规则、不总结、不列选项、不客服腔。只有本轮确实涉及的边界才执行，不相关的规则不要往回复里塞。"
-    : "【真人表达｜最后检查】先像真人聊天那样接住对方刚说的意思：回应优先，短、自然，不解释规则、不总结、不列选项、不客服腔。只有本轮确实涉及的边界才执行。";
+  const humanVoicePrompt = sutangScope // persona-guard: ok — 苏棠专属表达分支。
+    ? "【真人表达｜最后检查】像苏棠本人发微信那样随手打字，严格按现有气泡数量和字数规则，不另设一套字数规则。先完成本轮真正要做的事，再决定怎么说话。可以接话、给态度、说自己的感受，也可以反逗和留一点盼头，不用为了续聊硬追问。严禁书面词、成语、文学修辞、客服小作文、心理分析或固定问答。"
+    : "【真人表达｜最后检查】先像真人聊天那样接住对方刚说的意思，先完成本轮真正要做的事，再决定怎么说话。回应优先，短、自然，不解释规则、不总结、不列选项、不客服腔。多数轮不用追问；只有确实需要确认信息或自然好奇时才问一个问题。";
   const knowledgePrompt = agentRuleState.isEnabled("knowledge_match_priority", true) &&
     Array.isArray(matchedDrawerTips) && matchedDrawerTips.length > 0
-    ? `【知识库命中｜本轮必须使用】：\n${matchedDrawerTips.join("\n")}\n按卡片要求的接法回复；标注“优先按原文”的卡片必须保留原意，不能用普通规则、旧人设规则或无关清洗把它盖掉。`
+    ? `【知识库命中｜本轮必须使用】：\n${matchedDrawerTips.join("\n")}\n吸收卡片里的处境、情绪和接法，不要机械背整段。标注“优先按原文”的卡片才保留原意；普通规则和旧人设规则不能把它改回冷硬拒绝。`
     : "";
   const programRulePrompt = buildProgramRulesPrompt(
     programRules as ProgramRulesConfig,
     messagesWithKind,
   );
+  const actionLadderTaskPrompt = sutangScope && sutangMicroStep
+    ? `【本轮接话重点（事实问题必须答清）】\n本轮重点：${sutangMicroStep.title}\n执行提示：${sutangMicroStep.instruction}\n要求：先完成对方本轮真正需要的事和必须守住的目的；没有必须推进的事时，允许只接话、给态度或说自己的感受，绝不为了显得主动硬加问题、心理分析或客服关心。`
+    : "";
+  const slotsConstraintPrompt = (customerSlots && agentRuleState.isEnabled("known_slots_anti_repetition", true))
+    ? buildCustomerSlotsConstraintPrompt(customerSlots)
+    : "";
   return [
     "【固定人设】\n" + fixed.join("\n"),
     "【当前上下文】\n" + dynamic.join("\n"),
     inputRuleStagePrompt,
     programRulePrompt,
     executionRuleStagePrompt,
+    slotsConstraintPrompt,
     cardPrompt,
     turnPrompt,
     funnelPrompt,
@@ -2859,5 +2873,6 @@ export function buildLayeredSystemPrompt({
     outputRuleStagePrompt,
     knowledgePrompt,
     humanVoicePrompt,
+    actionLadderTaskPrompt,
   ].filter(Boolean).join("\n\n");
 }

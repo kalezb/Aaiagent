@@ -22,6 +22,7 @@ const {
   factText,
   drawerKindLabel,
   drawerKindOptions,
+  isGroupBlacklisted,
 } = window.DashboardUtils;
 
 const API_BASE = "/api";

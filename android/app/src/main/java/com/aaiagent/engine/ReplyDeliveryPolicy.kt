@@ -32,6 +32,11 @@ data class ReplyDeliveryResult(
 }
 
 object ReplyDeliveryPolicy {
+    fun finalParts(parts: List<String>, maxParts: Int = 3): List<String> {
+        if (maxParts <= 0) return emptyList()
+        return parts.filter(String::isNotBlank).take(maxParts)
+    }
+
     @Suppress("UNUSED_PARAMETER")
     fun planParts(
         parts: List<String>,

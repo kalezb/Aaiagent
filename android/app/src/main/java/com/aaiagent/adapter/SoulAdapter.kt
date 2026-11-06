@@ -32,6 +32,7 @@ import com.aaiagent.engine.MessagePageCachePolicy
 import com.aaiagent.engine.ReplyDeliveryVerificationPolicy
 import com.aaiagent.engine.ScreenCapture
 import com.aaiagent.engine.SelfVoiceMemory
+import com.aaiagent.engine.SoulChatMarkerPolicy
 import com.aaiagent.engine.SoulConversationStagePolicy
 import com.aaiagent.engine.SoulInputState
 import com.aaiagent.engine.SoulMessageTime
@@ -39,6 +40,7 @@ import com.aaiagent.engine.SoulViewportPolicy
 import com.aaiagent.engine.StickerMatcher
 import com.aaiagent.engine.VoiceHandler
 import com.aaiagent.engine.observability.AutomationTrace
+import com.aaiagent.engine.work.SoulConversationRowPolicy
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -64,8 +66,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val hasSoulmateMarker = hasVisible("rel_soulmate") ||
             hasVisible("gif_soulmate") ||
             hasVisible("tv_soulmate_speed")
-        val hasHeartMarker = hasVisible("layout_heart") ||
-            hasVisible("lot_heart_pet")
+        // layout_heart 是每张聊天页都有的背景装饰，不能当“心形关系”标记（2026-11-03 真机）。
+        val hasHeartMarker = SoulChatMarkerPolicy.HEART_MARKER_IDS.any { hasVisible(it) }
         val hasProfileCard = hasVisible("clCardRoot") ||
             hasVisible("tvOtherName") ||
             hasVisible("tvPlanetArea")
@@ -531,13 +533,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             return cachedMessages
         }
         val parsed = parseMessages(root, expectedPreview)
-        if (signature != null) {
+        if (MessagePageCachePolicy.shouldStore(signature, parsed.size)) {
             cachedSignature = signature
             cachedMessages = parsed
         }
         return parsed
     }
-
     /**
      * 聊天页的廉价签名：只做几次查找，不做逐条解析（全量解析要 20+ 次查找）。
      *
@@ -560,10 +561,12 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             .mapNotNull { it.text?.toString()?.trim() }
             .firstOrNull()
             .orEmpty()
+        val lastHasDynamicVisual = last.findAccessibilityNodeInfosByViewId(prefix + "click_view").any { it.isVisibleToUser }
         val readMarks = root.findAccessibilityNodeInfosByViewId(prefix + "message_read").size
         val title = readChatTitle(root).orEmpty()
         return expectedPreview + "\u001f" + title + "\u001f" + items.size + "\u001f" +
-            readMarks + "\u001f" + lastVoiceLength + "\u001f" + lastText
+            readMarks + "\u001f" + lastVoiceLength + "\u001f" + lastText + "\u001f" +
+            lastHasDynamicVisual
     }
 
     private fun parseMessages(
@@ -601,23 +604,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         pendingStickers.clear()
         rejectedItemLogCount = 0
         pendingQuickMenuItems = readQuickMenuItems(root)
-
         for (item in effectiveItems) {
             if (!forceVisible && !item.isVisibleToUser) continue
             if (isInsideTransientOverlay(item)) continue
-            // 2026-10-05 真机：音乐/视频/表情选择面板里的条目 id 也是 item_root，
-            // 被当成消息读了进来（缓存里出现过“正在加载、IP属地:四川、全部、忘川彼岸、视频”），
-            // 上下文被污染，模型就开始对牛弹琴。这些面板里的东西一律不算消息。
+            // 音乐/视频/表情选择面板里的 item_root 不是消息。
             if (isInsideNonMessagePanel(item)) continue
-            // 2026-10-05 真机：新联系人的页面里还挂着“个人主页/展品馆/收藏/瞬间”的内容，
-            // 它们 id 也叫 item_root，被当成消息读了（缓存里出现过星球名、标签、收藏、IP属地）。
-            // 只认真正的消息气泡：必须有 layout_content，且带文字容器或媒体节点。
+            // 个人主页/展品馆/收藏/瞬间里的 item_root 也不是消息。
             if (isInsideProfileCard(item)) {
                 logRejectedItem(item, "profileCard")
-                continue
-            }
-            if (isInsideNonMessagePanel(item)) {
-                logRejectedItem(item, "panel")
                 continue
             }
             if (!relaxContentCheck && !hasMessageContent(item)) {
@@ -643,7 +637,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             ) {
                 continue
             }
-
             // 2026-10-06 真机：Soul 会把同一个人连着发的几条合并成一组，组里第二三条不再带头像。
             // 没有头像也没有已读回执时，方向判定会退回按内容中心点猜；长消息中心点偏左就被判成对方发的。
             // 结果她自己的消息被读成对方的，同一句回了两遍。信号全缺时延续上一条的方向。
@@ -656,32 +649,33 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             previousSender = sender
             // 转发动态卡片：作者和正文都在卡片节点里，直接读出来（不做任何匹配）。
             val momentCardContent = readMomentCardContent(item, forwardedByOther = sender == "other")
-
             val text = item.findAccessibilityNodeInfosByViewId(prefix + "content_text")
-                .mapNotNull { it.text?.toString()?.trim() }
-                .filter { it.isNotEmpty() }
-                .joinToString("")
+                .mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString("")
+            val quoteCleaned = (item.findAccessibilityNodeInfosByViewId(prefix + "tvQuoteText")
+                .ifEmpty { item.findAccessibilityNodeInfosByViewId(prefix + "quote_content_text") }
+                .ifEmpty { item.findAccessibilityNodeInfosByViewId(prefix + "tv_quote") }
+                .ifEmpty { item.findAccessibilityNodeInfosByViewId(prefix + "c_ct_reply_quote") })
+                .mapNotNull { it.text?.toString()?.trim() }.firstOrNull { it.isNotEmpty() }
+                ?.removePrefix("因为了解：")?.removePrefix("因为了解:")
+                ?.removePrefix("回复：")?.removePrefix("回复:")
+                ?.removePrefix("引用：")?.removePrefix("引用:")?.trim()
+            val quoteTag = if (sender == "other") "引用你的话" else "引用对方的话"
+            val textWithQuote = if (!quoteCleaned.isNullOrEmpty()) {
+                if (text.isNotEmpty()) "$text [$quoteTag: $quoteCleaned]" else "[$quoteTag: $quoteCleaned]"
+            } else text
 
             val voiceTranscription = item.findAccessibilityNodeInfosByViewId(prefix + "audioContent")
-                .mapNotNull { it.text?.toString()?.trim() }
-                .filter { it.isNotEmpty() }
-                .joinToString(" ")
+                .mapNotNull { it.text?.toString()?.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
 
-            val hasVoice = hasAnyVisibleViewId(item, VOICE_TARGET_IDS) ||
-                hasDescendantViewIdFragment(item, VOICE_ID_FRAGMENTS)
+            val hasVoice = hasAnyVisibleViewId(item, VOICE_TARGET_IDS) || hasDescendantViewIdFragment(item, VOICE_ID_FRAGMENTS)
             val hasVoiceEmoji = SoulVoiceMediaKind.isVoiceEmoji(
                 hasEmojiIcon = hasAnyVisibleViewId(item, VOICE_EMOJI_ICON_IDS),
                 hasVoicePlay = hasAnyVisibleViewId(item, VOICE_EMOJI_PLAY_IDS),
                 hasPlayStart = hasAnyVisibleViewId(item, VOICE_EMOJI_START_IDS),
                 hasNormalVoiceBubble = hasAnyVisibleViewId(item, REGULAR_VOICE_IDS)
             )
-            val expressionContainer = item.findAccessibilityNodeInfosByViewId(prefix + "llExpression")
-                .firstOrNull { it.isVisibleToUser }
-            val expressionStickerNode = expressionContainer
-                ?.findAccessibilityNodeInfosByViewId(prefix + "image")
-                ?.firstOrNull { it.isVisibleToUser }
-            // llExpression is Soul's ordinary sticker card, not one of the 14
-            // light-interaction templates. Keep it on the local fixed-reply path.
+            val expressionContainer = item.findAccessibilityNodeInfosByViewId(prefix + "llExpression").firstOrNull { it.isVisibleToUser }
+            val expressionStickerNode = expressionContainer?.findAccessibilityNodeInfosByViewId(prefix + "image")?.firstOrNull { it.isVisibleToUser }
             val hasImage = expressionStickerNode == null && (
                 SoulMediaType.hasImageBubble(
                     hasImageMarker = item.findAccessibilityNodeInfosByViewId(prefix + "image").isNotEmpty() ||
@@ -692,18 +686,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 )
             )
             val hasExchange = isExchangeItem(item)
-            val lightInteractionNode = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction")
-                .firstOrNull { it.isVisibleToUser }
-            val staticStickerNode = item.findAccessibilityNodeInfosByViewId(prefix + "img_static")
-                .firstOrNull { it.isVisibleToUser }
-            val isBareStaticSticker = text.isEmpty() &&
-                voiceTranscription.isEmpty() &&
-                !hasVoice &&
-                !hasVoiceEmoji &&
-                !hasImage &&
-                !hasSnapPhoto &&
-                !hasExchange &&
-                momentCardContent == null
+            val lightInteractionNode = item.findAccessibilityNodeInfosByViewId(prefix + "la_light_interaction").firstOrNull { it.isVisibleToUser }
+            val staticStickerNode = item.findAccessibilityNodeInfosByViewId(prefix + "img_static").firstOrNull { it.isVisibleToUser }
+            val dynamicVisualNode = item.findAccessibilityNodeInfosByViewId(prefix + "click_view").firstOrNull { it.isVisibleToUser }
+            val isBareStaticSticker = text.isEmpty() && voiceTranscription.isEmpty() &&
+                !hasVoice && !hasVoiceEmoji && !hasImage && !hasSnapPhoto && !hasExchange && momentCardContent == null
             val interactionKind = SoulInteractionKind.resolve(
                 hasLightInteraction = lightInteractionNode != null,
                 hasBareStaticSticker = staticStickerNode != null && isBareStaticSticker
@@ -713,34 +700,36 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 SoulInteractionKind.STATIC -> staticStickerNode
                 else -> null
             }
-            val type = SoulMediaType.resolve(
+            val dynamicClassification = SoulDynamicVisualPolicy.classifyIfBare(
+                expectedPreview = expectedPreview,
+                hasClickableView = dynamicVisualNode != null,
+                hasText = textWithQuote.isNotEmpty(),
+                knownMediaSignals = listOf(
+                    hasVoice, hasVoiceEmoji, hasImage, hasSnapPhoto, hasSentSnapPhoto,
+                    hasExchange, momentCardContent != null, expressionStickerNode != null,
+                    lightInteractionNode != null, staticStickerNode != null,
+                ),
+            )
+            val type = dynamicClassification?.type ?: SoulMediaType.resolve(
                 hasVoiceEmoji = hasVoiceEmoji,
                 hasVoice = hasVoice,
                 hasImage = hasImage,
                 hasSnapPhoto = hasSnapPhoto,
-                hasText = text.isNotEmpty(),
+                hasText = textWithQuote.isNotEmpty(),
                 hasExchange = hasExchange,
                 hasMomentCard = momentCardContent != null,
                 hasSticker = expressionStickerNode != null
             )
-
-            // 语音气泡上显示的秒数，用来和"我发语音时记下的文字"配对（见 SelfVoiceMemory）。
             val voiceSeconds = if (type == SoulMediaType.VOICE) {
                 SoulVoiceRecordPolicy.parseLengthSeconds(
-                    item.findAccessibilityNodeInfosByViewId(prefix + "tv_length")
-                        .mapNotNull { it.text?.toString() }
-                        .firstOrNull()
+                    item.findAccessibilityNodeInfosByViewId(prefix + "tv_length").mapNotNull { it.text?.toString() }.firstOrNull()
                 ) ?: 0
-            } else {
-                0
-            }
+            } else 0
             val isPotentialSticker = stickerNode != null || expressionStickerNode != null ||
                 type == SoulMediaType.STICKER || type == "image"
             val stickerDescription = if (isPotentialSticker) {
                 findStickerAccessibilityDescription(item, expressionStickerNode, stickerNode)
-            } else {
-                null
-            }
+            } else null
             val msgEpoch = timestamp.epochMillis
             val hour = if (msgEpoch != null && msgEpoch > 0L) {
                 java.util.Calendar.getInstance().apply { timeInMillis = msgEpoch }.get(java.util.Calendar.HOUR_OF_DAY)
@@ -752,16 +741,17 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val content = when {
                 type == SoulMomentCard.TYPE -> momentCardContent ?: SoulMomentCard.FALLBACK
                 type == SoulMediaType.VOICE_EMOJI -> "[语音互动表情]"
+                dynamicClassification != null -> dynamicClassification.content
                 type == SoulMediaType.VOICE && sender != "other" ->
-                    SoulVoiceContent.resolveIncoming(voiceTranscription, text)
+                    SoulVoiceContent.resolveIncoming(voiceTranscription, textWithQuote)
                 // 自己发的语音：先放占位，等排序之后统一按"时长 + 顺序"补上当时说的话。
-                type == SoulMediaType.VOICE -> SoulVoiceContent.resolveOutgoing(null, text)
+                type == SoulMediaType.VOICE -> SoulVoiceContent.resolveOutgoing(null, textWithQuote)
                 resolvedStickerText != null -> resolvedStickerText
                 type == SoulMediaType.STICKER -> "[表情]"
-                text.isNotEmpty() -> text
+                textWithQuote.isNotEmpty() -> textWithQuote
                 stickerNode != null -> "[Soul互动表情]"
                 type == "exchange" -> "[以图换图]"
-                type == "image" -> if (hasSnapPhoto) "[闪照]" else "[图片]"
+                type == "image" -> if (hasSnapPhoto) "[隐私保护图片]" else if (expectedPreview.contains("[表情]")) "[表情]" else "[图片]"
                 else -> ""
             }
             // 编号锚点：**不论方向，语音一律用固定的 [语音] 算**。
@@ -778,6 +768,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val finalType = when {
                 resolvedStickerText != null -> "text"
                 stickerNode != null && text.isEmpty() -> SoulInteractionMessage.TYPE
+                type == "image" && expectedPreview.contains("[表情]") && !hasSnapPhoto -> SoulMediaType.STICKER
                 else -> type
             }
             val stickerRect = if (resolvedStickerText == null) {
@@ -801,6 +792,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                             type = finalType,
                             timestampText = timestamp.text,
                             timestampMillis = timestamp.epochMillis,
+                            timestampTrusted = timestamp.explicit,
                             identityKey = SoulMessageIdentity.key(
                                 sender = sender,
                                 type = finalType,
@@ -1320,7 +1312,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     private fun isAlbumPicker(root: AccessibilityNodeInfo): Boolean {
         return root.packageName?.toString() == packageName && (
             root.findAccessibilityNodeInfosByViewId(prefix + "rvAlbum").isNotEmpty() ||
-                root.findAccessibilityNodeInfosByViewId(prefix + "tv_photo_folder").isNotEmpty()
+                root.findAccessibilityNodeInfosByViewId(prefix + "albumRecyclerView").isNotEmpty() ||
+                root.findAccessibilityNodeInfosByViewId(prefix + "albumFolderView").isNotEmpty() ||
+                root.findAccessibilityNodeInfosByViewId(prefix + "tv_photo_folder").isNotEmpty() ||
+                root.findAccessibilityNodeInfosByViewId(prefix + "iv_photo").isNotEmpty() ||
+                root.findAccessibilityNodeInfosByViewId(prefix + "ivPhoto").isNotEmpty()
             )
     }
 
@@ -1420,6 +1416,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             "image" -> IMAGE_TARGET_IDS
             "voice" -> VOICE_TARGET_IDS
             "voice_emoji" -> emptyList()
+            SoulMediaType.DYNAMIC_VISUAL -> listOf("click_view")
             // 转发动态卡片：只截卡片里的配图，不要把作者和正文一起截进去
             // （文字是从节点直接读的，比让视觉模型认字准）。
             SoulMomentCard.TYPE -> MOMENT_CARD_IMAGE_IDS
@@ -1603,6 +1600,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         if (!canProceed()) return null
         var root = waitForVerifiedChatRoot(expectedContactName) ?: return null
         var panel = root.findAccessibilityNodeInfosByViewId(prefix + "media_menu_fragment_container")
+            .ifEmpty { root.findAccessibilityNodeInfosByViewId(prefix + "gridview") }
+            .ifEmpty { root.findAccessibilityNodeInfosByViewId(prefix + "pager_view") }
+            .ifEmpty { root.findAccessibilityNodeInfosByViewId(prefix + "chat_media_menu") }
             .firstOrNull(::isVisibleOnScreen)
         if (panel == null) {
             val more = root.findAccessibilityNodeInfosByViewId(prefix + "menu_tab_more_inner")
@@ -1610,22 +1610,27 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 .mapNotNull(::clickableNode)
                 .firstOrNull(::isVisibleOnScreen)
                 ?: return null
-            if (!tapNode(more)) return null
-            root = waitForRoot(8, 350) {
-                it.findAccessibilityNodeInfosByViewId(prefix + "media_menu_fragment_container")
-                    .any(::isVisibleOnScreen)
+            if (!tapNode(more, preferGesture = true)) return null
+            root = waitForRoot(8, 300) {
+                it.findAccessibilityNodeInfosByViewId(prefix + "gridview").any(::isVisibleOnScreen) ||
+                    it.findAccessibilityNodeInfosByViewId(prefix + "pager_view").any(::isVisibleOnScreen) ||
+                    findVisibleNodeByText(it, "图片") != null
             } ?: service.rootInActiveWindow ?: return null
-            panel = root.findAccessibilityNodeInfosByViewId(prefix + "media_menu_fragment_container")
+            panel = root.findAccessibilityNodeInfosByViewId(prefix + "gridview")
+                .ifEmpty { root.findAccessibilityNodeInfosByViewId(prefix + "pager_view") }
                 .firstOrNull(::isVisibleOnScreen)
         }
-        val photoEntry = panel?.let { findVisibleNodeByText(it, "图片") }
+        val photoEntry = (panel?.let { findVisibleNodeByText(it, "图片") }
+            ?: findVisibleNodeByText(root, "图片")
+            ?: service.rootInActiveWindow?.let { findVisibleNodeByText(it, "图片") })
             ?.let { node -> clickableNode(node) ?: node }
             ?: return null
-        if (!tapNode(photoEntry)) return null
+        if (!tapNode(photoEntry, preferGesture = true)) return null
 
-        val albumRoot = waitForRoot(10, 350) { candidate ->
+        val albumRoot = waitForRoot(12, 350) { candidate ->
             isAlbumPicker(candidate) ||
-                candidate.findAccessibilityNodeInfosByViewId(prefix + "iv_photo").any()
+                candidate.findAccessibilityNodeInfosByViewId(prefix + "iv_photo").any() ||
+                candidate.findAccessibilityNodeInfosByViewId(prefix + "ivPhoto").any()
         }
         if (albumRoot == null) {
             android.util.Log.w("AIA", "Soul album picker did not become accessible")
@@ -1657,7 +1662,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 root = service.rootInActiveWindow ?: return false
                 return@repeat
             }
-            val photo = root.findAccessibilityNodeInfosByViewId(prefix + "iv_photo")
+            val photoNodes = root.findAccessibilityNodeInfosByViewId(prefix + "iv_photo")
+                .ifEmpty { root.findAccessibilityNodeInfosByViewId(prefix + "ivPhoto") }
+            val photo = photoNodes
                 .filter(::isVisibleOnScreen)
                 .sortedWith(compareBy<AccessibilityNodeInfo> { node -> Rect().also(node::getBoundsInScreen).top }
                     .thenBy { node -> Rect().also(node::getBoundsInScreen).left })
@@ -1752,6 +1759,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private fun findAlbumPrivacyCheck(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         return root.findAccessibilityNodeInfosByViewId(prefix + "checkSnapChat")
+            .ifEmpty { root.findAccessibilityNodeInfosByViewId(prefix + "check_flash_media") }
             .firstOrNull { it.isEnabled }
     }
 
@@ -2106,9 +2114,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     private fun detectBanned(root: AccessibilityNodeInfo): Boolean {
         val keywords = listOf(
-            "发送失败", "已被禁言", "发言太快", "内容违规", "违规消息", "账号异常", "操作频繁",
-            "请稍后再试", "已被限制", "禁止发言", "聊天功能被封", "举报处理中",
-            "违反社区规定", "请遵守", "发送内容包含", "封号", "永久封禁", "临时封禁"
+            "发送失败", "已被禁言", "发言太快", "内容违规", "违规消息", "账号异常", "操作频繁", "请稍后再试", "已被限制",
+            "禁止发言", "聊天功能被封", "举报处理中", "违反社区规定", "违反相关规定", "不能回复你", "不能回复", "请遵守", "发送内容包含", "封号", "永久封禁", "临时封禁"
         )
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -2128,7 +2135,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         shouldClick: Boolean,
         pageIndex: Int?,
         requireUnread: Boolean,
-        expectedPreview: String
+        expectedPreview: String,
+        expectedTime: String
     ): ConversationInfo? {
         val messageRoot = activeMessageListRootOrNull() ?: return null
         return tryFindNamedConversation(
@@ -2137,6 +2145,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             shouldClick = shouldClick,
             requireUnread = requireUnread,
             expectedPreview = expectedPreview,
+            expectedTime = expectedTime,
         )
     }
 
@@ -2215,6 +2224,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         shouldClick: Boolean,
         requireUnread: Boolean,
         expectedPreview: String = "",
+        expectedTime: String = "",
     ): ConversationInfo? {
         if (!isInMessageList(root)) return null
         val items = root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
@@ -2223,16 +2233,18 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val name = readChildText(item, "name") ?: continue
             if (!ConversationIdentity.matches(expectedName, name)) continue
             val preview = readChildText(item, "message") ?: ""
-            if (expectedPreview.isNotBlank() && preview.isNotBlank()) {
-                val cleanExpected = expectedPreview.trim()
-                val cleanActual = preview.trim()
-                if (cleanExpected != cleanActual &&
-                    !cleanActual.contains(cleanExpected.take(8)) &&
-                    !cleanExpected.contains(cleanActual.take(8))
-                ) {
-                    continue
-                }
-            }
+            val timeText = item.findAccessibilityNodeInfosByViewId(prefix + "time")
+                .firstOrNull()
+                ?.text
+                ?.toString()
+                .orEmpty()
+            if (!SoulConversationRowPolicy.matches(
+                    expectedPreview = expectedPreview,
+                    actualPreview = preview,
+                    expectedTime = expectedTime,
+                    actualTime = timeText,
+                )
+            ) continue
             val hasUnread = item.findAccessibilityNodeInfosByViewId(prefix + "unread_msg_number")
                 .any(::badgeHasUnread)
             if (!SoulConversationScanPolicy.canOpenConversation(hasUnread, requireUnread)) continue
@@ -2252,6 +2264,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 contactName = name,
                 preview = preview,
                 hasUnread = hasUnread,
+                lastMessageTime = timeText,
                 relationshipOrigin = SoulConversationStagePolicy.classifyListOrigin(
                     originLabel = originLabel,
                     hasSoulmateMarker = hasSoulmateMarker,
@@ -2281,6 +2294,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 expectedName = row.contactName,
                 shouldClick = shouldClick,
                 requireUnread = true,
+                expectedPreview = row.preview,
+                expectedTime = row.lastMessageTime,
             )
             if (opened != null) {
                 emptyScanStreak = 0
@@ -2325,9 +2340,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     fun hasTabUnread(root: AccessibilityNodeInfo): Boolean {
         if (root.packageName?.toString() != packageName) return false
         val badge = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg_red_dot").firstOrNull()
-        if (badge != null) {
-            val count = badge.text?.toString()?.trim()?.toIntOrNull() ?: 0
-            if (count > 0) return true
+        // 红点显示 0 就是没有未读；只有数字大于 0（或写了"未读"这类字）才算。
+        if (badge != null && UnreadBadgeState.badgeTextMeansUnread(badge.text?.toString())) {
+            return true
         }
         val tab = root.findAccessibilityNodeInfosByViewId(prefix + "main_tab_msg").firstOrNull()
         val desc = tab?.contentDescription?.toString().orEmpty()
@@ -2336,20 +2351,75 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
 
     fun scrollMessageListDown(root: AccessibilityNodeInfo): Boolean {
         if (!isInMessageList(root)) return false
+        if (swipeListVertical(scrollDown = true)) return true
         val recycler = root.findAccessibilityNodeInfosByViewId(prefix + "recycler_view").firstOrNull()
-        if (recycler != null && recycler.isScrollable) {
-            return recycler.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+        return recycler?.takeIf { it.isScrollable }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ?: false
+    }
+
+    /**
+     * 往下翻一屏，并且确认列表真的动了。
+     *
+     * 以前只要手势发出去就算"翻过了"，其实列表到底后它纹丝不动，程序还照样一次次空滑。
+     * 现在比对翻页前后屏幕上第一排人的名字和位置，没变就说明到底了。
+     */
+    suspend fun scrollMessageListDownAndVerify(
+        root: AccessibilityNodeInfo,
+        settleMs: Long = LIST_SCROLL_VERIFY_SETTLE_MS,
+    ): Boolean = scrollListAndVerify(root, scrollDown = true, settleMs = settleMs)
+
+    /**
+     * 一路滑回最上面，直到列表不再动为止。
+     */
+    suspend fun scrollMessageListToTopAndVerify(
+        root: AccessibilityNodeInfo,
+        settleMs: Long = LIST_SCROLL_VERIFY_SETTLE_MS,
+    ): Boolean {
+        var moved = false
+        repeat(LIST_SCROLL_TOP_MAX_ATTEMPTS) {
+            if (!scrollListAndVerify(root, scrollDown = false, settleMs = settleMs)) return moved
+            moved = true
         }
-        return swipeListVertical(scrollDown = true)
+        return moved
+    }
+
+    private suspend fun scrollListAndVerify(
+        root: AccessibilityNodeInfo,
+        scrollDown: Boolean,
+        settleMs: Long,
+    ): Boolean {
+        val before = listRowsSignature(root)
+        if (before.isEmpty()) {
+            // 读不出屏幕上的聊天条目，只能相信手势本身的结果。
+            return if (scrollDown) scrollMessageListDown(root) else scrollMessageListToTop(root)
+        }
+        val dispatched = if (scrollDown) scrollMessageListDown(root) else scrollMessageListToTop(root)
+        if (!dispatched) return false
+        if (settleMs > 0) delay(settleMs)
+        val afterRoot = activeMessageListRootOrNull() ?: return true
+        val after = listRowsSignature(afterRoot)
+        if (after.isEmpty()) return true
+        return before != after
+    }
+
+    /** 屏幕上看得见的聊天条目长什么样：名字 + 上下位置，用它判断列表有没有真的滚动。 */
+    private fun listRowsSignature(root: AccessibilityNodeInfo): String {
+        if (root.packageName?.toString() != packageName) return ""
+        val rect = Rect()
+        return root.findAccessibilityNodeInfosByViewId(prefix + "item_content_root")
+            .asSequence()
+            .filter(::isVisibleOnScreen)
+            .take(LIST_SCROLL_SIGNATURE_ROWS)
+            .joinToString(";") { item ->
+                item.getBoundsInScreen(rect)
+                "${readChildText(item, "name").orEmpty()}@${rect.top}-${rect.bottom}"
+            }
     }
 
     fun scrollMessageListToTop(root: AccessibilityNodeInfo): Boolean {
         if (!isInMessageList(root)) return false
+        if (swipeListVertical(scrollDown = false)) return true
         val recycler = root.findAccessibilityNodeInfosByViewId(prefix + "recycler_view").firstOrNull()
-        if (recycler != null && recycler.isScrollable) {
-            return recycler.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
-        }
-        return swipeListVertical(scrollDown = false)
+        return recycler?.takeIf { it.isScrollable }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) ?: false
     }
 
     private fun swipeListVertical(scrollDown: Boolean): Boolean {
@@ -3537,6 +3607,13 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         // bottom tab bar exists; navigation must outlast the splash.
         private const val NAVIGATION_ATTEMPTS = 20
 
+        /** 翻页后等列表动画和数据落定的时间，用来判断列表到底有没有真的动。 */
+        private const val LIST_SCROLL_VERIFY_SETTLE_MS = 400L
+        /** 回顶部最多连滑几次，防止列表异常时一直空滑。 */
+        private const val LIST_SCROLL_TOP_MAX_ATTEMPTS = 6
+        /** 比对多少条聊天条目来判断列表有没有滚动。 */
+        private const val LIST_SCROLL_SIGNATURE_ROWS = 5
+
     // 条目数不超过这个值时不做内容形态校验（新会话通常 1-3 条，都是真消息）。
     private const val MIN_ITEMS_FOR_STRICT_CHECK = 3
     // 媒体气泡本体：文字容器不存在时（语音、表情、图片）用它判断左右。
@@ -3590,6 +3667,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         "item_snap_pic_receive_root",
         "item_snap_pic_sender_root",
         "llExpression",
+        "click_view",
         "moment_card_root",
     )
     // 这些面板里的条目不是聊天消息，读取时要跳过。

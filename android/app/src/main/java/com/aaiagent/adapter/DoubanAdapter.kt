@@ -271,7 +271,8 @@ class DoubanAdapter(private val service: AccessibilityService) : PlatformAdapter
         shouldClick: Boolean,
         pageIndex: Int?,
         requireUnread: Boolean,
-        expectedPreview: String
+        expectedPreview: String,
+        @Suppress("UNUSED_PARAMETER") expectedTime: String
     ): ConversationInfo? {
         ensurePrivateMessageTabSelected(root)
 

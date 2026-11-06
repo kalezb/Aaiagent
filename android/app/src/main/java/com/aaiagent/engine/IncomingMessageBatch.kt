@@ -31,6 +31,14 @@ object IncomingMessageBatch {
     }
 
     fun stableToken(message: ChatMessage): String {
+        if (message.ledgerKey.isNotBlank()) {
+            val transcriptAnchor = if (message.type == "voice" && message.transcript.isNotBlank()) {
+                ":transcript:${IncomingMessageTracker.fingerprint(message.transcript)}"
+            } else {
+                ""
+            }
+            return "ledger:${IncomingMessageTracker.fingerprint(message.ledgerKey)}$transcriptAnchor"
+        }
         if (message.identityKey.isNotBlank()) {
             val transcriptAnchor = when {
                 message.type != "voice" -> ""
@@ -189,6 +197,7 @@ object IncomingMessageBatch {
         "image",
         "voice",
         "sticker",
+        "dynamic_visual",
         "interaction",
         SoulMomentCard.TYPE
     )

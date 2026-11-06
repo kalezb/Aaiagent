@@ -113,8 +113,18 @@ function updateChatHeader() {
   });
 
   const hasSelected = Boolean(group);
+  const isBlacklisted = isGroupBlacklisted(group);
   $("bindButton").disabled = !hasSelected;
   $("priorityButton").disabled = !hasSelected;
+  if ($("blacklistButton")) {
+    $("blacklistButton").disabled = !hasSelected;
+    $("blacklistButton").classList.toggle("active", isBlacklisted);
+    $("blacklistButton").textContent = isBlacklisted ? "移出黑名单" : "拉黑";
+    $("blacklistButton").title = isBlacklisted ? "该联系人已在黑名单中（手机端停止回复），点击可恢复" : "加入黑名单（手机端将同步停止回复）";
+  }
+  if ($("reflexionLearnBtn")) {
+    $("reflexionLearnBtn").disabled = !hasSelected;
+  }
   $("manualInput").disabled = !hasSelected || !state.targetAlias;
   $("manualSendButton").disabled = !hasSelected || !state.targetAlias;
   $("priorityButton").classList.toggle("active", Boolean(group?.priority_reply));

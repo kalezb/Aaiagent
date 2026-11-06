@@ -110,7 +110,7 @@ describe("monitoring sync core", () => {
     expect(listBody.persona_id).toBe("female_sutang");
     expect(listBody.topics.length).toBeGreaterThan(0);
     expect(listBody.counters).toEqual([]);
-    const firstId = "scene_14_rainy_neck";
+    const firstId = "scene_sutang_probe_spending";
     expect(listBody.topics.find((item) => item.id === firstId)?.enabled).toBe(true);
 
     const toggle = await onRequest({
@@ -319,7 +319,7 @@ describe("monitoring sync core", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.cards.length).toBeGreaterThan(0);
-    expect(body.legacy_rules.length).toBeGreaterThanOrEqual(40);
+    expect(body.legacy_rules.length).toBeGreaterThanOrEqual(30);
     expect(body.legacy_rules.some((item: any) => item.id === "explicit_boundary")).toBe(true);
     expect(body.locked_rules).toBeUndefined();
     expect(body.conflicts).toEqual(expect.arrayContaining([

@@ -1,7 +1,7 @@
 package com.aaiagent.engine
 
 import com.aaiagent.adapter.PlatformAdapter.ChatMessage
-
+import com.aaiagent.engine.work.SoulListPagingCoordinator
 import android.accessibilityservice.AccessibilityService
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
@@ -23,6 +23,7 @@ import com.aaiagent.xposed.InjectPcmStore
 import com.aaiagent.network.ChatRequest
 import com.aaiagent.network.ChatResponse
 import com.aaiagent.network.ChatMedia
+import com.aaiagent.network.ChatMessagePayload
 import com.aaiagent.network.ExchangeMediaRequest
 import com.aaiagent.network.ReplyTask
 import com.aaiagent.engine.observability.AutomationTrace
@@ -54,23 +55,6 @@ import java.io.File
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private data class ReplySuggestion(
-    val content: String,
-    val replyId: String?,
-    val media: ChatMedia? = null,
-    val deliveryFingerprint: String? = null,
-    val incomingBatchFingerprint: String? = null,
-    val selfLeaveCooldownMs: Long? = null,
-    /**
-     * 后端这次要的是**媒体**（`action=send_media`）吗。
-     *
-     * 单独记一笔是因为：媒体有可能"要了但没选出来"（media 为 null），
-     * 这时回复会掉进文字分支 —— 而语音岔路口必须知道"这本来是条媒体回复"，
-     * 否则它会把"那就只发一张"这种话发成语音，照片永远发不出去。
-     */
-    val mediaExpected: Boolean = false
-)
-
 class MessageEngine(
     private val service: AccessibilityService?,
     private val repository: AppRepository
@@ -96,6 +80,11 @@ class MessageEngine(
     private val conversationRecovery = ConversationRecoveryPersistence(repository)
     private val replyConfirmationQueue = ReplyConfirmationQueue(repository, scope)
     private val messageSyncOutbox = MessageSyncOutboxQueue(repository, scope)
+    private val conversationSnapshotRecorder = ConversationSnapshotRecorder(
+        repository = repository,
+        messageSyncOutbox = messageSyncOutbox,
+        currentPlatform = { currentPlatform },
+    )
     private val replyTaskReporter = ReplyTaskReporter(repository, scope)
     private val backendReplyTaskPoller = BackendReplyTaskPoller(
         repository = repository,
@@ -114,6 +103,7 @@ class MessageEngine(
     private var lastSoulShadowProbeAtMs = 0L
     private var soulShadowObserver: ConversationShadowObserver? = null
     private var soulEntryCoordinator: ConversationEntryCoordinator? = null
+    private val soulPagingCoordinator = SoulListPagingCoordinator()
     private var lastVisionPageRecoveryAtMs = 0L
     private val manualChatSyncJobs = mutableMapOf<String, Job>()
     private var observedState: EngineState = EngineState.Idle
@@ -210,6 +200,7 @@ class MessageEngine(
         handledConversations.clear()
         staleRetryQueue.clear()
         contextStore.all().forEach(::clearPendingReply)
+        contextStore.all().forEach(StaleDeliveryCircuitBreaker::clear)
         clearInputField()
         state = EngineState.Idle
     }
@@ -380,8 +371,12 @@ class MessageEngine(
                 return false
             }
             val owner = "scan:${currentPlatform.ifBlank { "unknown" }}:${leaseToken.takeLast(8)}"
-            val result = AutomationActionGate.withPermit(owner) {
-                scanAndProcessLocked(leaseToken)
+            // 页面树读取、联系人核对和顺序判断都很重，不能占着手机界面线程。
+            // 动作本身仍由原有锁按顺序执行，只把整段扫描移出主线程。
+            val result = withContext(Dispatchers.Default) {
+                AutomationActionGate.withPermit(owner) {
+                    scanAndProcessLocked(leaseToken)
+                }
             }
             if (result != null) return result
             RuntimeJournal.recovery(
@@ -543,31 +538,42 @@ class MessageEngine(
         }
 
         if (NEW_SOUL_ENTRY_TAKEOVER_ENABLED && adapter is SoulAdapter) {
-            val handled = tryOpenSoulConversationWithNewCore(
-                svc = svc,
-                adapter = adapter,
-                leaseToken = leaseToken,
-            )
-            if (!handled) {
-                val liveRoot = svc.rootInActiveWindow
-                if (liveRoot != null && adapter.hasTabUnread(liveRoot)) {
-                    val scrolled = adapter.scrollMessageListDown(liveRoot)
-                    if (scrolled) {
-                        delay(600)
-                        val scrolledRoot = svc.rootInActiveWindow
-                        if (scrolledRoot != null && adapter.visibleUnreadCount(scrolledRoot) > 0) {
-                            nextConversationScanAtMs = 0L
-                            state = EngineState.Idle
-                            return true
-                        }
-                    }
-                } else if (liveRoot != null && !adapter.hasTabUnread(liveRoot)) {
-                    adapter.scrollMessageListToTop(liveRoot)
+            val coordinator = soulPagingCoordinator
+            return when (tryOpenSoulConversationWithNewCore(svc, adapter, leaseToken)) {
+                SoulEntryStep.Opened -> {
+                    coordinator.onConversationHandled()
+                    state = EngineState.Idle
+                    true
                 }
-                nextConversationScanAtMs = System.currentTimeMillis() + SOUL_LIST_IDLE_RESCAN_MS
+                SoulEntryStep.Waiting -> {
+                    // 眼前有活但这一下没做成（在冷却、没确认到聊天页、你正在操作），
+                    // 就原地等下一轮，绝不往下滑屏。
+                    state = EngineState.Idle
+                    false
+                }
+                SoulEntryStep.NothingToDo -> {
+                    // 这一屏确实没活干了，才允许往下翻；翻不翻由翻页规矩决定。
+                    val rootNow = liveMessageListRoot(svc, adapter, listRoot)
+                    val inList = adapter.isInMessageList(rootNow)
+                    val hasTab = inList && adapter.hasTabUnread(rootNow)
+                    val userTouching =
+                        GestureMonitor.isUserTouchingRecently(USER_NAVIGATION_GRACE_MS)
+                    val scrolled = if (inList && !userTouching) {
+                        coordinator.exploreNextPage(
+                            isInMessageList = true,
+                            hasTabUnread = hasTab,
+                            scrollDownAction = { adapter.scrollMessageListDownAndVerify(rootNow) },
+                            scrollToTopAction = { adapter.scrollMessageListToTopAndVerify(rootNow) },
+                        )
+                    } else {
+                        false
+                    }
+                    nextConversationScanAtMs = System.currentTimeMillis() +
+                        (if (scrolled) 400L else SOUL_LIST_IDLE_RESCAN_MS)
+                    state = EngineState.Idle
+                    scrolled
+                }
             }
-            state = EngineState.Idle
-            return handled
         }
 
         val fallbackRoot = liveMessageListRoot(svc, adapter, listRoot)
@@ -600,6 +606,7 @@ class MessageEngine(
             contactName = info.contactName,
             leaseToken = leaseToken,
             latestListPreview = info.preview,
+            latestListTime = info.lastMessageTime,
             relationshipOrigin = info.relationshipOrigin,
         )
         handledConversations.mark(info.contactId)
@@ -614,10 +621,13 @@ class MessageEngine(
         svc: AccessibilityService,
         adapter: SoulAdapter,
         leaseToken: String,
-    ): Boolean {
-        if (GestureMonitor.isUserTouchingRecently(USER_NAVIGATION_GRACE_MS)) return false
+    ): SoulEntryStep {
+        if (GestureMonitor.isUserTouchingRecently(USER_NAVIGATION_GRACE_MS)) {
+            return SoulEntryStep.Waiting
+        }
         val coordinator = soulEntryCoordinator ?: ConversationEntryCoordinator(
-            ui = SoulConversationUiContract(svc, adapter)
+            ui = SoulConversationUiContract(svc, adapter),
+            multiContactCooldownMs = SOUL_MULTI_CONTACT_COOLDOWN_MS,
         ).also { soulEntryCoordinator = it }
 
         val outcome = coordinator.openVisibleNext(
@@ -636,7 +646,7 @@ class MessageEngine(
                 val root = svc.rootInActiveWindow
                 if (root?.packageName?.toString() != adapter.packageName || !adapter.isInChat(root)) {
                     coordinator.markRetry(identity.key, "确认后聊天页已离开")
-                    true
+                    SoulEntryStep.Waiting
                 } else {
                     val prepared = adapter.prepareChatForAutomation(root)
                     if (!prepared.ready) {
@@ -646,7 +656,7 @@ class MessageEngine(
                         )
                         coordinator.markRetry(identity.key, "聊天页被平台锁定")
                         returnToMessageList(adapter, leaseToken, "soul entry blocked")
-                        true
+                        SoulEntryStep.Waiting
                     } else {
                         handledConversations.mark(contactId)
                         RuntimeJournal.clickConversation(contactId, true)
@@ -660,11 +670,12 @@ class MessageEngine(
                             contactName = contactId,
                             leaseToken = leaseToken,
                             latestListPreview = identity.preview,
+                            latestListTime = identity.lastMessageTime,
                             relationshipOrigin = origin,
                         )
-                        coordinator.markComplete(identity.key)
+                        coordinator.markComplete(identity.key, identity)
                         nextConversationScanAtMs = 0L
-                        true
+                        SoulEntryStep.Opened
                     }
                 }
             }
@@ -672,23 +683,22 @@ class MessageEngine(
                 RuntimeJournal.recovery(
                     "新核心入口稍后重试 contact=${outcome.identity.displayName} reason=${outcome.reason}"
                 )
-                true
+                SoulEntryStep.Waiting
             }
             is ConversationEntryOutcome.Blocked -> {
                 RuntimeJournal.recovery(
                     "新核心入口已拦下 contact=${outcome.identity.displayName} reason=${outcome.reason}"
                 )
-                true
+                SoulEntryStep.Waiting
             }
             is ConversationEntryOutcome.RiskOverlay -> {
                 RuntimeJournal.recovery(
                     "新核心入口识别风险弹窗 reason=${outcome.reason} acted=${outcome.acted}"
                 )
-                true
+                SoulEntryStep.Waiting
             }
-            ConversationEntryOutcome.NoWork,
-            is ConversationEntryOutcome.PageNotReady,
-            -> false
+            ConversationEntryOutcome.NoWork -> SoulEntryStep.NothingToDo
+            is ConversationEntryOutcome.PageNotReady -> SoulEntryStep.Waiting
         }
     }
 
@@ -807,7 +817,7 @@ class MessageEngine(
             }
             if (messages.isEmpty()) return
 
-            enqueueSnapshot(context, messages)
+            conversationSnapshotRecorder.record(context, messages)
             synchronized(context) {
                 context.lastIncomingFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
             }
@@ -910,7 +920,8 @@ class MessageEngine(
             contactId = conversation.contactId,
             contactName = conversation.contactName,
             leaseToken = leaseToken,
-            latestListPreview = conversation.preview
+            latestListPreview = conversation.preview,
+            latestListTime = conversation.lastMessageTime,
         )
         return true
     }
@@ -922,6 +933,7 @@ class MessageEngine(
         contactName: String,
         leaseToken: String,
         latestListPreview: String = "",
+        latestListTime: String = "",
         relationshipOrigin: RelationshipOrigin = RelationshipOrigin.UNKNOWN,
     ) {
         automationOwnedChatKey = conversationKey(contactId)
@@ -964,6 +976,7 @@ class MessageEngine(
                 chatRoot = chatRoot,
                 leaseToken = leaseToken,
                 latestListPreview = latestListPreview,
+                latestListTime = latestListTime,
             )
             completed = true
         } finally {
@@ -1228,6 +1241,7 @@ class MessageEngine(
         chatRoot: AccessibilityNodeInfo,
         leaseToken: String,
         latestListPreview: String = "",
+        latestListTime: String = "",
     ) {
         val interactionEpoch = GestureMonitor.interactionEpoch()
         val conversationStartedAt = System.currentTimeMillis()
@@ -1248,6 +1262,11 @@ class MessageEngine(
                 )
                 messages = recognition.messages
             }
+            messages = SoulConversationTimePolicy.fuseLatestFromInbox(
+                messages = messages,
+                listPreview = latestListPreview,
+                listTimeText = latestListTime,
+            )
             // 2026-10-06 真机：她自己的消息混在中间时也要认出来（原来只查最后一条）。
             // 认不出来就会被当成对方的新消息，于是同一句被回两遍。
             val filteredOwnBubbles = replyDeliveryVerifier.withoutOwnBubbles(context, messages)
@@ -1265,7 +1284,7 @@ class MessageEngine(
             }
             // 不再自动滚动聊天记录。长会话如果眼前不是最新位置，就放弃这一轮，
             // 宁可少回，也不能拿旧窗口硬回。
-            val readFresh = chatReadMatchesListPreview(messages, latestListPreview)
+            val readFresh = ConversationReadIdentityPolicy.matchesListPreview(messages, latestListPreview)
             if (!readFresh) {
                 RuntimeJournal.recovery(
                     "聊天页可见内容不是最新，已跳过不猜 contact=${context.contactName}"
@@ -1293,7 +1312,22 @@ class MessageEngine(
                 "AIA",
                 "chat_timing stage=read elapsed=${System.currentTimeMillis() - conversationStartedAt} messages=${messages.size}"
             )
-            enqueueSnapshot(context, messages)
+            val snapshot = conversationSnapshotRecorder.record(
+                context = context,
+                messages = messages,
+                latestListPreview = latestListPreview,
+                latestListTime = latestListTime,
+            )
+            if (snapshot.ambiguous) {
+                RuntimeJournal.recovery(
+                    "聊天页顺序接不上，停止本轮不猜 contact=${context.contactName}"
+                )
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) {
+                    returnToMessageList(adapter, leaseToken, "conversation ledger ambiguous")
+                }
+                return
+            }
+            messages = snapshot.messages
             val deliveryFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(messages)
 
             val pendingWasStale = synchronized(context) { context.pendingReplyStale }
@@ -1382,6 +1416,7 @@ class MessageEngine(
                 if (delivery.isComplete && delivery.confirmed) {
                     synchronized(context) {
                         context.lastReplySentAtMs = System.currentTimeMillis()
+                        StaleDeliveryCircuitBreaker.clear(context)
                         if (pendingBatchFingerprint.isNotBlank()) {
                             context.lastRepliedIncomingFingerprint = pendingBatchFingerprint
                         }
@@ -1405,6 +1440,7 @@ class MessageEngine(
                     android.util.Log.w("AIA", "reply sent but backend confirmation failed; retry on next scan")
                 }
                 if (delivery.status == ReplyDeliveryStatus.STALE) {
+                    StaleDeliveryCircuitBreaker.recordFailure(context, pendingBatchFingerprint.ifBlank { deliveryFingerprint })
                     if (delivery.sentParts == 0) clearPendingReply(context)
                     else synchronized(context) { context.pendingReplyStale = true }
                     if (delivery.sentParts == 0) removeConversationRecovery(context)
@@ -1426,7 +1462,7 @@ class MessageEngine(
             val transcriptFollowUp = if (directBatch == null) {
                 TranscriptFollowUpPolicy.find(messages) { candidate ->
                     synchronized(context) {
-                        context.hasRepliedToIncoming(incomingContentKey(candidate))
+                        context.hasRepliedToIncoming(ConversationReadIdentityPolicy.incomingContentKey(candidate))
                     }
                 }
             } else {
@@ -1458,7 +1494,7 @@ class MessageEngine(
             val latestIncoming = IncomingMessageBatch.replyMessages(incomingBatch)
                 .lastOrNull { !StickerTurnPolicy.isStateSticker(it.content) } ?: incomingBatch.latestIncoming
             // 2026-10-05：同一条对方消息只回一次。真机出现过同一批“哈哈哈/有点累哟”被回 4 次。
-            val latestIncomingKey = incomingContentKey(latestIncoming)
+            val latestIncomingKey = ConversationReadIdentityPolicy.incomingContentKey(latestIncoming)
             // 只有“这轮读得不新鲜”时才用已回记录拦截；读得新鲜就正常回，避免同一句话被误判成重复。
             if (!readFresh && synchronized(context) { context.hasRepliedToIncoming(latestIncomingKey) }) {
                 RuntimeJournal.recovery("这条消息已经回过了，跳过 contact=${context.contactName}")
@@ -1473,6 +1509,10 @@ class MessageEngine(
             )
             RuntimeJournal.readMessages(messages.size, latestIncoming.content)
             val incomingBatchFingerprint = IncomingMessageBatch.fingerprint(incomingBatch)
+            if (StaleDeliveryCircuitBreaker.shouldSkip(context, incomingBatchFingerprint)) {
+                if (HostingCompletionPolicy.shouldLeaveAfterRead(hostingMode)) returnToMessageList(adapter, leaseToken, "stale delivery paused")
+                return
+            }
             val ignoredIncomingFingerprint = synchronized(context) {
                 context.lastIgnoredIncomingFingerprint
             }
@@ -1584,6 +1624,7 @@ class MessageEngine(
                             context = context,
                             media = selectedMedia,
                             replyId = reply.replyId,
+                            replyParts = reply.replyParts,
                             deliveryFingerprint = sendDeliveryFingerprint,
                             leaseToken = leaseToken,
                             interactionEpoch = interactionEpoch,
@@ -1595,6 +1636,7 @@ class MessageEngine(
                             adapter = adapter,
                             context = context,
                             reply = reply.content,
+                            replyParts = reply.replyParts,
                             replyId = reply.replyId,
                             incomingBatchFingerprint = sendIncomingBatchFingerprint,
                             deliveryFingerprint = sendDeliveryFingerprint,
@@ -1609,6 +1651,7 @@ class MessageEngine(
                     if (delivery.isComplete && delivery.confirmed) {
                         synchronized(context) {
                             context.lastRepliedIncomingFingerprint = sendIncomingBatchFingerprint
+                            StaleDeliveryCircuitBreaker.clear(context)
                             context.rememberRepliedIncoming(latestIncomingKey)
                         }
                         clearPendingReply(context)
@@ -1624,6 +1667,7 @@ class MessageEngine(
                     } else if (delivery.isComplete) {
                         android.util.Log.w("AIA", "reply sent but backend confirmation failed; retry on next scan")
                     } else if (delivery.status == ReplyDeliveryStatus.STALE) {
+                        StaleDeliveryCircuitBreaker.recordFailure(context, sendIncomingBatchFingerprint)
                         if (delivery.sentParts == 0) clearPendingReply(context)
                         else synchronized(context) { context.pendingReplyStale = true }
                         android.util.Log.d("AIA", "reply delivery stopped because newer messages arrived")
@@ -1741,7 +1785,7 @@ class MessageEngine(
             )
             val messages = adapter.readMessages(root, expectedPreview)
             if (messages.isNotEmpty()) {
-                val previewMatches = chatReadMatchesListPreview(messages, expectedPreview)
+                val previewMatches = ConversationReadIdentityPolicy.matchesListPreview(messages, expectedPreview)
                 when (observeChatIdentity(
                     adapter = adapter,
                     root = root,
@@ -1783,20 +1827,6 @@ class MessageEngine(
         return emptyList()
     }
 
-    /** 内容级身份：跨多次读取稳定（相对时间标签会变，所以不带时间）。 */
-    private fun incomingContentKey(message: PlatformAdapter.ChatMessage): String {
-        return listOf(
-            message.sender,
-            message.type,
-            message.content.trim().replace(Regex("\\s+"), " ")
-        ).joinToString("|")
-    }
-
-    private fun chatReadMatchesListPreview(
-        messages: List<PlatformAdapter.ChatMessage>,
-        listPreview: String
-    ): Boolean = ChatReadFreshnessPolicy.matches(messages, listPreview)
-
     private suspend fun understandIncomingBatch(
         adapter: PlatformAdapter,
         root: AccessibilityNodeInfo,
@@ -1808,6 +1838,22 @@ class MessageEngine(
         interactionEpoch: Long,
         context: ConversationContext
     ): MediaUnderstanding {
+        if (
+            incomingBatch.mediaTarget?.type != "voice" &&
+            IncomingVoiceTranscriptionPolicy.hasMissingVoice(incomingBatch)
+        ) {
+            val transcribed = IncomingVoiceTranscriptionPolicy.ensure(
+                adapter = adapter,
+                root = root,
+                batch = incomingBatch,
+                context = context,
+                canProceed = { canContinue(leaseToken, interactionEpoch) },
+                currentRoot = { service?.rootInActiveWindow },
+            )
+            if (VoiceTranscriptPolicy.hasSpokenText(transcribed.incoming)) {
+                return MediaUnderstanding(transcribed.incoming)
+            }
+        }
         val mediaTarget = incomingBatch.mediaTarget ?: return MediaUnderstanding(messages)
         if (mediaTarget.type == SoulInteractionMessage.TYPE) {
             InteractionVisionCache.get(mediaTarget.identityKey)?.let { cached ->
@@ -1828,46 +1874,26 @@ class MessageEngine(
         ) {
             return MediaUnderstanding(messages)
         }
-
         val svc = service ?: return MediaUnderstanding(messages)
         if (!canContinue(leaseToken, interactionEpoch)) return MediaUnderstanding(messages)
+        if (DynamicVisualCapturePolicy.shouldWaitBeforeCapture(mediaTarget.type)) {
+            RuntimeJournal.recovery("动态表情等待画面稳定")
+            delay(DynamicVisualCapturePolicy.SETTLE_BEFORE_CAPTURE_MS)
+            if (!canContinue(leaseToken, interactionEpoch)) return MediaUnderstanding(messages)
+        }
         android.util.Log.d("AIA", "media understanding start type=${mediaTarget.type}")
 
         if (mediaTarget.type == "voice") {
-            val result = adapter.transcribeIncomingVoices(root)
-            android.util.Log.d(
-                "AIA",
-                "voice transcription total=${result.total} transcribed=${result.transcribed}"
+            val transcribed = IncomingVoiceTranscriptionPolicy.ensure(
+                adapter = adapter,
+                root = root,
+                batch = incomingBatch,
+                context = context,
+                canProceed = { canContinue(leaseToken, interactionEpoch) },
+                currentRoot = { service?.rootInActiveWindow },
             )
-            if (result.hasAny) {
-                // 2026-10-07 真机（渔夫 2 秒语音）：转写报告成功，重读却没拿到文字，
-                // 下面的回退就用旧的 [语音] 去问模型 → 模型只好编“没听清”。
-                // 现在重读最多 3 次，必须确认内容里真带上了转写文字；都不行就明确记一条日志。
-                var spoken: List<ChatMessage>? = null
-                var attempt = 0
-                while (attempt < 3 && spoken == null) {
-                    val refreshed = adapter.readMessages(svc.rootInActiveWindow ?: root)
-                    val incoming = IncomingMessageBatch.select(refreshed)?.incoming
-                    if (incoming != null && VoiceTranscriptPolicy.hasSpokenText(incoming)) {
-                        spoken = incoming
-                        break
-                    }
-                    if (VoiceTranscriptPolicy.shouldRetry(attempt)) {
-                        android.util.Log.d(
-                            "AIA",
-                            "voice transcript not visible yet, reread attempt=" + (attempt + 1)
-                        )
-                        delay(300)
-                    }
-                    attempt += 1
-                }
-                if (spoken != null) return MediaUnderstanding(spoken)
-                RuntimeJournal.log(
-                    "语音转写",
-                    "重读没拿到文字",
-                    "contact=" + context.contactName + "（本轮按“没有文字”处理）"
-                )
-                android.util.Log.w("AIA", "voice transcript lost after rereads contact=" + context.contactName)
+            if (VoiceTranscriptPolicy.hasSpokenText(transcribed.incoming)) {
+                return MediaUnderstanding(transcribed.incoming)
             }
         }
 
@@ -1877,6 +1903,7 @@ class MessageEngine(
             if (!ExchangeMediaPolicy.shouldStageDaily(hostingMode)) {
                 return MediaUnderstanding(messages)
             }
+
             val exchangeRequestId = ExchangeMediaPolicy.requestId(
                 contactId = context.contactId,
                 identityKey = mediaTarget.identityKey,
@@ -1923,9 +1950,12 @@ class MessageEngine(
             }
         }
 
-        val prompt = ImageUnderstandingPolicy.VISION_PROMPT
+        val prompt = ImageUnderstandingPolicy.visionPrompt(mediaTarget.type)
         val preparation = adapter.prepareVisualCapture(root, mediaTarget.type, exchangeImageBytes)
         if (preparation == null) {
+            if (mediaTarget.type == SoulMediaType.DYNAMIC_VISUAL) {
+                return dynamicVisualFallback(messages, mediaTarget, "动态表情展开失败，改为自然接话")
+            }
             RuntimeJournal.recovery("隐私图片展开失败 type=${mediaTarget.type}")
             return MediaUnderstanding(messages, retryInPlace = true, reason = "图片展开失败")
         }
@@ -1983,12 +2013,18 @@ class MessageEngine(
                     replaceLatest(messages, mediaTarget, PrivacyPhotoPolicy.MODEL_CONTEXT)
                 )
             }
+            if (mediaTarget.type == SoulMediaType.DYNAMIC_VISUAL) {
+                return dynamicVisualFallback(messages, mediaTarget, "动态表情截图失败，改为自然接话")
+            }
             RuntimeJournal.recovery("视觉识别跳过: 截图失败 type=${mediaTarget.type}")
             return MediaUnderstanding(messages, retryInPlace = true, reason = "截图失败")
         }
 
         val vision = api.describeVision(token, imageBase64, prompt = prompt)
         if (!vision.success || vision.description.isNullOrBlank()) {
+            if (mediaTarget.type == SoulMediaType.DYNAMIC_VISUAL) {
+                return dynamicVisualFallback(messages, mediaTarget, "动态表情看图失败，改为自然接话")
+            }
             RuntimeJournal.recovery("视觉识别不可用: ${vision.error ?: "empty"}")
             return MediaUnderstanding(messages, retryInPlace = true, reason = "视觉接口失败")
         }
@@ -2047,7 +2083,16 @@ class MessageEngine(
         RuntimeJournal.recovery("媒体处理后未回到联系人聊天页: $expectedContactName")
         return null
     }
-
+    private fun dynamicVisualFallback(
+        messages: List<PlatformAdapter.ChatMessage>,
+        target: PlatformAdapter.ChatMessage,
+        reason: String,
+    ): MediaUnderstanding {
+        RuntimeJournal.recovery(reason)
+        return MediaUnderstanding(
+            replaceLatest(messages, target, DynamicVisualCapturePolicy.fallbackModelText())
+        )
+    }
     private fun replaceLatest(
         messages: List<PlatformAdapter.ChatMessage>,
         target: PlatformAdapter.ChatMessage,
@@ -2076,6 +2121,7 @@ class MessageEngine(
         state = EngineState.WaitingLLM
         val requestStartedAtNanos = System.nanoTime()
         val location = withContext(Dispatchers.IO) { repository.getLocation() }
+        val afterLocationAtNanos = System.nanoTime()
         var requestMessages = IncomingMessageBatch.requestMessages(messages)
         var latestVisibleMessages = messages
         var mergeChangeCount = IncomingMessageBatch
@@ -2123,7 +2169,15 @@ class MessageEngine(
         // 实测能把手机端发请求前的 4~6 秒砍掉。
         val mergeStartedAtMs = System.currentTimeMillis()
         var mergeLastChangeAtMs = mergeStartedAtMs
-        while (ReplyFreshnessPolicy.shouldConfirmStableBatch()) {
+        // 2026-11-03 真机计时：这段等待每轮都要整页重读两次，实测占 2.9~4.9 秒；
+        // 而真正在回的消息绝大多数已经放了几十秒以上，没必要再等它"会不会又发一句"。
+        val latestIncoming = messages.lastOrNull { it.sender != "self" }
+        val incomingSettled = ReplyFreshnessPolicy.hasSettled(
+            lastIncomingAtMs = latestIncoming?.timestampMillis,
+            timestampTrusted = latestIncoming?.timestampTrusted == true,
+            nowMs = mergeStartedAtMs,
+        )
+        while (!incomingSettled && ReplyFreshnessPolicy.shouldConfirmStableBatch()) {
             delay(ReplyFreshnessPolicy.INITIAL_MERGE_POLL_MS)
             if (!canContinue(leaseToken, interactionEpoch)) return null
 
@@ -2142,20 +2196,28 @@ class MessageEngine(
                 if (freshBatch != null && changeKind != IncomingMessageBatch.ChangeKind.SAME &&
                     changeKind != IncomingMessageBatch.ChangeKind.SELF_APPENDED
                 ) {
-                    val freshBatchFingerprint = IncomingMessageBatch.fingerprint(freshBatch)
+                    val effectiveBatch = IncomingVoiceTranscriptionPolicy.ensure(
+                        adapter = adapter,
+                        root = mergeRoot,
+                        batch = freshBatch,
+                        context = context,
+                        canProceed = { canContinue(leaseToken, interactionEpoch) },
+                        currentRoot = { service?.rootInActiveWindow },
+                    )
+                    val freshBatchFingerprint = IncomingMessageBatch.fingerprint(effectiveBatch)
                     if (ReplyDeliveryPolicy.incomingChanged(
                             latestIncomingBatchFingerprint,
                             freshBatchFingerprint
                         )
                     ) {
-                        requestMessages = freshBatch.incoming
+                        requestMessages = effectiveBatch.incoming
                         latestDeliveryFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(freshMessages)
                         latestIncomingBatchFingerprint = freshBatchFingerprint
-                        latestIncomingStableToken = freshBatch.incoming
+                        latestIncomingStableToken = effectiveBatch.incoming
                             .lastOrNull()
                             ?.let(IncomingMessageBatch::stableToken)
                             .orEmpty()
-                        conversationTimeline = UnansweredTimeline.build(freshBatch.incoming)
+                        conversationTimeline = UnansweredTimeline.build(effectiveBatch.incoming)
                         mergeLastChangeAtMs = nowMs
                         mergeChangeCount += 1
                         synchronized(context) {
@@ -2182,6 +2244,7 @@ class MessageEngine(
             context.lastIncomingFingerprint = latestDeliveryFingerprint
         }
         if (!canContinue(leaseToken, interactionEpoch)) return null
+        val afterMergeAtNanos = System.nanoTime()
 
         // 本机昵称由用户手填、按平台存，每轮只读一次就够（见 SelfNicknamePolicy）。
         val selfNickname = withContext(Dispatchers.IO) {
@@ -2189,6 +2252,14 @@ class MessageEngine(
                 repository.getConfig(SelfNicknamePolicy.configKey(currentPlatform))
             )
         }
+        android.util.Log.d(
+            "AIA",
+            "chat_prepare_split contact=${context.contactName} " +
+                "location=${elapsedMillis(requestStartedAtNanos, afterLocationAtNanos)} " +
+                "merge=${elapsedMillis(afterLocationAtNanos, afterMergeAtNanos)} " +
+                "nickname=${elapsedMillis(afterMergeAtNanos)} " +
+                "total=${elapsedMillis(requestStartedAtNanos)}",
+        )
 
         repeat(MAX_LLM_RETRIES) {
             if (!canContinue(leaseToken, interactionEpoch)) return null
@@ -2201,7 +2272,18 @@ class MessageEngine(
                 "chat request attempt=${it + 1}/$MAX_LLM_RETRIES contact=${context.contactName} messages=${requestMessages.size} requestId=$requestId"
             )
             val httpStartedAtNanos = System.nanoTime()
-            val turnSnapshot = ConversationTurnSnapshotPolicy.build(requestId, requestMessages)
+            val requestCreatedAtSeconds = SyncTimePolicy.deriveSeconds(
+                millisList = requestMessages.map {
+                    if (it.timestampTrusted) it.timestampMillis else null
+                },
+                nowMs = System.currentTimeMillis(),
+            )
+            val turnSnapshot = ConversationTurnSnapshotPolicy.build(
+                turnId = requestId,
+                messages = requestMessages,
+                createdAtSeconds = requestCreatedAtSeconds,
+                contactVerified = true,
+            )
             val chatCall = try {
                 api.chat(
                     ChatRequest(
@@ -2211,12 +2293,22 @@ class MessageEngine(
                         requestId = requestId,
                         contactId = context.contactId,
                         contactName = context.contactName,
-                        messages = requestMessages.map {
-                            mapOf<String, Any>(
-                                "role" to if (it.sender == "self") "assistant" else "user",
-                                "content" to it.content,
-                                "timestamp" to it.timestampText,
-                                "created_at" to (it.timestampMillis?.div(1000L) ?: 0L)
+                        messages = requestMessages.mapIndexed { messageIndex, message ->
+                            val kind = ConversationTurnSnapshotPolicy.messageKind(message.type)
+                            ChatMessagePayload(
+                                role = if (message.sender == "self") "assistant" else "user",
+                                content = message.content,
+                                type = kind,
+                                kind = kind,
+                                transcript = message.transcript,
+                                transcriptStatus = ConversationTurnSnapshotPolicy.transcriptStatus(message, kind),
+                                sequence = messageIndex,
+                                clientMessageId = ConversationTurnSnapshotPolicy.clientMessageId(message, messageIndex),
+                                timestamp = message.timestampText,
+                                createdAt = requestCreatedAtSeconds.getOrElse(messageIndex) {
+                                    System.currentTimeMillis() / 1000L
+                                },
+                                timestampTrusted = message.timestampTrusted,
                             )
                         },
                         snapshot = turnSnapshot,
@@ -2244,6 +2336,29 @@ class MessageEngine(
             }
             val response = chatCall.response
             val chatResponse = response
+            val contractValidation = ChatContractPolicy.validate(turnSnapshot, chatResponse)
+            if (!contractValidation.ok) {
+                RuntimeJournal.recovery(
+                    "聊天交接单不一致，本条回复作废 contact=${context.contactName} reason=${contractValidation.reason}"
+                )
+                queueStaleRetry(context, delayMs = 0L)
+                wakeSignal.trySend(Unit)
+                return null
+            }
+            val contractedParts = ChatContractPolicy.finalReplyParts(chatResponse)
+            val contractedReply = ChatContractPolicy.finalReplyText(chatResponse)
+            if (
+                chatResponse.schemaVersion == ChatContractPolicy.VERSION &&
+                contractedParts.isNotEmpty() &&
+                AssistantReplySanitizer.requiresCleanup(contractedParts)
+            ) {
+                RuntimeJournal.recovery(
+                    "手机端还需二次清洗服务端最终回复，本条作废 contact=${context.contactName}"
+                )
+                queueStaleRetry(context, delayMs = 0L)
+                wakeSignal.trySend(Unit)
+                return null
+            }
             val networkTiming = chatCall.networkTiming
             if (!chatResponse.personaId.isNullOrBlank() || !chatResponse.modelLine.isNullOrBlank()) {
                 AutomationTrace.updateContext(
@@ -2262,7 +2377,10 @@ class MessageEngine(
                     stage = "model",
                     elapsedMs = response.timing?.totalMs,
                     result = if (chatResponse.action.isNullOrBlank()) "unknown" else chatResponse.action,
-                    reason = chatResponse.code.orEmpty(),
+                    reason = chatResponse.reason
+                        .orEmpty()
+                        .ifBlank { chatResponse.error.orEmpty() }
+                        .ifBlank { chatResponse.code.orEmpty() },
                 )
             )
             val clientPrepareMs = elapsedMillis(requestStartedAtNanos, httpStartedAtNanos)
@@ -2325,6 +2443,17 @@ class MessageEngine(
                 returnToMessageList(adapter, leaseToken, "takeover gate, nothing to send")
                 return null
             }
+            if (
+                chatResponse.action == "skip" &&
+                takeoverReason in setOf("model_reply_empty_or_invalid", "empty_reply_after_pipeline") &&
+                it < MAX_LLM_RETRIES - 1
+            ) {
+                RuntimeJournal.recovery(
+                    "模型回复格式无效，自动重试 contact=${context.contactName} attempt=${it + 1}"
+                )
+                delay(250)
+                return@repeat
+            }
             if (chatResponse.action == "skip") {
                 val semanticCooldownMs = TemporaryLeavePolicy.semanticExitCooldownMs(
                     error = chatResponse.error,
@@ -2343,7 +2472,14 @@ class MessageEngine(
                         "模型判断对方暂离，等待新消息 contact=${context.contactName.ifBlank { context.contactId }}"
                     )
                 } else {
-                    RuntimeJournal.recovery("后端跳过联系人 ${context.contactName}")
+                    val skipReason = chatResponse.reason
+                        .orEmpty()
+                        .ifBlank { chatResponse.error.orEmpty() }
+                        .ifBlank { chatResponse.code.orEmpty() }
+                        .ifBlank { "unspecified" }
+                    RuntimeJournal.recovery(
+                        "后端跳过联系人 ${context.contactName} reason=$skipReason"
+                    )
                 }
                 returnToMessageList(adapter, leaseToken, "backend skip, nothing to send")
                 return null
@@ -2361,7 +2497,7 @@ class MessageEngine(
             }
             if (!chatResponse.error.isNullOrBlank() ||
                 (isMediaReply && !TopicMediaReplyPolicy.isCompleteMedia(chatResponse.media)) ||
-                (!isMediaReply && chatResponse.reply.isNullOrBlank())
+                (!isMediaReply && contractedReply.isBlank())
             ) {
                 RuntimeJournal.recovery("回复接口未返回有效内容: ${response.error ?: "empty_reply"}")
                 delay(900)
@@ -2399,7 +2535,8 @@ class MessageEngine(
                         clientTotalMs = clientTotalMs
                     )
                     return ReplySuggestion(
-                        content = response.reply.orEmpty().trim(),
+                        content = contractedReply,
+                        replyParts = ChatContractPolicy.finalReplyParts(chatResponse),
                         replyId = response.replyId,
                         media = response.media,
                         deliveryFingerprint = latestDeliveryFingerprint,
@@ -2425,10 +2562,18 @@ class MessageEngine(
                     val freshMessages = adapter.readMessages(freshRoot)
                     val freshBatch = IncomingMessageBatch.select(freshMessages)
                     if (freshBatch != null) {
-                        requestMessages = freshBatch.incoming
+                        val effectiveBatch = IncomingVoiceTranscriptionPolicy.ensure(
+                            adapter = adapter,
+                            root = freshRoot,
+                            batch = freshBatch,
+                            context = context,
+                            canProceed = { canContinue(leaseToken, interactionEpoch) },
+                            currentRoot = { service?.rootInActiveWindow },
+                        )
+                        requestMessages = effectiveBatch.incoming
                         latestDeliveryFingerprint = IncomingMessageBatch.incomingHistoryFingerprint(freshMessages)
-                        latestIncomingBatchFingerprint = IncomingMessageBatch.fingerprint(freshBatch)
-                        latestIncomingStableToken = freshBatch.incoming
+                        latestIncomingBatchFingerprint = IncomingMessageBatch.fingerprint(effectiveBatch)
+                        latestIncomingStableToken = effectiveBatch.incoming
                             .lastOrNull()
                             ?.let(IncomingMessageBatch::stableToken)
                             .orEmpty()
@@ -2452,6 +2597,7 @@ class MessageEngine(
         context: ConversationContext,
         media: ChatMedia,
         replyId: String?,
+        replyParts: List<String> = emptyList(),
         deliveryFingerprint: String,
         leaseToken: String,
         interactionEpoch: Long,
@@ -2465,6 +2611,7 @@ class MessageEngine(
                 adapter = adapter,
                 context = context,
                 reply = teaserText,
+                replyParts = replyParts,
                 replyId = replyId,
                 incomingBatchFingerprint = incomingBatchFingerprint,
                 deliveryFingerprint = deliveryFingerprint,
@@ -2488,9 +2635,8 @@ class MessageEngine(
         if (!canContinue(leaseToken, interactionEpoch)) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, 0, 1)
         }
-        if (!replyDeliveryVerifier.incomingStillCurrent(adapter, context, deliveryFingerprint) ||
-            synchronized(context) { context.pendingReplyStale }
-        ) {
+        synchronized(context) { context.pendingReplyStale = false }
+        if (!replyDeliveryVerifier.incomingStillCurrent(adapter, context, deliveryFingerprint)) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STALE, 0, 1)
         }
 
@@ -2517,8 +2663,7 @@ class MessageEngine(
                 adapter,
                 context,
                 deliveryFingerprint,
-            ) ||
-            synchronized(context) { context.pendingReplyStale }
+            )
         ) {
             return ReplyDeliveryResult(ReplyDeliveryStatus.STALE, 0, 1)
         }
@@ -2567,6 +2712,7 @@ class MessageEngine(
         adapter: PlatformAdapter,
         context: ConversationContext,
         reply: String,
+        replyParts: List<String> = emptyList(),
         replyId: String?,
         incomingBatchFingerprint: String,
         deliveryFingerprint: String,
@@ -2580,7 +2726,12 @@ class MessageEngine(
          */
         mediaExpected: Boolean = false
     ): ReplyDeliveryResult {
-        val outgoing = AssistantReplySanitizer.clean(reply)
+        val contractedParts = ReplyDeliveryPolicy.finalParts(replyParts)
+        val outgoing = if (contractedParts.isNotEmpty()) {
+            contractedParts.joinToString("|||")
+        } else {
+            AssistantReplySanitizer.clean(reply)
+        }
         if (outgoing.isEmpty()) {
             // 整条内容都是**系统内部标记**（取消息时用来标注气泡类型的那些，
             // 比如后端"待发媒体"返回的 `[图片:daily_04]`）。
@@ -2598,7 +2749,11 @@ class MessageEngine(
         // 语音回复：**默认关闭**（见 VoiceReplyPolicy）。
         // 开了、联系人也在名单里、这条又够短，**而且后端这次不是要媒体**，才用语音。
         // 语音这条路任何一步没走通都落回下面的文字流程 —— 绝不让这条回复丢掉。
-        if (!mediaExpected && VoiceReplyPolicy.textFitsOneVoice(outgoing)) {
+        if (
+            !mediaExpected &&
+            (contractedParts.isEmpty() || contractedParts.size == 1) &&
+            VoiceReplyPolicy.textFitsOneVoice(outgoing)
+        ) {
             val (voiceEnabled, voiceContactAllowed) = voiceReplySettings(context)
             if (VoiceReplyPolicy.canSpeakAsVoice(
                     enabled = voiceEnabled,
@@ -2621,11 +2776,15 @@ class MessageEngine(
             }
         }
 
-        val segments = outgoing.split(Regex("\\r?\\n|\\|{2,3}"))
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-        val rawParts = if (segments.isNotEmpty()) segments else listOf(outgoing.trim())
-        val parts = ReplyDeliveryPolicy.planParts(rawParts)
+        val parts = if (contractedParts.isNotEmpty()) {
+            contractedParts
+        } else {
+            val segments = outgoing.split(Regex("\\r?\\n|\\|{2,3}"))
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+            val rawParts = if (segments.isNotEmpty()) segments else listOf(outgoing.trim())
+            ReplyDeliveryPolicy.planParts(rawParts)
+        }
         if (parts.isEmpty()) return ReplyDeliveryResult(ReplyDeliveryStatus.FAILED, 0, 0)
         android.util.Log.d("AIA", "outgoing reply sanitized segments=${parts.size} length=${outgoing.length}")
 
@@ -2701,65 +2860,39 @@ class MessageEngine(
         var sentCount = initialSentParts.coerceIn(0, plannedTotal)
         var replyConfirmed = true
         var stoppedByUser = false
+        var droppedCount = 0
         val deliveryStartedAt = System.currentTimeMillis()
         for ((index, part) in parts.withIndex()) {
             if (!canContinue(leaseToken, interactionEpoch)) {
-                android.util.Log.w(
-                    "AIA",
-                    "reply delivery stopped before part=${index + 1} contact=${context.contactName}"
-                )
+                android.util.Log.w("AIA", "reply delivery stopped before part=${index + 1} contact=${context.contactName}")
                 RuntimeJournal.messageSent(false, "发送途中自动化失去控制权")
-                clearInputField()
-                saveConversationRecovery(context)
+                clearInputField(); saveConversationRecovery(context)
                 return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, plannedTotal)
             }
             if (index == 0) ReplyPaceGate.waitForTurn(context.platform, context.contactId)
             if (index > 0) delay(ReplyDeliveryPolicy.delayAfterPart(part))
             if (!canContinue(leaseToken, interactionEpoch)) {
-                android.util.Log.w(
-                    "AIA",
-                    "reply delivery stopped between parts contact=${context.contactName}"
-                )
+                android.util.Log.w("AIA", "reply delivery stopped between parts contact=${context.contactName}")
                 RuntimeJournal.messageSent(false, "分段发送途中自动化失去控制权")
-                clearInputField()
-                saveConversationRecovery(context)
+                clearInputField(); saveConversationRecovery(context)
                 return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, plannedTotal)
             }
-            val incomingChanged = !replyDeliveryVerifier.incomingStillCurrent(
-                adapter,
-                context,
-                expectedIncomingFingerprint
-            )
+            val incomingChanged = !replyDeliveryVerifier.incomingStillCurrent(adapter, context, expectedIncomingFingerprint)
             val staleRequested = synchronized(context) { context.pendingReplyStale }
-            val decision = ReplyDeliveryPolicy.nextPartDecision(
-                sentParts = sentCount,
-                incomingChanged = incomingChanged,
-                staleRequested = staleRequested
-            )
+            val decision = ReplyDeliveryPolicy.nextPartDecision(sentParts = sentCount, incomingChanged = incomingChanged, staleRequested = staleRequested)
             if (decision == NextPartDecision.CANCEL_STALE) {
                 android.util.Log.d("AIA", "reply delivery invalidated before part=${sentCount + 1}")
-                clearInputField()
-                clearPendingReply(context)
-                removeConversationRecovery(context)
+                clearInputField(); clearPendingReply(context); removeConversationRecovery(context)
                 return ReplyDeliveryResult(ReplyDeliveryStatus.STALE, sentCount, plannedTotal)
             }
             if (incomingChanged || staleRequested) {
-                android.util.Log.d(
-                    "AIA",
-                    "finishing reply delivery before handling newer incoming part=${sentCount + 1} sent=$sentCount"
-                )
+                android.util.Log.d("AIA", "finishing reply delivery before handling newer incoming part=${sentCount + 1} sent=$sentCount")
             }
             if (!replyDeliveryVerifier.verifyCurrentChatWithRetry(adapter, context.contactName)) {
                 RuntimeJournal.messageSent(false, "发送前聊天身份未确认")
                 clearInputField()
-                if (!reopenConversationForDelivery(adapter, context, leaseToken)) {
-                    break
-                }
-                if (!replyDeliveryVerifier.verifyCurrentChatWithRetry(
-                        adapter,
-                        context.contactName,
-                    )
-                ) {
+                if (!reopenConversationForDelivery(adapter, context, leaseToken) ||
+                    !replyDeliveryVerifier.verifyCurrentChatWithRetry(adapter, context.contactName)) {
                     RuntimeJournal.messageSent(false, "重新打开后聊天身份仍未确认")
                     clearInputField()
                     break
@@ -2772,8 +2905,9 @@ class MessageEngine(
             // 发送前再拦一道——同一段长话短时间内在别的联系人那儿出现过，就不发。
             if (recentOutgoingSends.isCrossContactRepeat(part, context.contactId)) {
                 android.util.Log.w("AIA", "cross-contact duplicate blocked contact=${context.contactName}")
-                RuntimeJournal.messageSent(false, "同一句话刚发给过别的联系人，已拦下: $part")
-                break
+                RuntimeJournal.messageSent(false, "同一句话刚发给过别的联系人，已跳过: $part")
+                droppedCount++
+                continue
             }
             // 现场取证：把发送那一刻的会话标题记下来，万一又出现“话说给了别人”，日志能直接定位。
             val titleAtSend = runCatching { adapter.readChatTitle(root) }.getOrNull().orEmpty()
@@ -2890,9 +3024,14 @@ class MessageEngine(
             saveConversationRecovery(context)
         }
 
-        val completedInBatch = sentCount - initialSentParts
+        val completedInBatch = (sentCount - initialSentParts) + droppedCount
         val remaining = ReplyDeliveryPolicy.remaining(parts, completedInBatch)
-        val progress = ReplyDeliveryPolicy.progress(sentCount, plannedTotal)
+        val allHandled = (sentCount + droppedCount) >= plannedTotal
+        val progress = if (allHandled) {
+            ReplyDeliveryProgress(sentParts = plannedTotal, totalParts = plannedTotal)
+        } else {
+            ReplyDeliveryPolicy.progress(sentCount + droppedCount, plannedTotal)
+        }
         synchronized(context) {
             context.pendingReplyParts.clear()
             context.pendingReplyParts.addAll(remaining)
@@ -2906,8 +3045,14 @@ class MessageEngine(
             saveConversationRecovery(context)
         }
         if (progress.isComplete) {
-            replyConfirmed = replyConfirmationQueue.confirmPendingReply(context)
-            RuntimeJournal.messageSent(true, "回复发送完成 ${progress.sentParts}/${progress.totalParts}")
+            if (sentCount > 0) {
+                replyConfirmed = replyConfirmationQueue.confirmPendingReply(context)
+                RuntimeJournal.messageSent(true, "回复发送完成 ${progress.sentParts}/${progress.totalParts}")
+            } else {
+                clearPendingReply(context)
+                removeConversationRecovery(context)
+                RuntimeJournal.messageSent(false, "回复全部判定为跨联系人重复，已跳过")
+            }
         } else {
             android.util.Log.w(
                 "AIA",
@@ -2973,102 +3118,6 @@ class MessageEngine(
     }
 
     private fun conversationKey(contactId: String): String = "$currentPlatform:$contactId"
-
-    private suspend fun enqueueSnapshot(
-        context: ConversationContext,
-        messages: List<PlatformAdapter.ChatMessage>,
-        manualCapture: Boolean = false,
-    ) {
-        val token = withContext(Dispatchers.IO) {
-            repository.getActiveToken()?.token?.trim()
-        }.orEmpty()
-        if (token.isEmpty() || messages.isEmpty()) return
-
-        val automatedReplies = synchronized(context) { context.aiSentContents.toSet() }
-        val platform = context.platform.ifBlank { currentPlatform }
-        val stateId = listOf(token, platform, context.contactId).joinToString("\u0000")
-        val inserted = withContext(Dispatchers.IO) {
-            repository.cleanOldCache()
-            val previousState = repository.getConversationSyncState(stateId)
-            val previousSnapshot = SyncSnapshotCodec.decode(previousState?.snapshotJson)
-            // 2026-10-07（方案 B）：读消息时多数消息拿不到时间（Soul 只在有间隔处显示时间），
-            // 以前会写成 0，后端就按“同步时刻”记，云端顺序和手机对不上。
-            // 这里统一补时间：以最后一条已知时间为锚点，每条差 1 秒。
-            val derivedSeconds = SyncTimePolicy.deriveSeconds(
-                millisList = messages.map { it.timestampMillis },
-                nowMs = System.currentTimeMillis(),
-            )
-            val currentSnapshot = messages.mapIndexedNotNull { index, message ->
-                val role = if (message.sender == "self") "assistant" else "user"
-                val content = message.content.trim()
-                if (content.isEmpty()) null else SyncSnapshotItem(
-                    role = role,
-                    content = content,
-                    createdAt = derivedSeconds.getOrNull(index),
-                    stableKey = message.identityKey.trim().takeIf(String::isNotEmpty),
-                    explicitTime = com.aaiagent.adapter.SoulMessageIdentity.hasExplicitTime(
-                        message.timestampText,
-                        message.timestampMillis,
-                    ),
-                    transcript = message.transcript.trim().takeIf(String::isNotEmpty),
-                    voiceSeconds = message.voiceSeconds.takeIf { it > 0 },
-                )
-            }
-            val hasEstablishedBaseline = previousState?.snapshotJson?.isNotBlank() == true
-            val newIndexes = SyncSnapshotPolicy.selectNewItems(
-                previousSnapshot,
-                currentSnapshot,
-                hasEstablishedBaseline
-            )
-            var sequence = previousState?.nextSequence ?: 0L
-            val outbox = mutableListOf<MessageSyncOutboxEntity>()
-            for (index in newIndexes) {
-                val item = currentSnapshot[index]
-                sequence++
-                if (item.role == "assistant" && item.content in automatedReplies) {
-                    if (manualCapture) {
-                        android.util.Log.d("AIA", "manual sync skipped automated reply")
-                    }
-                    continue
-                }
-                val id = SyncMessageKey.build(
-                    platform = platform,
-                    contactId = context.contactId,
-                    role = item.role,
-                    content = item.content,
-                    sequence = sequence,
-                    createdAt = item.createdAt,
-                    stableKey = item.stableKey
-                )
-                outbox += MessageSyncOutboxEntity(
-                    id = id,
-                    token = token,
-                    platform = platform,
-                    contactId = context.contactId,
-                    contactName = context.contactName,
-                    role = item.role,
-                    content = item.content,
-                    source = if (item.role == "assistant") "human_phone" else "sync",
-                    createdAt = item.createdAt ?: (System.currentTimeMillis() / 1000),
-                    timeKind = if (item.explicitTime == true) "ui_explicit" else "first_observed",
-                    transcript = item.transcript.orEmpty(),
-                    voiceSeconds = item.voiceSeconds ?: 0,
-                )
-            }
-            val state = ConversationSyncStateEntity(
-                id = stateId,
-                platform = platform,
-                contactId = context.contactId,
-                snapshotJson = SyncSnapshotCodec.encode(currentSnapshot),
-                nextSequence = sequence
-            )
-            repository.persistSyncSnapshot(state, outbox)
-        }
-        if (inserted > 0) {
-            messageSyncOutbox.schedule(force = true)
-            messageSyncOutbox.awaitFlush()
-        }
-    }
 
     fun onPageChanged(isInChatRoom: Boolean) {
         if (!isInChatRoom) automationOwnedChatKey = null
@@ -3246,7 +3295,7 @@ class MessageEngine(
                 val context = contextStore.getOrCreate(platform, contactName).also {
                     it.contactName = contactName
                 }
-                enqueueSnapshot(context, messages, manualCapture = true)
+                conversationSnapshotRecorder.record(context, messages, manualCapture = true)
             }
             manualChatSyncJobs[slot] = job
             job.invokeOnCompletion {
@@ -3933,7 +3982,6 @@ class MessageEngine(
         val retryInPlace: Boolean = false,
         val reason: String = ""
     )
-
     companion object {
         const val VISION_PAGE_RECOVERY_THROTTLE_MS = 20_000L
         /** 从没聊过的联系人，页面渲染慢，最多等几次重读。 */
@@ -3948,6 +3996,7 @@ class MessageEngine(
         const val SOUL_SHADOW_PROBE_INTERVAL_MS = 2_000L
         const val NEW_SOUL_ENTRY_TAKEOVER_ENABLED = true
         const val SOUL_ENTRY_MAX_ENTRIES = 12
+        const val SOUL_MULTI_CONTACT_COOLDOWN_MS = 60_000L
         const val SOUL_LIST_IDLE_RESCAN_MS = 3_000L
         const val CONTENT_CHANGE_WAKE_INTERVAL_MS = 1_000L
         const val LEASE_HEARTBEAT_INTERVAL_MS = 5_000L

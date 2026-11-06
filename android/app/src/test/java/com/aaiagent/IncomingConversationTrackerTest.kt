@@ -58,6 +58,19 @@ class IncomingConversationTrackerTest {
     }
 
     @Test
+    fun `older messages scrolling into view remain compatible`() {
+        val expected = listOf("text:two", "text:three")
+        val current = listOf("text:one", "text:two", "text:three")
+
+        assertTrue(
+            IncomingConversationTracker.isCompatible(
+                IncomingConversationTracker.fingerprint(expected),
+                IncomingConversationTracker.fingerprint(current)
+            )
+        )
+    }
+
+    @Test
     fun `a genuinely appended message remains incompatible`() {
         assertFalse(
             IncomingConversationTracker.isCompatible(

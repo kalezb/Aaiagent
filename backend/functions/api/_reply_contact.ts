@@ -1,5 +1,4 @@
 import { isExplicitBusinessIntent } from "./_business_scope";
-import { isCheapTalkGenerosity, isQualifiedGenerosity } from "./_profile_runtime";
 import { EMPTY_AGENT_RULE_STATE, type AgentRuleState } from "./_agent_rule_contract";
 
 // 2026-10-06 真机（善良的小香香）："这上面你有固定的好友吗" 被判成"要联系方式"，
@@ -7,11 +6,8 @@ import { EMPTY_AGENT_RULE_STATE, type AgentRuleState } from "./_agent_rule_contr
 // 现在分三档：明确渠道词（动词+渠道）／渠道词在后（微信多少）／"加好友"这类必须带加友动词。
 const CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以).{0,6}(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号)|(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号).{0,6}(?:多少|给我|发我|发一下|加一下|留一下|换一下|方便给|可以给|能给我|是多少)|(?:加|添加|互加|加个|留个|要个|互换|交换).{0,4}(?:好友|朋友)|(?:qq|q号|扣扣|企鹅号|联系方式|微信|vx|v信|电话|手机号).{0,8}(?:多少|几号|发我|给我|留|加|互换|交换)|(?:加|发|给|留).{0,3}(?:个)?q(?:号)?(?:给|我)?|(?:你|你的).{0,4}(?:qq|q号|联系方式|微信|电话|手机号).{0,6}(?:是|多少|发|给|留|加)|(?:联系方式|微信|电话|手机号).{0,6}(?:给我|发我|留一个|加一下)/iu;
 
-// 2026-10-11：苏棠的私人通讯改成豆瓣自留地。只认“加/要/给/发/留/换”这类动作，
-// 不把“我在豆瓣看电影”这种普通聊天误判成要联系方式。
-const DOUBAN_CONTACT_REQUEST_PATTERN = /(?:加|要|给|发|留|换|互换|交换|有|方便|可以|能).{0,6}(?:豆瓣|书影音)(?:号|账号|id)?|(?:豆瓣|书影音)(?:号|账号|id)?(?:多少|给我|发我|发一下|加一下|留一下|互加|互换|交换|是什么|是啥)|(?:你|你的).{0,4}(?:豆瓣|书影音)(?:号|账号|id)?/iu;
-
-const CONTACT_NEGATION_PATTERN = /(?:(?:^|[^要好行])不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换|换|要)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号|豆瓣|书影音|好友)/iu;
+// 联系方式只认微信、QQ、电话；不认其他平台账号。
+const CONTACT_NEGATION_PATTERN = /(?:(?:^|[^要好行])不|别|不想|不方便|不要|反感|讨厌).{0,5}(?:给|发|留|加|交换|互换|换|要)?.{0,3}(?:qq|q号|联系方式|微信|电话|手机号|好友)/iu;
 
 export function isContactRequest(value) {
   const text = String(value || "").replace(/\s+/gu, "");
@@ -19,7 +15,7 @@ export function isContactRequest(value) {
   // "要不/要不要/好不好/行不行" 是委婉提议索要，不是否定拒绝
   const isSuggestion = /(?:要不(?:要|你)?|好不好|行不行|能不能|可不可)/u.test(text);
   if (!isSuggestion && CONTACT_NEGATION_PATTERN.test(text)) return false;
-  return CONTACT_REQUEST_PATTERN.test(text) || DOUBAN_CONTACT_REQUEST_PATTERN.test(text);
+  return CONTACT_REQUEST_PATTERN.test(text);
 }
 
 export function countContactRequests(...messageGroups) {
@@ -39,7 +35,7 @@ export function countContactRequests(...messageGroups) {
 
 function normalizeContactChannel(value, fallback = "wechat") {
   const channel = String(value || "").trim().toLowerCase();
-  return ["wechat", "qq", "douban"].includes(channel) ? channel : fallback;
+  return ["wechat", "qq"].includes(channel) ? channel : fallback;
 }
 
 function normalizeContactAccount(value, channel = "wechat") {
@@ -47,10 +43,6 @@ function normalizeContactAccount(value, channel = "wechat") {
   if (channel === "qq") {
     const qq = text.replace(/[^0-9]/gu, "");
     return /^\d{5,12}$/u.test(qq) ? qq : "";
-  }
-  if (channel === "douban") {
-    const compact = text.replace(/\s+/gu, "");
-    return /^[A-Za-z0-9._-]{2,40}$/u.test(compact) ? compact : "";
   }
   const compact = text.replace(/\s+/gu, "");
   if (/^1[3-9]\d{9}$/u.test(compact)) return compact;
@@ -76,7 +68,6 @@ function contactAccountDisplay(value, channel = "wechat") {
 /** 他这回问的是哪个渠道（微信/QQ/电话）。2026-10-06：原来不分渠道，他问 QQ 她回“微信不行”。 */
 function requestedContactChannel(incomingText) {
   const text = String(incomingText || "");
-  if (/(?:豆瓣|书影音)/iu.test(text)) return "douban";
   if (/(?:qq|q号|q 号|扣扣|企鹅)/iu.test(text)) return "qq";
   if (/(?:微信|vx|v信|徽信)/iu.test(text)) return "wechat";
   if (/(?:电话|手机号|手机号码|号码)/u.test(text)) return "phone";
@@ -103,51 +94,20 @@ function contactRefusalReply(
   }
   const askedChannel = requestedContactChannel(incomingText);
   if (sutangScope) {
-    if (platform === "douban") {
-      const doubanRefusal = "都进我自留地了还提微信呀 微信上都是熟人我老公 在这儿聊最自在安全 真有诚意见面的话 到时候当面给也不迟";
-      return agentRuleState.textFor("sutang_douban_wechat_refusal", doubanRefusal) || doubanRefusal;
-    }
-    if (requestCount <= 1) {
-      if (askedChannel === "qq") return "QQ先不加哈 就在这儿聊着挺好";
-      if (askedChannel === "douban") return "豆瓣先不急 看你是不是能聊久一点";
-      if (askedChannel === "phone") return "电话就算啦 我平时不接陌生电话";
-      const wechatRefusal = "微信是我现实生活，不想生活被打扰|||懂我的顾虑吗？";
-      return agentRuleState.textFor("sutang_contact_refusal_wechat", wechatRefusal) || wechatRefusal;
-    }
-    if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
-    return "豆瓣是我个人的自留地，从来没给过任何人，看你真诚才可能破例";
+    if (askedChannel === "qq") return "QQ真不行|||婆婆常拿我手机";
+    if (askedChannel === "phone") return "电话不行|||家里查得紧";
+    const wechatRefusal = "微信顾虑太多|||不想现实生活被打扰";
+    const ruleKey = "sutang_contact_refusal_wechat";
+    return agentRuleState.textFor(ruleKey, wechatRefusal) || wechatRefusal;
   }
   if (requestCount <= 1) {
     // 他问什么渠道就回什么渠道，别答非所问。
     if (askedChannel === "qq") return "QQ先不加哈 就在这儿聊着挺好";
     if (askedChannel === "phone") return "电话就算啦 我平时不接陌生电话";
-    return "微信不行呀 微信上都是熟人 我老公偶尔会看我手机";
+    return "微信不行呀 微信上都是工作和熟人 家里人偶尔会看我手机";
   }
   if (requestCount === 2) return "真的不方便 被看到了我担不起这个风险";
   return "我只有个QQ号上面没什么熟人 那个地方安全";
-}
-
-export function resolveCustomerGenerosityStatus(
-  customerProfile?: any,
-  historyMessages: any[] = [],
-  messages: any[] = [],
-): "qualified" | "cheap_talk" | "observing" {
-  if (customerProfile?.relationship?.generosity_status) {
-    const s = customerProfile.relationship.generosity_status;
-    if (s === "qualified" || s === "cheap_talk" || s === "observing") return s;
-  }
-  const allTexts = [...historyMessages, ...messages]
-    .filter((m) => m?.role === "user")
-    .map((m) => String(m?.content || "").replace(/\s+/gu, ""));
-  for (let i = allTexts.length - 1; i >= 0; i--) {
-    const text = allTexts[i];
-    if (isCheapTalkGenerosity(text)) return "cheap_talk";
-    if (isQualifiedGenerosity(text)) return "qualified";
-  }
-  if (customerProfile !== undefined) {
-    return "observing";
-  }
-  return "qualified";
 }
 
 export function resolveContactRequestPolicy({
@@ -162,12 +122,12 @@ export function resolveContactRequestPolicy({
   contactQq = "",
   xingmuScope = true,
   sutangScope = false,
+  lihuiScope = false,
   dealCompleted: providedDealCompleted,
   acceptedBusinessTopic: providedAcceptedBusinessTopic,
   willingToRecycle: providedWillingToRecycle,
   platform = "",
   agentRuleState = EMPTY_AGENT_RULE_STATE,
-  customerProfile = undefined,
 }: {
   requestCount: number;
   stage?: number;
@@ -180,35 +140,49 @@ export function resolveContactRequestPolicy({
   contactQq?: string;
   xingmuScope?: boolean;
   sutangScope?: boolean;
+  lihuiScope?: boolean;
   dealCompleted?: boolean;
   acceptedBusinessTopic?: boolean;
   willingToRecycle?: boolean;
   platform?: string;
   agentRuleState?: AgentRuleState;
-  customerProfile?: any;
 }) {
   const count = Math.max(0, Number(requestCount || 0));
-  const inMemoryExchanges = (Array.isArray(historyMessages) ? historyMessages.length : 0) +
-    (Array.isArray(messages) ? messages.length : 0);
+  const inMemoryExchanges = [...historyMessages, ...messages]
+    .filter((message) => message?.role === "user").length;
   const totalExchanges = Math.max(Number(activity?.totalExchanges || 0), inMemoryExchanges);
-  const normalizedChannel = xingmuScope
+  const normalizedChannel = (xingmuScope || lihuiScope)
     ? "wechat"
     : sutangScope
-      ? "douban"
+      ? "qq"
       : normalizeContactChannel(contactChannel, "qq");
   const rawAccount = xingmuScope
     ? contactAccount
-    : sutangScope
-      ? (contactAccount || contactQq)
-      : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
+    : lihuiScope
+      ? (contactAccount || "KaLeZiBen")
+      : sutangScope
+        ? (contactAccount || contactQq || "")
+        : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
+
+  // 苏棠什么时候给联系方式由模型结合聊天自然判断；这里不再做固定轮数和固定话术拦截。
+  if (sutangScope) {
+    return {
+      isRequest: count > 0,
+      allowed: false,
+      reply: "",
+      requestCount: count,
+      contactChannel: normalizedChannel,
+      contactAccount: normalizedAccount,
+      contactDisplay: contactAccountDisplay(normalizedAccount, normalizedChannel),
+    };
+  }
 
   if (count <= 0) {
     const isProactiveAllowed = Boolean(
-      sutangScope &&
+      (sutangScope || lihuiScope) &&
       normalizedAccount &&
-      resolveCustomerGenerosityStatus(customerProfile, historyMessages, messages) === "qualified" &&
-      totalExchanges >= 12
+      totalExchanges >= (lihuiScope ? 6 : 10)
     );
     return {
       isRequest: false,
@@ -238,17 +212,8 @@ export function resolveContactRequestPolicy({
       Number(stage || 0) >= 5 &&
       (dealCompleted || acceptedBusinessTopic || willingToRecycle)
     );
-  } else if (sutangScope) {
-    const generosityStatus = resolveCustomerGenerosityStatus(customerProfile, historyMessages, messages);
-    const isQualified = generosityStatus === "qualified";
-    // 2026-10-13 核心考核：考核男方态度，明确男方主动大方承担约会与开销，拒绝画大饼或白嫖口嗨；
-    // 态度合格才放行豆瓣自留地，不合格（口嗨画饼、抠门AA、未表态）问几次都不给！
-    allowed = Boolean(
-      normalizedAccount &&
-      isQualified &&
-      count >= 2 &&
-      totalExchanges >= 12
-    );
+  } else if (lihuiScope) {
+    allowed = Boolean(normalizedAccount && count >= 1);
   } else {
     const requiredMessages = businessIntent ? 10 : 30;
     allowed = Boolean(
@@ -261,10 +226,10 @@ export function resolveContactRequestPolicy({
   const reply = allowed
     ? (xingmuScope
         ? "行 那我把私人微信号给你：" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁"
-        : sutangScope
-          ? "前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||" + contactAccountDisplay(normalizedAccount, normalizedChannel)
+        : lihuiScope
+          ? "行啊 我微信 " + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加上聊"
           : "可以 我QQ是" + contactAccountDisplay(normalizedAccount, normalizedChannel) + " 加的时候说下你是谁")
-    : (xingmuScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope, platform, agentRuleState));
+    : (xingmuScope || lihuiScope ? "" : contactRefusalReply(count, businessIntent, xingmuScope, incomingText, sutangScope, platform, agentRuleState));
 
   return {
     isRequest: true,
@@ -278,8 +243,8 @@ export function resolveContactRequestPolicy({
   };
 }
 
-const CONTACT_DISCLOSURE_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式).{0,24}\d{5,12}|\d{5,12}.{0,24}(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式)|(?:加|联系).{0,12}\d{5,12}|(?:豆瓣|书影音|豆瓣号|豆瓣id).{0,12}[a-z0-9._-]{2,40}|[a-z0-9._-]{2,40}.{0,12}(?:豆瓣|书影音|豆瓣号|豆瓣id)/iu;
-const CONTACT_CHANNEL_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|豆瓣|书影音)/iu;
+const CONTACT_DISCLOSURE_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式).{0,24}\d{5,12}|\d{5,12}.{0,24}(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话|联系方式)|(?:加|联系).{0,12}\d{5,12}/iu;
+const CONTACT_CHANNEL_PATTERN = /(?:qq|q号|扣扣|企鹅号|私人号|微信号?|vx|v信|手机号|电话)/iu;
 
 function escapeRegExp(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
@@ -292,17 +257,22 @@ export function sanitizeContactDisclosure(value, {
   contactQq = "",
   xingmuScope = false,
   sutangScope = false,
+  lihuiScope = false,
 } = {}) {
-  const normalizedChannel = xingmuScope
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+  const normalizedChannel = (xingmuScope || lihuiScope)
     ? "wechat"
     : sutangScope
-      ? "douban"
+      ? "qq"
       : normalizeContactChannel(contactChannel, "qq");
   const rawAccount = xingmuScope
     ? contactAccount
-    : sutangScope
-      ? (contactAccount || contactQq)
-      : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
+    : lihuiScope
+      ? (contactAccount || "KaLeZiBen")
+      : sutangScope
+        ? (contactAccount || contactQq || "")
+        : (contactAccount || (normalizedChannel === "qq" ? contactQq : ""));
   const normalizedAccount = normalizeContactAccount(rawAccount, normalizedChannel);
   const fallback = xingmuScope
     ? "微信先不急 在这聊挺好"
@@ -311,15 +281,13 @@ export function sanitizeContactDisclosure(value, {
   const containsDisclosure = (text) =>
     CONTACT_DISCLOSURE_PATTERN.test(text) ||
     Boolean(accountPattern?.test(text) && (CONTACT_CHANNEL_PATTERN.test(text) || !allowed || sutangScope));
-  const segments = String(value || "")
+  const segments = rawValue
     .split(/(\|\|\||\r?\n)/u)
     .map((segment) => {
       if (segment === "|||" || segment === "\n" || segment === "\r\n" || !segment.trim()) return segment;
       const wrongChannelPattern = normalizedChannel === "wechat"
-        ? /(?:qq|q号|扣扣|企鹅号|手机号|电话|豆瓣|书影音)/iu
-        : normalizedChannel === "douban"
-          ? /(?:微信号?|vx|v信|qq|q号|扣扣|企鹅号|手机号|电话)/iu
-          : /(?:微信号?|vx|v信|手机号|电话|豆瓣|书影音)/iu;
+        ? /(?:qq|q号|扣扣|企鹅号|手机号|电话)/iu
+        : /(?:微信号?|vx|v信|手机号|电话)/iu;
       const isChannelRefusalOrComparison = /(?:不行|不加|不给|不上|没有|不方便|比|很少用|熟人|老公|担不起|安全|干净|不便)/u.test(segment);
       if (wrongChannelPattern.test(segment) && !isChannelRefusalOrComparison) return fallback;
       if (!containsDisclosure(segment)) return segment;
@@ -337,13 +305,6 @@ export function sanitizeContactDisclosure(value, {
     }
   }
   return cleaned;
-}
-
-export function isDoubanContactRequest(value) {
-  const text = String(value || "").replace(/\s+/gu, "");
-  if (!isContactRequest(text) || !/(?:豆瓣|书影音)/u.test(text)) return false;
-  // 同一句里如果还在要微信、QQ、电话，那这条优先按老通道交给人工，不走豆瓣。
-  return !CONTACT_REQUEST_PATTERN.test(text);
 }
 
 

@@ -3,15 +3,87 @@ import { isStickerStateContent } from "./_message_text";
 import { requestMessageEpochSeconds } from "./_time_runtime";
 
 const SAME_ROLE_TURN_WINDOW_SECONDS = 10 * 60;
+export const MODEL_CONTEXT_EXCHANGES = 10;
+export const MODEL_CONTEXT_MAX_MESSAGES = 30;
+export const MODEL_CONTEXT_MAX_CHARS = 6000;
 
 function normalizedRole(message) {
   return message?.role === "assistant" ? "assistant" : "user";
 }
 
 function sameLine(left, right) {
+  if (left.clientMessageId && right.clientMessageId) {
+    return left.role === right.role &&
+      left.clientMessageId === right.clientMessageId;
+  }
   return left.role === right.role &&
     left.original === right.original &&
     (left.epoch === 0 || right.epoch === 0 || Math.abs(left.epoch - right.epoch) <= 300);
+}
+
+function clientMessageId(message) {
+  return String(message?.client_message_id || message?.message_key || "").trim();
+}
+
+/**
+ * 后台可以读更多历史做安全检查，但模型写回复只需要最近几个完整来回。
+ * 连续同角色短句算同一轮，避免从一组连发消息中间切断。
+ */
+export function selectRecentConversationTurns(
+  messages = [],
+  maxExchanges = MODEL_CONTEXT_EXCHANGES,
+  maxMessages = MODEL_CONTEXT_MAX_MESSAGES,
+  maxChars = MODEL_CONTEXT_MAX_CHARS,
+) {
+  const source = (Array.isArray(messages) ? messages : [])
+    .filter((message) => message && String(message.content || "").trim());
+  if (!source.length) return [];
+
+  const blocks = [];
+  for (const message of source) {
+    const role = normalizedRole(message);
+    const previous = blocks.at(-1);
+    if (previous?.role === role) {
+      previous.messages.push(message);
+    } else {
+      blocks.push({ role, messages: [message] });
+    }
+  }
+
+  const userBlockIndexes = blocks
+    .map((block, index) => block.role === "user" ? index : -1)
+    .filter((index) => index >= 0);
+  const exchangeCount = Math.max(1, Number(maxExchanges || MODEL_CONTEXT_EXCHANGES));
+  const startIndex = userBlockIndexes.length > exchangeCount
+    ? userBlockIndexes[userBlockIndexes.length - exchangeCount]
+    : 0;
+  const selected = blocks.slice(startIndex);
+  const messageLimit = Math.max(1, Number(maxMessages || MODEL_CONTEXT_MAX_MESSAGES));
+  const countMessages = () => selected.reduce(
+    (total, block) => total + block.messages.length,
+    0,
+  );
+  const countChars = () => selected.reduce(
+    (total, block) => total + block.messages.reduce(
+      (blockTotal, message) => blockTotal + String(message.content || "").length,
+      0,
+    ),
+    0,
+  );
+  const dropOldestExchange = () => {
+    const dropCount = selected[0]?.role === "user" && selected[1]?.role === "assistant"
+      ? 2
+      : 1;
+    selected.splice(0, Math.min(dropCount, selected.length - 1));
+  };
+  while (selected.length > 1 && countMessages() > messageLimit) {
+    dropOldestExchange();
+  }
+  const charLimit = Math.max(500, Number(maxChars || MODEL_CONTEXT_MAX_CHARS));
+  while (selected.length > 1 && countChars() > charLimit) {
+    dropOldestExchange();
+  }
+  return selected.flatMap((block) => block.messages);
 }
 
 function shouldJoinTurn(previous, current) {
@@ -53,51 +125,9 @@ export function normalizeConversationTurnContext({
   historyMessages = [],
   currentMessages = [],
 }) {
-  const current = (Array.isArray(currentMessages) ? currentMessages : [])
-    .filter((message) => message && String(message.content || "").trim());
-  const currentUsers = current.filter((message) => message.role !== "assistant");
-  if (!currentUsers.length) return { historyMessages, currentMessages };
-
-  const answerText = currentUsers
-    .filter((message) => !isStickerStateContent(message.content))
-    .map((message) => String(message.content || "").trim())
-    .filter(Boolean)
-    .join(" / ");
-  if (!answerText || answerText.replace(/\s+/gu, "").length > 12) {
-    return { historyMessages, currentMessages };
-  }
-
-  const firstCurrentUserIndex = current.findIndex((message) => message.role !== "assistant");
-  const previousAssistant = firstCurrentUserIndex > 0
-    ? [...current.slice(0, firstCurrentUserIndex)].reverse()
-      .find((message) => message.role === "assistant")
-    : [...(Array.isArray(historyMessages) ? historyMessages : [])].reverse()
-      .find((message) => message.role === "assistant");
-  if (!previousAssistant) return { historyMessages, currentMessages };
-
-  const previousText = previewTurnText(previousAssistant.content);
-  if (!previousText || !looksLikeQuestion(previousText)) {
-    return { historyMessages, currentMessages };
-  }
-  const stickers = currentUsers
-    .filter((message) => isStickerStateContent(message.content))
-    .map((message) => previewTurnText(message.content))
-    .filter(Boolean)
-    .join(" / ");
-  const flat = "【把这一问一答连起来理解】\n我问：" + previousText +
-    "\n对方回：" + answerText +
-    (stickers ? "\n对方还发了个表情：" + stickers : "");
-  const normalizedCurrent = [
-    {
-      ...currentUsers[0],
-      content: flat,
-      time_kind: currentUsers[0].time_kind || "first_observed",
-    },
-  ];
   return {
-    historyMessages: (Array.isArray(historyMessages) ? historyMessages : [])
-      .filter((message) => message !== previousAssistant),
-    currentMessages: normalizedCurrent,
+    historyMessages: Array.isArray(historyMessages) ? historyMessages : [],
+    currentMessages: Array.isArray(currentMessages) ? currentMessages : [],
   };
 }
 
@@ -127,6 +157,7 @@ export function buildConversationTurnMessages({
       epoch,
       forceMerge,
       isCurrent: forceMerge,
+      clientMessageId: clientMessageId(message),
     };
     if (seenLines.some((seen) => sameLine(seen, line))) {
       previousEpoch = epoch || previousEpoch;

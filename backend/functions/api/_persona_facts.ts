@@ -83,7 +83,7 @@ export function normalizePersonaFacts(value, fallback = DEFAULT_PERSONA_FACTS) {
     : (LOCATION_PRECISIONS.has(String(base.location_precision || "").trim())
       ? String(base.location_precision).trim()
       : "district");
-  // 2026-10-11：原来的 QQ 资料位改为苏棠的豆瓣自留地账号，兼容老数据但不再限制纯数字。
+  // 同一个联系方式资料位兼容 QQ、微信和老数据；具体含义由当前人设决定。
   const contactQqCandidate = String(source.contact_qq ?? base.contact_qq ?? "")
     .replace(/\s+/gu, "")
     .slice(0, 40);
@@ -159,7 +159,7 @@ export function validatePersonaFactsInput(value) {
     source.contact_qq !== undefined &&
     String(source.contact_qq).trim() !== "";
   if (contactQqProvided && !normalized.contact_qq) {
-    return { ok: false, error: "联系方式需要填写 5 到 12 位QQ号，或 2 到 40 位豆瓣号" };
+    return { ok: false, error: "联系方式格式不正确" };
   }
   return { ok: true, facts: normalized };
 }
@@ -176,11 +176,14 @@ function locationPrecisionLine(facts) {
   return "只说到区县";
 }
 
-export function buildPersonaFactsPrompt(facts, options: { contactLabel?: string } = {}) {
+export function buildPersonaFactsPrompt(
+  facts,
+  options: { contactLabel?: string; omitWorkLocation?: boolean } = {},
+) {
   const normalized = normalizePersonaFacts(facts);
   const age = resolvePersonaAge(normalized);
-  const contactLabel = options.contactLabel === "豆瓣号" ? "豆瓣号" : "QQ号";
-  const contactKind = contactLabel === "豆瓣号" ? "豆瓣自留地账号" : "QQ号";
+  const contactLabel = options.contactLabel === "微信号" ? "微信号" : "QQ号";
+  const contactKind = contactLabel === "微信号" ? "微信号" : "QQ号";
   const lines = [
     "【人物事实｜最高优先级】",
     "以下是你本人的固定事实。优先级高于历史聊天、人设风格描述、对方推测和模型推断。不得自行改写、补充或编造。",
@@ -202,7 +205,7 @@ export function buildPersonaFactsPrompt(facts, options: { contactLabel?: string 
       ? `现居地：${normalized.current_city}${normalized.current_district || ""}。`
       : "",
     normalized.common_area ? `常用活动区域：${normalized.common_area}。` : "",
-    normalized.work_city
+    normalized.work_city && !options.omitWorkLocation
       ? `工作地：${normalized.work_city}${normalized.work_district || ""}。`
       : "",
     `位置公开精度：${locationPrecisionLine(normalized)}。`,

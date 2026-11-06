@@ -9,12 +9,12 @@ import org.junit.Test
 
 class StickerTurnPolicyTest {
     @Test
-    fun `pure reaction sticker is a state and does not force a reply`() {
+    fun `pure reaction sticker triggers a natural reply turn`() {
         val batch = requireNotNull(
             IncomingMessageBatch.select(listOf(ChatMessage("other", "[小害羞]", "sticker")))
         )
 
-        assertFalse(StickerTurnPolicy.shouldReplyToBatch(batch))
+        assertTrue(StickerTurnPolicy.shouldReplyToBatch(batch))
     }
 
     @Test
@@ -36,6 +36,17 @@ class StickerTurnPolicyTest {
                     ChatMessage("other", "我", "text"),
                     ChatMessage("other", "对方发来 Soul 官方表情「小害羞」", "text"),
                 )
+            )
+        )
+
+        assertTrue(StickerTurnPolicy.shouldReplyToBatch(batch))
+    }
+
+    @Test
+    fun `unknown dynamic visual still triggers a reply turn`() {
+        val batch = requireNotNull(
+            IncomingMessageBatch.select(
+                listOf(ChatMessage("other", "[动态表情]", "dynamic_visual"))
             )
         )
 

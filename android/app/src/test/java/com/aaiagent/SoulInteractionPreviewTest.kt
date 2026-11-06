@@ -20,6 +20,9 @@ class SoulInteractionPreviewTest {
     @Test
     fun `generic image preview is not treated as a greeting`() {
         assertNull(SoulInteractionPreview.resolve("[图片]"))
+        assertNull(SoulInteractionPreview.resolve("[表情]"))
+        assertNull(SoulInteractionPreview.resolve("[动态表情]"))
+        assertNull(SoulInteractionPreview.resolve("[动图]"))
     }
 
     @Test

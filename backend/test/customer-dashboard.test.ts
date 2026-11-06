@@ -245,5 +245,13 @@ describe("customer dashboard and cross-platform memory", () => {
     expect(source).toContain("content-chip");
     expect(styles).toContain(".kind-label");
     expect(styles).toContain(".content-chip");
+    expect(html).toContain('id="blacklistButton"');
+    expect(styles).toContain(".blacklist-button.active");
+    expect(source).toContain("function toggleBlacklist()");
+    expect(utils).toContain("function isGroupBlacklisted(group)");
+    expect(source).toContain("isGroupBlacklisted,\n} = window.DashboardUtils;");
+    expect(html).toMatch(/src="dashboard-chat\.js\?v=\d+/);
+    expect(html).toMatch(/src="dashboard-customers\.js\?v=\d+/);
   });
 });
+

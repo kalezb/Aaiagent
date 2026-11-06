@@ -87,6 +87,33 @@ export class MockD1 {
 
   applyStatement(statement) {
     const sql = statement.sql || "";
+    if (sql.includes("INSERT INTO contacts") && sql.includes("ON CONFLICT")) {
+      const p = statement.params || [];
+      let row = this.contactsRows.find((item) =>
+        item.token === p[0] && item.platform === p[1] && item.contact_id === p[2]
+      );
+      if (!row) {
+        row = {
+          token: p[0],
+          platform: p[1],
+          contact_id: p[2],
+          contact_name: p[3],
+          is_whitelisted: 1,
+          notes: "",
+          created_at: p[4],
+          his_photo_at: 0,
+        };
+        this.contactsRows.push(row);
+      }
+      const incomingPhotoAt = Number(p[5] || 0);
+      if (
+        incomingPhotoAt > 0 &&
+        (Number(row.his_photo_at || 0) === 0 || incomingPhotoAt < Number(row.his_photo_at))
+      ) {
+        row.his_photo_at = incomingPhotoAt;
+      }
+      return 1;
+    }
     if (sql.includes("INSERT INTO conversation_memory")) {
       const p = statement.params || [];
       this.conversationMemoryRows.set(`${p[0]}\u0000${p[1]}\u0000${p[2]}`, {
@@ -100,6 +127,20 @@ export class MockD1 {
     }
     if (sql.includes("INSERT OR IGNORE INTO chat_history") || sql.includes("INSERT INTO chat_history")) {
       return this.applyHistoryInsert(statement);
+    }
+    if (sql.includes("UPDATE chat_history SET created_at = ?")) {
+      const p = statement.params || [];
+      const row = this.historyRows.find((item) =>
+        item.token === p[2] &&
+        item.message_key === p[3] &&
+        item.role === p[4] &&
+        item.content === p[5]
+      );
+      if (!row) return 0;
+      if (row.time_kind === "ui_explicit" && Number(row.created_at) === Number(p[6])) return 0;
+      row.created_at = Number(p[0]);
+      row.time_kind = String(p[1]);
+      return 1;
     }
     if (sql.includes("INSERT INTO conversation_stats")) {
       this.applyConversationStats(statement);
@@ -268,6 +309,7 @@ export class MockD1 {
         else if (field === "persona_id") row.persona_id = value;
         else if (field === "title") row.title = value;
         else if (field === "detail") row.detail = value;
+        else if (field === "source") row.source = value;
         else if (field === "updated_at") row.updated_at = value;
         else if (field === "deleted_at") row.deleted_at = Number(value || 0);
       });
@@ -588,6 +630,22 @@ export class MockD1 {
               ).length,
             };
           }
+          if (sql.includes("SELECT MAX(created_at) AS photo_at FROM chat_history")) {
+            const rows = this.historyRows.filter((row) =>
+              row.token === params[0] &&
+              row.platform === params[1] &&
+              row.contact_id === params[2] &&
+              row.role === "user" &&
+              /^\s*\[\s*(?:图片(?::[^\]]*)?|闪照|对方发的图片(?::[^\]]*)?)\]\s*$/u
+                .test(String(row.content || "").trim())
+            );
+            return {
+              photo_at: rows.reduce(
+                (latest, row) => Math.max(latest, Number(row.created_at || 0)),
+                0,
+              ),
+            };
+          }
           if (sql.includes("FROM conversation_stats")) {
             return this.conversationStatsRows.find((row) =>
               row.token === params[0] && row.platform === params[1] && row.contact_id === params[2]
@@ -805,6 +863,16 @@ export function mockChatSequence(contents: string[]) {
       headers: { "Content-Type": "application/json" },
     });
   });
+}
+
+export function markHisPhotoSeen(db: MockD1, contactId = "contact-1") {
+  db.contactsRows.push({
+    token: "test-token",
+    platform: "soul",
+    contact_id: contactId,
+    his_photo_at: 1,
+  });
+  return db;
 }
 
 export function visionRequest(imageBase64 = "ZmFrZS1pbWFnZQ==") {

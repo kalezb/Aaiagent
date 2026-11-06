@@ -24,7 +24,7 @@ import com.aaiagent.ui.theme.SkyText
 import com.aaiagent.ui.theme.SkyTextMuted
 
 @Composable
-internal fun SharedPersonaFactsCard(facts: PersonaFactsUiState, activePersonaId: String) {
+internal fun SharedPersonaFactsCard(facts: PersonaFactsUiState) {
     val ageText = if (facts.ageMode == "birth_year") {
         facts.birthYear.takeIf { it.isNotBlank() }?.let { "${it}年出生" } ?: "未设置"
     } else {
@@ -82,7 +82,7 @@ internal fun SharedPersonaFactsCard(facts: PersonaFactsUiState, activePersonaId:
                     .ifBlank { "未设置" }
             )
             SharedFactRow(
-                if (activePersonaId == "female_sutang") "豆瓣号" else "QQ号",
+                "QQ号",
                 facts.contactQq.ifBlank { "未设置" }
             )
         }

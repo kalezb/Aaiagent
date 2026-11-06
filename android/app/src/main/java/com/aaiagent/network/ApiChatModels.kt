@@ -5,11 +5,12 @@ import com.google.gson.annotations.SerializedName
 data class ChatRequest(
     val token: String,
     val platform: String,
+    @SerializedName("schema_version") val schemaVersion: Int = 2,
     @SerializedName("hosting_mode") val hostingMode: String,
     @SerializedName("request_id") val requestId: String,
     @SerializedName("contact_id") val contactId: String,
     @SerializedName("contact_name") val contactName: String,
-    val messages: List<Map<String, Any>>,
+    val messages: List<ChatMessagePayload>,
     val snapshot: ChatTurnSnapshot? = null,
     @SerializedName("conversation_timeline") val conversationTimeline: String? = null,
     @SerializedName("conversation_stage") val conversationStage: String = "unknown",
@@ -19,16 +20,13 @@ data class ChatRequest(
     val location: Map<String, Map<String, String>>? = null
 )
 
-data class ChatTurnSnapshot(
-    @SerializedName("turn_id") val turnId: String,
-    @SerializedName("message_count") val messageCount: Int,
-    @SerializedName("last_message_at") val lastMessageAt: Long,
-    @SerializedName("capture_complete") val captureComplete: Boolean,
-)
-
 data class ChatResponse(
+    @SerializedName("schema_version") val schemaVersion: Int? = null,
+    @SerializedName("turn_id") val turnId: String? = null,
+    @SerializedName("input_digest") val inputDigest: String? = null,
     val action: String?,
     val reply: String?,
+    @SerializedName("reply_parts") val replyParts: List<String>? = emptyList(),
     val media: ChatMedia?,
     @SerializedName("reply_id") val replyId: String?,
     val error: String?,

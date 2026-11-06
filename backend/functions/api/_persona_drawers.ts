@@ -32,13 +32,22 @@ export function parsePersonaDrawers(value: unknown): PersonaDrawers {
   }
 }
 
+import {
+  type CustomerDialogueSlots,
+  isDrawerProbingKnownSlot,
+} from "./_customer_slots";
+
 export interface MatchActiveDrawersOptions {
   maxKeywordCards?: number;
   maxChars?: number;
   currentHour?: number;
+  currentMinute?: number;
+  totalExchanges?: number;
+  maturityGateEnabled?: boolean;
   weatherCondition?: string;
   weatherTemp?: number;
   isFragmented?: boolean;
+  customerSlots?: CustomerDialogueSlots;
 }
 
 export function matchActiveDrawers(
@@ -58,6 +67,28 @@ export function matchActiveDrawers(
 
   for (const item of allGroups) {
     if (item.deleted === true || item.enabled === false) continue;
+
+    if (options.maturityGateEnabled === true) {
+      const totalExchanges = Number(options.totalExchanges || 0);
+      if (Number(item.minExchanges || 0) > totalExchanges) continue;
+      const currentMinute = Number.isFinite(options.currentMinute)
+        ? Number(options.currentMinute)
+        : Number.isFinite(options.currentHour)
+          ? Number(options.currentHour) * 60
+          : NaN;
+      if (Number.isFinite(currentMinute)) {
+        const afterMinute = Number.isFinite(item.afterMinute) ? Number(item.afterMinute) : null;
+        const beforeMinute = Number.isFinite(item.beforeMinute) ? Number(item.beforeMinute) : null;
+        const crossesMidnight = afterMinute !== null && beforeMinute !== null && afterMinute > beforeMinute;
+        if (crossesMidnight) {
+          const insideOvernightWindow = currentMinute >= afterMinute || currentMinute < beforeMinute;
+          if (!insideOvernightWindow) continue;
+        } else {
+          if (afterMinute !== null && currentMinute < afterMinute) continue;
+          if (beforeMinute !== null && currentMinute >= beforeMinute) continue;
+        }
+      }
+    }
 
     // 1. 时段守门员：白天不放深夜卡，夜晚不放开会摸鱼卡
     if (options.currentHour !== undefined && Number.isFinite(options.currentHour)) {
@@ -92,6 +123,11 @@ export function matchActiveDrawers(
 
     // 3. 半截话碎片保护：如果对方只是发了 1-4 个字的半截词（比如单字“腿…”），不硬套大篇场景卡
     if (options.isFragmented && item.kind === "scene" && text.length <= 4) {
+      continue;
+    }
+
+    // 4. 槽位守门员：已知事实物理断电（对方已明确的事实或前面已探过的槽位，卡片物理剔除）
+    if (options.customerSlots && isDrawerProbingKnownSlot(item.content, options.customerSlots)) {
       continue;
     }
 

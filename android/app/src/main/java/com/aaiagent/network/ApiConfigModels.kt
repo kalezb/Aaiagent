@@ -16,7 +16,8 @@ data class ConfigResponse(
     @SerializedName("ai_hours_enabled") val aiHoursEnabled: Boolean? = null,
     @SerializedName("ai_start_hour") val aiStartHour: Int? = null,
     @SerializedName("ai_end_hour") val aiEndHour: Int? = null,
-    val line: String? = null
+    val line: String? = null,
+    @SerializedName("contact_blacklist") val contactBlacklist: List<String>? = null
 )
 
 data class ModelRouteHealthResponse(

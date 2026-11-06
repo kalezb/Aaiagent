@@ -2,6 +2,7 @@ package com.aaiagent
 
 import com.aaiagent.adapter.PlatformAdapter
 import com.aaiagent.engine.work.SoulContactIdentityPolicy
+import com.aaiagent.engine.work.SoulConversationRowPolicy
 import com.aaiagent.engine.work.SoulRiskOverlayPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -64,6 +65,28 @@ class SoulConversationPoliciesTest {
                 actual = "苏棠的闺蜜",
             )
         )
+    }
+
+    @Test
+    fun `list row must match both preview and time before clicking`() {
+        assertTrue(SoulConversationRowPolicy.matches(
+            expectedPreview = "我在家躺着呢",
+            actualPreview = "我在家躺着呢",
+            expectedTime = "13:37",
+            actualTime = "13:37",
+        ))
+        assertFalse(SoulConversationRowPolicy.matches(
+            expectedPreview = "我在家躺着呢",
+            actualPreview = "晚上一起吃饭吗",
+            expectedTime = "13:37",
+            actualTime = "13:37",
+        ))
+        assertFalse(SoulConversationRowPolicy.matches(
+            expectedPreview = "我在家躺着呢",
+            actualPreview = "我在家躺着呢",
+            expectedTime = "13:37",
+            actualTime = "昨天",
+        ))
     }
 
     @Test

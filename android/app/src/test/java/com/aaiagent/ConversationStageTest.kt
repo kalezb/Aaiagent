@@ -2,8 +2,11 @@ package com.aaiagent
 
 import com.aaiagent.engine.ConversationStage
 import com.aaiagent.engine.RelationshipOrigin
+import com.aaiagent.engine.SoulChatMarkerPolicy
 import com.aaiagent.engine.SoulConversationStagePolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationStageTest {
@@ -93,6 +96,28 @@ class ConversationStageTest {
                 hasProfileCard = false,
                 outgoingCount = 0,
                 visibleMessageCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `decorative heart layout is not a relationship marker`() {
+        // 2026-11-03 真机：layout_heart 每张聊天页都有（空节点、不能点），
+        // 以前拿它当“心形关系”，导致刚加上的人全被判成“已经很熟”。
+        assertFalse(SoulChatMarkerPolicy.HEART_MARKER_IDS.contains("layout_heart"))
+        assertTrue(SoulChatMarkerPolicy.HEART_MARKER_IDS.contains("lot_heart_pet"))
+    }
+
+    @Test
+    fun `a brand new chat without any marker stays unknown instead of familiar`() {
+        assertEquals(
+            ConversationStage.UNKNOWN,
+            SoulConversationStagePolicy.classifyChatStage(
+                hasSoulmateMarker = false,
+                hasHeartMarker = false,
+                hasProfileCard = false,
+                outgoingCount = 0,
+                visibleMessageCount = 1,
             ),
         )
     }

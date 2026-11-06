@@ -13,6 +13,8 @@ import {
   shouldRepairXingmuDeadEndReply,
   XINGMU_BOUNDARY_FEEDBACK_FALLBACK,
 } from "../functions/api/_reply_policy";
+import { capReplyLength, splitNaturalChatBubbles } from "../functions/api/_reply_length";
+import { enforceFollowUpQuestionPacing } from "../functions/api/_reply_naturalness";
 
 describe("reply presentation and repair", () => {
   it("normalizes punctuation, expands single-character replies and keeps exact review quotes", () => {
@@ -30,6 +32,7 @@ describe("reply presentation and repair", () => {
     expect(normalizeAssistantReplyPresentation("不喜欢啥，喊宝贝还是我这人")).toBe("不喜欢啥，喊宝贝还是我这人？");
     expect(normalizeAssistantReplyPresentation("不管你喜欢咖啡还是茶，我都行")).toBe("不管你喜欢咖啡还是茶，我都行");
     expect(normalizeAssistantReplyPresentation("重庆哪边")).toBe("重庆哪边？");
+    expect(normalizeAssistantReplyPresentation("周末没出去转转 ？")).toBe("周末没出去转转？");
     expect(normalizeAssistantReplyPresentation("梦到我什么了")).toBe("梦到我什么了？");
     expect(normalizeAssistantReplyPresentation("那刚那个表情包是谁点的")).toBe("那刚那个表情包是谁点的？");
     expect(normalizeAssistantReplyPresentation("那张照片谁发的")).toBe("那张照片谁发的？");
@@ -41,6 +44,37 @@ describe("reply presentation and repair", () => {
     expect(normalizeAssistantReplyPresentation("嗯")).toBe("嗯，知道了。");
     expect(normalizeAssistantReplyPresentation("哪有什么另一面，不就一普通人")).toBe("哪有什么另一面，不就一普通人");
     expect(normalizeAssistantReplyPresentation("评估报价，搜 shanhs668")).toBe("评估报价，搜 shanhs668");
+  });
+
+  it("does not ask again when the previous reply already asked", () => {
+    expect(enforceFollowUpQuestionPacing(
+      "休着呢|||你周末也得跑业务？",
+      { recentAssistantReplies: ["今天休息吗？"] },
+    )).toBe("休着呢");
+    expect(enforceFollowUpQuestionPacing(
+      "吃的啥呀|||周末没出去转转？",
+      { recentAssistantReplies: ["今天休息吗？"] },
+    )).toBe("吃的啥呀");
+    expect(enforceFollowUpQuestionPacing(
+      "休着呢|||你周末也得跑业务？",
+      { recentAssistantReplies: ["今天在家窝着"] },
+    )).toBe("休着呢|||你周末也得跑业务？");
+    expect(enforceFollowUpQuestionPacing(
+      "你周末也得跑业务？",
+      { recentAssistantReplies: ["今天休息吗？"] },
+    )).toBe("你周末也得跑业务？");
+  });
+
+  it("lets a normal turn answer without inventing a follow-up question", () => {
+    const brief = buildTurnBrief({
+      messages: [{ role: "user", content: "我周末喜欢打台球" }],
+      relationStageLevel: 2,
+      xingmuScope: false,
+    });
+
+    expect(brief).toContain("先完成这一轮真正要做的事");
+    expect(brief).toContain("没有必要时不用再追问");
+    expect(brief).not.toContain("留一个低压力接点，让对方容易继续");
   });
 
   it("splits only at complete sentence endings and never at spaces", () => {
@@ -84,14 +118,14 @@ describe("reply presentation and repair", () => {
       .toBe("不是不喜欢，就是宝贝这个称呼太快了，先正常聊着呗。");
   });
 
-  it("detects dead-end replies and builds a repair prompt that leaves a low-pressure hook", () => {
+  it("detects dead-end replies without forcing another follow-up question", () => {
     const messages = [{ role: "user", content: "最近压力挺大的" }];
     expect(shouldRepairXingmuDeadEndReply("哈哈 先聊点别的", messages, [], true)).toBe(true);
     expect(shouldRepairXingmuDeadEndReply("嗯嗯，好的。", messages, [], true)).toBe(true);
     expect(shouldRepairXingmuDeadEndReply("听着就挺累的，是工作堆一块了吗？", messages, [], true)).toBe(false);
     expect(shouldRepairXingmuDeadEndReply("好", [{ role: "user", content: "好" }], [], true)).toBe(false);
     expect(buildXingmuConversationRepairPrompt("哈哈 先聊点别的", messages, []))
-      .toContain("低压力接点");
+      .toContain("没有必要时不用再追问");
     expect(buildXingmuConversationRepairPrompt("哈哈 先聊点别的", messages, []))
       .not.toContain("不要用“先聊点别的”");
   });
@@ -213,5 +247,21 @@ describe("reply presentation and repair", () => {
     });
     expect(brief).toContain("【风格导演】");
     expect(brief).toContain("本轮主色");
+  });
+
+  it("splits human-like chat bubbles with comma respiration and greeting isolation", () => {
+    const input = "晚上好，今天在家带娃，晚上终于清静了";
+    const capped = capReplyLength(input, "在吗");
+    expect(capped).toBe("晚上好|||今天在家带娃|||晚上终于清静了");
+
+    const bubbles = splitNaturalChatBubbles(input);
+    expect(bubbles).toEqual([
+      "晚上好",
+      "今天在家带娃",
+      "晚上终于清静了",
+    ]);
+
+    const unsplittable = "这是超过十五个字而且没有自然停顿必须重新生成的一句话";
+    expect(capReplyLength(unsplittable, "还有别的吗")).toBe("");
   });
 });

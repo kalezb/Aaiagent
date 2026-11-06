@@ -14,18 +14,31 @@ import { json } from "./_http_runtime";
 import {
   effectivePersonaDrawers,
   loadEffectivePersonaFacts,
+  stripRetiredSutangDrawers,
 } from "./_persona_runtime";
+import { buildSutangRuleHealth } from "./_sutang_rule_health";
 
 export async function handleAgentRulesRequest({ request, env, path, method }) {
   // GET /api/agent-rules - editable rules used by chat on the next request.
   if (path === "/api/agent-rules" && method === "GET") {
     if (!isDashboardAuthorized(request, env)) return json({ error: "unauthorized" }, 401);
-    const rules = await listAgentRules(env.DB);
+    const allRules = await listAgentRules(env.DB, true);
+    const rules = allRules.filter((rule) => Number(rule.deleted_at || 0) === 0);
     const conflicts = detectAgentRuleConflicts(rules);
+    const rawStoredCards = typeof env.KV?.get === "function"
+      ? await env.KV.get("persona:drawers:female_sutang", "json")
+      : null;
+    const cleanup = stripRetiredSutangDrawers(rawStoredCards);
+    if (cleanup.changed && typeof env.KV?.put === "function") {
+      await env.KV.put("persona:drawers:female_sutang", JSON.stringify(cleanup.value));
+    }
+    const drawers = effectivePersonaDrawers("female_sutang", cleanup.value);
+    const cards = [...drawers.topics, ...drawers.counters, ...drawers.custom];
     return json({
       rules,
       conflicts,
       summary: summarizeAgentRuleConflicts(conflicts),
+      sutang_health: buildSutangRuleHealth(allRules, cards),
     });
   }
 
@@ -106,6 +119,8 @@ export async function handleAgentRulesRequest({ request, env, path, method }) {
       params.push(Math.max(0, Math.floor(Number(body.sort_order) || 0)));
     }
     if (!updates.length) return json({ error: "没有要修改的内容" }, 400);
+    updates.push("source = ?");
+    params.push("dashboard");
     updates.push("updated_at = ?");
     params.push(Math.floor(Date.now() / 1000), id);
     const result = await env.DB.prepare(

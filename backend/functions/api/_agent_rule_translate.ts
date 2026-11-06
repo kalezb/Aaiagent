@@ -33,7 +33,7 @@ function personaScope(text: string) {
   const ids: string[] = [];
   if (text.includes("苏棠")) ids.push("female_sutang");
   if (text.includes("星暮")) ids.push("female");
-  if (text.includes("阿杰")) ids.push("male");
+  if (text.includes("阿杰") || text.includes("李辉")) ids.push("male");
   if (text.includes("陈屿")) ids.push("male_chenyu");
   return ids.join(",");
 }

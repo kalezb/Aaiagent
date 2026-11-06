@@ -172,6 +172,11 @@
     }).join("");
   }
 
+  function isGroupBlacklisted(group) {
+    if (!group || !group.aliases || !group.aliases.length) return false;
+    return group.aliases.some((alias) => Number(alias.is_whitelisted ?? 1) === 0);
+  }
+
   window.DashboardUtils = {
     PLATFORMS,
     $,
@@ -196,5 +201,6 @@
     factText,
     drawerKindLabel,
     drawerKindOptions,
+    isGroupBlacklisted,
   };
 })();

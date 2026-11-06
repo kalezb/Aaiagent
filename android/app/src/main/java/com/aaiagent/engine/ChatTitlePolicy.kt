@@ -16,14 +16,21 @@ object ChatTitlePolicy {
         "好的",
         "语音通话",
         "视频通话",
-        "关注后可邀请通话"
+        "关注后可邀请通话",
+        "奇遇铃-稍后再聊",
+        "Soul 通知",
+        "Soul通知",
+        "系统通知",
+        "官方通知"
     )
 
     private val blockedFragments = listOf(
         "关注后可",
         "邀请通话",
         "点击发送",
-        "按住说话"
+        "按住说话",
+        "奇遇铃-稍后再聊",
+        "Soul 通知"
     )
 
     fun sanitize(value: String?): String? {

@@ -21,10 +21,12 @@ export function formatTranscriptLine(message, previousEpoch, nowSec, stickerMean
   const content = String(message?.content || "").trim();
   if (!content) return "";
   const speaker = transcriptSpeaker(message?.role);
-  const transcript = String(message?.transcript || "").trim();
+  const messageKind = String(message?.kind || message?.type || "").trim().toLowerCase();
+  const transcript = resolveMessageTranscript(content, message?.transcript);
   const stickerAware = translateStickerContent(content, stickerMeanings);
-  const shown = transcript && /^\[语音\]$/u.test(content)
-    ? "[语音|转写：" + transcript + "]"
+  const voiceMessage = messageKind === "voice" || /^\[(?:语音|语音消息)\]$/u.test(content);
+  const shown = voiceMessage
+    ? (transcript ? "[语音|转写：" + transcript + "]" : "[语音|未转写]")
     : stickerAware;
   const epoch = requestMessageEpochSeconds(message);
   if (!epoch) return speaker + "：" + shown;

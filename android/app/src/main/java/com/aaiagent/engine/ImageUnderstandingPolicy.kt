@@ -6,12 +6,22 @@ object ImageUnderstandingPolicy {
             "如果可见人物，明确描述儿童、少年或成年，以及明显的外貌、衣着和气质；" +
             "如果可见文字，原样写出；不要补充图片中没有的内容。"
 
+    const val DYNAMIC_VISUAL_PROMPT =
+        "这是聊天里对方发来的动态表情画面。简洁说明画面主体、可见文字、动作和情绪，" +
+            "再判断它更接近打招呼、撒娇、调侃、开心、安慰、想念、晚安还是其他聊天意思。" +
+            "只根据画面判断，不补充画面里没有的人物或关系。"
+
+    fun visionPrompt(type: String): String {
+        return if (type == "dynamic_visual") DYNAMIC_VISUAL_PROMPT else VISION_PROMPT
+    }
+
     fun modelFacts(type: String, description: String): String {
         val source = when (type) {
             "exchange" -> "对方发来的以图换图照片"
             "image" -> "对方发来的图片"
             "sticker" -> "对方发来的表情"
             "interaction" -> "对方发来的互动表情"
+            "dynamic_visual" -> "对方发来的动态表情"
             "voice" -> "对方语音的截图辅助内容"
             else -> "对方发来的媒体内容"
         }

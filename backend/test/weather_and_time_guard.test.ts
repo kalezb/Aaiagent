@@ -5,77 +5,87 @@ import { isFragmentedMessage, buildFragmentedMessageGuidance } from "../function
 describe("时空与天气代码守门员 & 半截话承接机制", () => {
   const sutangDrawers = defaultDrawersForPersona("female_sutang");
 
-  describe("天气守门员 (Weather Gating)", () => {
-    it("晴天且用户未主动提雨时，只命中后背酸痛，绝不出现下雨话术（防穿帮）", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "坐一天办公室 后背好酸", {
-        weatherCondition: "晴",
-        weatherTemp: 26,
-        currentHour: 15,
-      });
-      const text = matched.join("\n");
-      expect(text).toContain("scene_14_rainy_neck");
-      expect(text).toContain("后背和颈椎酸得要命");
-      expect(text).not.toContain("外面下雨路不好走");
-    });
-
-    it("用户无论提下雨还是提后背，已删除雨季卡片，不会生成虚构的下雨场景", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "外面下雨了 后背好酸 坐了一整天", {
+  describe("新知识卡门槛", () => {
+    it("旧天气和家务卡已经彻底退出，不再因为天气或腰酸触发", () => {
+      const text = matchActiveDrawers(sutangDrawers, "外面下雨了 后背好酸 今天好热", {
         weatherCondition: "小雨",
-        weatherTemp: 20,
-        currentHour: 19,
-      });
-      const text = matched.join("\n");
-      expect(text).toContain("scene_14_rainy_neck");
-      expect(text).not.toContain("外面下雨路不好走");
-    });
-
-    it("烈日高温在白天时命中夏日冷气续命卡片，但在深夜（22点）绝不出太阳卡片", () => {
-      const dayMatched = matchActiveDrawers(sutangDrawers, "外面好热 太阳晒死人了", {
-        weatherCondition: "晴",
         weatherTemp: 34,
-        currentHour: 14,
-      });
-      const dayText = dayMatched.join("\n");
-      expect(dayText).toContain("scene_23_sunny_hot_summer");
-      expect(dayText).toContain("烈日大热与冷气续命");
-      expect(dayText).toContain("空调房里续命");
-
-      const nightMatched = matchActiveDrawers(sutangDrawers, "外面好热 太阳晒死人了", {
-        weatherCondition: "晴",
-        weatherTemp: 34,
-        currentHour: 22,
-      });
-      const nightText = nightMatched.join("\n");
-      expect(nightText).not.toContain("scene_23_sunny_hot_summer");
-      expect(nightText).not.toContain("外面太阳晒得睁不开眼");
+        currentHour: 15,
+        totalExchanges: 20,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(text).not.toContain("sutang_home_tired");
+      expect(text).not.toContain("sutang_hot_day");
+      expect(text).not.toContain("sutang_cold_day");
+      expect(text).not.toContain("sutang_nice_weather");
     });
 
-    it("降温大风（<=10度或寒风天气）时，命中降温保暖卡片", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "今天降温了 风吹得直打哆嗦", {
-        weatherCondition: "阴",
-        weatherTemp: 6,
-        currentHour: 16,
-      });
-      const text = matched.join("\n");
-      expect(text).toContain("scene_24_cold_wind_winter");
-      expect(text).toContain("降温大风与保暖包裹");
-      expect(text).toContain("厚羊绒大衣");
+    it("白天满5轮才了解对方的工作与出行，前4轮只当普通聊天", () => {
+      const before = matchActiveDrawers(sutangDrawers, "今天下雨 上班堵车吗", {
+        currentHour: 15,
+        currentMinute: 15 * 60,
+        totalExchanges: 4,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(before).not.toContain("scene_sutang_probe_spending");
+
+      const ready = matchActiveDrawers(sutangDrawers, "今天下雨 上班堵车吗", {
+        currentHour: 15,
+        currentMinute: 15 * 60,
+        totalExchanges: 5,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(ready).toContain("scene_sutang_probe_spending");
+      expect(ready).toContain("还是坐办公室");
+      expect(ready).not.toContain("外面下雨路不好走");
     });
 
-    it("舒适天气微风时，可命中舒适微风江边漫步卡片", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "今天天气真舒服 微风吹着很惬意", {
-        weatherCondition: "多云",
-        weatherTemp: 22,
-        currentHour: 17,
-      });
-      const text = matched.join("\n");
-      expect(text).toContain("scene_25_pleasant_breeze");
-      expect(text).toContain("舒适微风与江边漫步");
+    it("深夜卡必须同时满足21:00和满10轮", () => {
+      const tooEarly = matchActiveDrawers(sutangDrawers, "洗完澡 睡不着", {
+        currentHour: 20,
+        currentMinute: 20 * 60 + 59,
+        totalExchanges: 10,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(tooEarly).not.toContain("scene_sutang_night_empty");
+
+      const notFamiliar = matchActiveDrawers(sutangDrawers, "洗完澡 睡不着", {
+        currentHour: 21,
+        currentMinute: 21 * 60,
+        totalExchanges: 9,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(notFamiliar).not.toContain("scene_sutang_night_empty");
+
+      const ready = matchActiveDrawers(sutangDrawers, "洗完澡 睡不着", {
+        currentHour: 21,
+        currentMinute: 21 * 60,
+        totalExchanges: 10,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(ready).toContain("scene_sutang_night_empty");
+      expect(ready).toContain("屋里太静了");
+
+      const afterMidnight = matchActiveDrawers(sutangDrawers, "洗完澡 睡不着", {
+        currentHour: 1,
+        currentMinute: 60,
+        totalExchanges: 10,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(afterMidnight).toContain("scene_sutang_night_empty");
+
+      const morning = matchActiveDrawers(sutangDrawers, "洗完澡 睡不着", {
+        currentHour: 5,
+        currentMinute: 5 * 60,
+        totalExchanges: 10,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(morning).not.toContain("scene_sutang_night_empty");
     });
   });
 
   describe("时间守门员 (Time Slot Gating)", () => {
-    it("白天（14点）禁止命中深夜哄睡卡片（防白天说刚把孩子哄睡）", () => {
+    it("白天和深夜都不再保留旧的深夜哄睡卡", () => {
       const matched = matchActiveDrawers(sutangDrawers, "这个点孩子睡了吗", {
         currentHour: 14,
       });
@@ -84,21 +94,24 @@ describe("时空与天气代码守门员 & 半截话承接机制", () => {
       expect(text).not.toContain("刚把孩子哄睡");
     });
 
-    it("深夜（22点）讨论宝宝时允许命中深夜哄睡卡片", () => {
+    it("深夜讨论宝宝时也不会再命中旧电商和哄睡混在一起的卡片", () => {
       const matched = matchActiveDrawers(sutangDrawers, "这个点孩子睡了吗", {
         currentHour: 22,
       });
       const text = matched.join("\n");
-      expect(text).toContain("scene_15_after_child_sleep");
-      expect(text).toContain("孩子刚睡稳");
+      expect(text).not.toContain("scene_15_after_child_sleep");
+      expect(text).not.toContain("报表");
     });
 
-    it("下午（15点）禁止命中深夜失眠卡片", () => {
-      const matched = matchActiveDrawers(sutangDrawers, "失眠 睡不着怎么办", {
+    it("下午不会命中深夜卡，旧深夜卡也不存在", () => {
+      const text = matchActiveDrawers(sutangDrawers, "失眠 睡不着怎么办", {
         currentHour: 15,
-      });
-      const text = matched.join("\n");
-      expect(text).not.toContain("scene_22_late_night_insomnia");
+        currentMinute: 15 * 60,
+        totalExchanges: 20,
+        maturityGateEnabled: true,
+      }).join("\n");
+      expect(text).not.toContain("scene_sutang_night_empty");
+      expect(text).not.toContain("sutang_late_night_alone");
     });
   });
 
@@ -128,20 +141,21 @@ describe("时空与天气代码守门员 & 半截话承接机制", () => {
       expect(matched.length).toBe(0);
     });
 
-    it("生成高情商接话指引：有上文工作话题时，轻推测+反问推拉", () => {
+    it("生成接话指引：有上文工作话题时，只顺着方向关心，不瞎猜细节", () => {
       const guidance = buildFragmentedMessageGuidance("好累", [
-        { role: "assistant", content: "今天盯了一下午投流和电商店铺数据 眼睛都看酸了" },
+        { role: "assistant", content: "今天上班开了一天会 到现在还没缓过来" },
       ]);
       expect(guidance).toContain("半截话承接");
       expect(guidance).toContain("工作");
       expect(guidance).toContain("不要瞎猜对方的具体细节");
     });
 
-    it("生成高情商接话指引：无明确上文时，高位慵懒推拉踢球", () => {
+    it("生成接话指引：无明确上文时先接情绪，不挑衅也不催", () => {
       const guidance = buildFragmentedMessageGuidance("唉……", []);
       expect(guidance).toContain("半截话承接");
       expect(guidance).toContain("绝对不要脑补猜测具体发生何事");
-      expect(guidance).toContain("话讲一半 吊谁胃口呢");
+      expect(guidance).toContain("先接住他的情绪");
+      expect(guidance).not.toContain("高位");
     });
   });
 });

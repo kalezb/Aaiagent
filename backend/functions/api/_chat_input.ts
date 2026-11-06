@@ -3,6 +3,10 @@ import {
   isUntranscribedVoiceMessage,
   type ProgramRulesConfig,
 } from "./_program_rules";
+import {
+  contractMessageDigest,
+  normalizeContractMessages,
+} from "./_chat_contract";
 
 export const SUPPORTED_PLATFORMS = ["soul", "qq", "douban", "lianxin", "immomo"];
 
@@ -29,6 +33,7 @@ export function validateChatMessages(messages) {
 }
 
 export interface NormalizedChatRequest {
+  schemaVersion: number;
   platform: string;
   contactId: string;
   contactName: string;
@@ -58,11 +63,12 @@ function normalizeRelationshipOrigin(value) {
 
 export function normalizeChatRequest(body: Record<string, any>): NormalizedChatRequest {
   return {
+    schemaVersion: Math.max(1, Math.floor(Number(body.schema_version) || 1)),
     platform: normalizePlatform(body.platform),
     contactId: String(body.contact_id || "").trim().slice(0, 200),
     contactName: String(body.contact_name || "").trim().slice(0, 200),
     location: body.location,
-    rawMessages: body.messages,
+    rawMessages: normalizeContractMessages(body.messages),
     selfNickname: String(body.self_nickname || "")
       .replace(/[\r\n]+/gu, " ")
       .trim()
@@ -76,8 +82,16 @@ export function normalizeChatRequest(body: Record<string, any>): NormalizedChatR
   };
 }
 
-export function validateTurnSnapshot(snapshot: any, messages: any[]) {
-  if (!snapshot) return { ok: true, reason: "" };
+export async function validateTurnSnapshot(
+  snapshot: any,
+  messages: any[],
+  schemaVersion = 1,
+) {
+  if (!snapshot) {
+    return schemaVersion >= 2
+      ? { ok: false, reason: "snapshot_required" }
+      : { ok: true, reason: "" };
+  }
   const turnId = String(snapshot.turn_id || "").trim();
   const messageCount = Number(snapshot.message_count);
   const lastMessageAt = Number(snapshot.last_message_at);
@@ -92,6 +106,19 @@ export function validateTurnSnapshot(snapshot: any, messages: any[]) {
   const actualLastAt = Number(lastMessage?.created_at || 0);
   if (lastMessageAt > 0 && actualLastAt > 0 && Math.abs(lastMessageAt - actualLastAt) > 3) {
     return { ok: false, reason: "snapshot_last_message_mismatch" };
+  }
+  const expectedDigest = String(snapshot.message_digest || "").trim();
+  if (!expectedDigest && schemaVersion >= 2) {
+    return { ok: false, reason: "snapshot_message_digest_missing" };
+  }
+  if (expectedDigest && snapshot.contact_verified !== true) {
+    return { ok: false, reason: "snapshot_contact_not_verified" };
+  }
+  if (expectedDigest) {
+    const actualDigest = await contractMessageDigest(normalizeContractMessages(messages));
+    if (actualDigest !== expectedDigest) {
+      return { ok: false, reason: "snapshot_message_digest_mismatch" };
+    }
   }
   return { ok: true, reason: "" };
 }

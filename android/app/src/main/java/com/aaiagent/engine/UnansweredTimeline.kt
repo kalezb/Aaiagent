@@ -20,15 +20,22 @@ object UnansweredTimeline {
         val incoming = messages.filter { it.sender != "self" }
         if (incoming.size < 2) return null
 
-        val firstAt = incoming.mapNotNull { it.timestampMillis }.firstOrNull()
-        val lastAt = incoming.mapNotNull { it.timestampMillis }.lastOrNull()
+        val trustedTimes = incoming
+            .filter { it.timestampTrusted }
+            .mapNotNull { it.timestampMillis }
+        val firstAt = trustedTimes.firstOrNull()
+        val lastAt = trustedTimes.lastOrNull()
         val spansHours = firstAt != null && lastAt != null && lastAt - firstAt >= MULTI_DAY_GAP_MS
 
         val lines = incoming.takeLast(MAX_LINES).joinToString("\n") { message ->
-            val time = message.timestampText.trim().ifBlank {
-                message.timestampMillis
-                    ?.let { formatter.format(Instant.ofEpochMilli(it).atZone(chinaZone)) }
-                    .orEmpty()
+            val time = if (message.timestampTrusted) {
+                message.timestampText.trim().ifBlank {
+                    message.timestampMillis
+                        ?.let { formatter.format(Instant.ofEpochMilli(it).atZone(chinaZone)) }
+                        .orEmpty()
+                }
+            } else {
+                ""
             }
             val timeLabel = time
             val timePrefix = timeLabel.takeIf(String::isNotEmpty)?.let { "【$it】" }.orEmpty()
@@ -41,13 +48,9 @@ object UnansweredTimeline {
         } else {
             "这是客户在我方最后一次回复后连续发来的同一轮未回复消息。"
         }
-        val pendingPlan = PendingTopicPolicy.build(incoming)?.prompt()
-        val timeline = "$lead\n$lines\n" +
+        return "$lead\n$lines\n" +
             "请按时间顺序理解这组未回复消息，只把最新一句当成本轮起点；" +
             "前面只有明确问题且还没回答时，才用一句补答。当前时间=${formatNow(nowMillis)}。"
-        return listOf(timeline, pendingPlan.orEmpty())
-            .filter(String::isNotBlank)
-            .joinToString("\n")
     }
 
     private fun formatNow(nowMillis: Long): String {
@@ -67,6 +70,7 @@ object UnansweredTimeline {
             "voice" -> "语音："
             "voice_emoji" -> "语音表情："
             "sticker" -> "表情："
+            "dynamic_visual" -> "动态表情："
             else -> ""
         }
     }

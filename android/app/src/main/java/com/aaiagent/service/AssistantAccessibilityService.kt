@@ -34,6 +34,8 @@ class AssistantAccessibilityService : AccessibilityService() {
     private lateinit var adapterRegistry: AdapterRegistry
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var inheritedSession: HostingSessionPolicy.Session? = null
+    private var lastContentChangeHandledAtMs = 0L
+    private var lastTreeInspectionAtMs = 0L
     private val pageSampleReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != ACTION_CAPTURE_PAGE_SAMPLE) return
@@ -46,6 +48,16 @@ class AssistantAccessibilityService : AccessibilityService() {
                     "采样成功 #${result.sequence} ${result.pageKind} $upload"
                 }
                 Toast.makeText(this@AssistantAccessibilityService, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    private val hostingTriggerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_TRIGGER_HOSTING) return
+            val enable = intent.getBooleanExtra("enable", true)
+            android.util.Log.d("AIA", "TRIGGER_HOSTING broadcast received in service enable=$enable")
+            serviceScope.launch {
+                HostingController.setHosting(this@AssistantAccessibilityService, enable = enable)
             }
         }
     }
@@ -92,6 +104,12 @@ class AssistantAccessibilityService : AccessibilityService() {
             this,
             shadowProbeReceiver,
             IntentFilter(ACTION_PROBE_SOUL_SHADOW),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        ContextCompat.registerReceiver(
+            this,
+            hostingTriggerReceiver,
+            IntentFilter(ACTION_TRIGGER_HOSTING),
             ContextCompat.RECEIVER_EXPORTED,
         )
 
@@ -153,23 +171,34 @@ class AssistantAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || !isEnabled) return
-        recordAccessibilityEvent(event)
+        val nowMs = System.currentTimeMillis()
+        val shouldInspectTree = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            AccessibilityEventThrottlePolicy.shouldInspectTree(nowMs, lastTreeInspectionAtMs)
+        if (shouldInspectTree) lastTreeInspectionAtMs = nowMs
+        recordAccessibilityEvent(event, shouldInspectTree)
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowStateChanged(event)
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                event.packageName?.toString()
-                    ?.let(::platformForPackage)
-                    ?.let(engine::onContentChanged)
+                if (AccessibilityEventThrottlePolicy.shouldHandleContentChange(
+                        nowMs,
+                        lastContentChangeHandledAtMs,
+                    )
+                ) {
+                    lastContentChangeHandledAtMs = nowMs
+                    event.packageName?.toString()
+                        ?.let(::platformForPackage)
+                        ?.let(engine::onContentChanged)
+                }
             }
             AccessibilityEvent.TYPE_TOUCH_INTERACTION_START -> engine.onUserInteraction()
         }
     }
 
-    private fun recordAccessibilityEvent(event: AccessibilityEvent) {
+    private fun recordAccessibilityEvent(event: AccessibilityEvent, inspectTree: Boolean) {
         val packageName = event.packageName?.toString().orEmpty()
         val platform = platformForPackage(packageName).orEmpty()
-        val root = rootInActiveWindow
+        val root = if (inspectTree) rootInActiveWindow else null
         val adapter = adapterRegistry.get(packageName)
         val observation = if (root != null && adapter != null) {
             adapter.observePage(root)
@@ -250,6 +279,7 @@ class AssistantAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(pageSampleReceiver) }
         runCatching { unregisterReceiver(shadowProbeReceiver) }
+        runCatching { unregisterReceiver(hostingTriggerReceiver) }
         engine.shutdown()
         AccessibilityEventJournal.shutdown()
         serviceScope.cancel()
@@ -260,6 +290,7 @@ class AssistantAccessibilityService : AccessibilityService() {
     companion object {
         const val ACTION_CAPTURE_PAGE_SAMPLE = "com.aaiagent.CAPTURE_PAGE_SAMPLE"
         const val ACTION_PROBE_SOUL_SHADOW = "com.aaiagent.PROBE_SOUL_SHADOW"
+        const val ACTION_TRIGGER_HOSTING = "com.aaiagent.TRIGGER_HOSTING"
 
         var sharedEngine: MessageEngine? = null
             private set

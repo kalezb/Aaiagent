@@ -91,7 +91,10 @@ $null = (adb shell "run-as $Package sh -c '$fixModeCommand'" 2>&1 | Out-String)
 $fixFileModeCommand = "find /data/data/$Package/databases /data/data/$Package/shared_prefs /data/data/$Package/files -type f -exec chmod 660 {} +"
 $null = (adb shell "run-as $Package sh -c '$fixFileModeCommand'" 2>&1 | Out-String)
 
-$uid = ((adb shell dumpsys package $Package | Select-String "userId=" | Select-Object -First 1).ToString() -replace ".*userId=", "" -replace "\s.*", "").Trim()
+$uidLine = adb shell dumpsys package $Package | Select-String "appId=|uid=" | Select-Object -First 1
+if ($null -eq $uidLine) { throw "读不到 App 的应用编号，停止" }
+$uid = ($uidLine.Line -replace ".*(?:appId|uid)=", "" -replace "\s.*", "").Trim()
+if ($uid -notmatch "^\d+$") { throw "App 应用编号格式异常：$uidLine" }
 Write-Host "   App uid = $uid"
 
 $dbSizeText = (adb shell run-as $Package wc -c /data/data/$Package/databases/aaiagent.db 2>&1 | Out-String).Trim()

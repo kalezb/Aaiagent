@@ -7,6 +7,7 @@ import {
   buildGenericLowSignalRepairPrompt,
   shouldRepairGenericLowSignalReply,
 } from "../functions/api/_reply_policy";
+import { sanitizeContactDisclosure } from "../functions/api/_reply_contact";
 
 describe("reply decision pipeline", () => {
   it("keeps an unmodified model reply and records no override", () => {
@@ -50,6 +51,24 @@ describe("reply decision pipeline", () => {
     expect(result.overrides[0].after).toBe("二");
     expect(result.overrides[1].before).toBe("二");
     expect(result.overrides[1].after).toBe("三");
+  });
+
+  it("does not invent a contact refusal after another rule emptied the reply", () => {
+    const result = applyReplyDecisionPipeline("【有意见 叫早了】【先发张近照我瞧瞧】", [
+      {
+        rule: "assistant_sanitize",
+        reason: "control_markup_or_invalid_segment",
+        apply: () => "",
+      },
+      {
+        rule: "contact_disclosure",
+        reason: "contact_disclosure_not_allowed",
+        apply: (value) => sanitizeContactDisclosure(value, { sutangScope: true }),
+      },
+    ]);
+
+    expect(result.reply).toBe("");
+    expect(result.overrides.map((item) => item.rule)).toEqual(["assistant_sanitize"]);
   });
 
   it("describes an immediate hard-rule decision explicitly", () => {

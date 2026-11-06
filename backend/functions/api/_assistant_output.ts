@@ -1,3 +1,5 @@
+import { isMachineCodeOrJson } from "./_reply_length";
+
 export function staleReplyFallback(policy) {
   if (!policy?.hasTimestamp) return "";
   if (policy.pastMode && policy.messageType === "expired_invite") {
@@ -53,11 +55,22 @@ export function dropExplicitSegments(
   return kept.join("|||").trim();
 }
 
+export function sanitizeMachineCodeLeak(value, fallback = "") {
+  const original = String(value || "").trim();
+  if (!original) return "";
+  const segments = original.split("|||");
+  const kept = segments
+    .map((seg) => seg.trim())
+    .filter((seg) => seg && !isMachineCodeOrJson(seg));
+  return kept.length ? kept.join("|||") : fallback;
+}
+
 export function sanitizeAssistantReply(
   value,
   options: { allowMeetingReward?: boolean; allowIntimateDetails?: boolean } = {},
 ) {
-  const cleaned = String(value || "")
+  const codeCleaned = sanitizeMachineCodeLeak(value);
+  const cleaned = String(codeCleaned || "")
     .split(/(\r?\n|\|\|\|)/u)
     .map((part) =>
       part === "\n" || part === "\r\n" || part === "|||"

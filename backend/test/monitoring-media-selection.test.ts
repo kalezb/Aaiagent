@@ -35,12 +35,7 @@ import {
   defaultDrawersForPersona,
   matchActiveDrawers,
 } from "../functions/api/_persona_drawers";
-import {
-  MockD1,
-  MockKV,
-  mockChatSequence,
-} from "./chat-test-helpers";
-
+import { MockD1, MockKV, markHisPhotoSeen, mockChatSequence } from "./chat-test-helpers";
 describe("media selection", () => {
   it("records an image only after the phone confirms delivery", async () => {
     const db = new MockD1().withOptions({
@@ -48,6 +43,7 @@ describe("media selection", () => {
       mediaAssets: [{ id: "daily_01", group_id: "daily", file_name: "daily_01.jpg", content_type: "image/jpeg" }],
       mediaSendRows: [],
     });
+    markHisPhotoSeen(db);
     const fetchMock = mockChatSequence(["DAILY"]);
     vi.stubGlobal("fetch", fetchMock);
     const generatedResponse = await onRequest({
@@ -198,7 +194,7 @@ describe("media selection", () => {
       ],
     });
     const fetchMock = mockChatSequence(["DAILY"]);
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", fetchMock); markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -239,7 +235,7 @@ describe("media selection", () => {
         ],
       });
       const fetchMock = mockChatSequence(["DAILY"]);
-      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("fetch", fetchMock); markHisPhotoSeen(db);
 
       const response = await onRequest({
         request: new Request("https://example.com/api/chat", {
@@ -280,7 +276,7 @@ describe("media selection", () => {
       "DAILY",
       "照片先不发了，聊聊呗",
     ]);
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", fetchMock); markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -320,7 +316,7 @@ describe("media selection", () => {
       ],
     });
     const fetchMock = mockChatSequence(["[[SEND_MEDIA:daily]]"]);
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", fetchMock); markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -358,7 +354,7 @@ describe("media selection", () => {
       "NONE",
       "[[SEND_MEDIA:daily]]",
     ]);
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", fetchMock); markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -397,32 +393,35 @@ describe("media selection", () => {
   it("uses only the new Su Tang knowledge cards", () => {
     const drawers = defaultDrawersForPersona("female_sutang");
     const ids = (drawers.topics || []).map((item) => item.id);
-    expect(ids).toHaveLength(28);
-    expect(ids).toContain("scene_01_black_stockings");
-    expect(ids).toContain("scene_13_invitation_reward");
-    expect(ids).toContain("scene_14_rainy_neck");
-    expect(ids).toContain("scene_16_douban_tree_hole");
-    expect(ids).toContain("scene_23_sunny_hot_summer");
-    expect(ids).toContain("scene_24_cold_wind_winter");
-    expect(ids).toContain("scene_25_pleasant_breeze");
-    expect(ids).toContain("scene_26_mother_in_law_cover");
-    expect(ids).toContain("scene_27_contrast_mature_woman");
-    expect(ids).toContain("scene_28_body_massage_spa");
+    expect(ids).toHaveLength(4);
+    expect(ids).toContain("scene_sutang_probe_spending");
+    expect(ids).toContain("scene_sutang_night_empty");
+    expect(ids).toContain("scene_sutang_intimate_questions");
+    expect(ids).toContain("scene_sutang_invite_refusal");
+    expect(ids).not.toContain("scene_sutang_hotel_co_booking_pay");
+    expect(ids).not.toContain("scene_14_housework_shoulder");
+    expect(ids).not.toContain("scene_18_meeting_arrangement");
+    expect(ids).not.toContain("scene_01_black_stockings");
+    expect(ids).not.toContain("scene_05_ecommerce_overtime");
+    expect(ids).not.toContain("scene_07_meeting_slack");
+    expect(ids).not.toContain("scene_13_invitation_reward");
+    expect(ids).not.toContain("scene_21_ecommerce_work");
+    expect(ids).not.toContain("scene_28_body_massage_spa");
     expect(ids).not.toContain("sofa_tired");
     expect(ids).not.toContain("food_hungry");
-
     const stockings = matchActiveDrawers(drawers, "你今天穿黑丝了吗").join("\n");
-    expect(stockings).not.toContain("黑丝与腿部触感");
-    expect(stockings).not.toContain("刚把黑丝脱了");
-
+    expect(stockings).not.toContain("黑丝与腿部触感"); expect(stockings).not.toContain("刚把黑丝脱了");
     const invite = matchActiveDrawers(drawers, "想约你开房").join("\n");
-    expect(invite).toContain("打压轻浮与纠正姿态");
-    expect(invite).toContain("真站我跟前");
-    expect(invite).not.toContain("一句硬话回掉");
+    expect(invite).toContain("被反复邀约的线上婉拒");
+    expect(invite).toContain("家里走不开");
+    expect(invite).toContain("婆婆在");
+    expect(invite).not.toContain("第一次就白天找个公开地方");
+    expect(invite).not.toContain("代付");
+    expect(invite).not.toContain("高位拿捏");
 
-    const rainyNeck = matchActiveDrawers(drawers, "今晚下雨 后背酸得厉害").join("\n");
-    expect(rainyNeck).toContain("居家放松与颈背酸胀");
-    expect(rainyNeck).toContain("后背和颈椎酸得要命");
+    const lifestyle = matchActiveDrawers(drawers, "今天下雨 上班堵车吗").join("\n");
+    expect(lifestyle).toContain("成熟男士生活与出行了解");
+    expect(lifestyle).toContain("还是坐办公室");
 
     expect(matchActiveDrawers(drawers, "今天吃什么了")).toEqual([]);
   });
@@ -602,11 +601,10 @@ describe("media selection", () => {
     // 真机（遇见 2026-10-07 23:10）：她发出去“刚关了电脑 屋里就剩”，对方回“就剩什么”。
     const reply = "刚关了电脑 屋里就剩\n我这盏灯还亮着呢";
     const fixed = capReplyLength(reply, "你在干嘛");
-    // 句中换行只补成空格，整句话完整留下，不能切成半句。
-    expect(fixed).toBe("刚关了电脑 屋里就剩 我这盏灯还亮着呢");
+    expect(fixed).toBe("刚关了电脑|||屋里就剩|||我这盏灯还亮着呢");
   });
 
-  it("keeps model segments untouched instead of rewriting their words", () => {
+  it("keeps a clear twelve-character reply as one bubble", () => {
     expect(capReplyLength(
       "看这边|||你这起床方式够直接的",
       "起床窝尿啦！",
@@ -654,18 +652,20 @@ describe("media selection", () => {
     expect(fixed).toBe("大学城啊|||那头我可不太熟|||你常往那边跑？");
   });
 
-  it("does not split a complete sentence by length or spaces", () => {
+  it("splits space-separated short thoughts without cutting words", () => {
     const reply = "大学城啊 那头我可不太熟 你常往那边跑？";
-    expect(capReplyLength(reply, "我在大学城")).toBe(reply);
+    expect(capReplyLength(reply, "我在大学城")).toBe(
+      "大学城啊|||那头我可不太熟|||你常往那边跑？",
+    );
   });
 
-  it("drops extra whole pieces instead of packing fragments together", () => {
+  it("rejects extra pieces instead of silently dropping meaning", () => {
     const fixed = capReplyLength(
-      "第一句|||第二句|||第三句|||第四句",
+      "第一句|||第二句|||第三句|||第四句|||第五句|||第六句",
       "继续说",
     );
 
-    expect(fixed).toBe("第一句|||第二句|||第三句");
+    expect(fixed).toBe("");
   });
 
   it("splits at clear message changes without changing the words", () => {
@@ -714,16 +714,16 @@ describe("media selection", () => {
 
   it("keeps long complete thoughts instead of replacing them with a fallback line", () => {
     const long = "这是一个超过二十五个字并且完全没有任何停顿的完整想法必须继续往下说";
-    expect(capReplyLength(JSON.stringify({ messages: [long] }), "在吗")).toBe(long);
-    expect(capReplyLength("行动就是别光在手机上打字 周末两江新区 你敢出来见一面吗？", "你在干嘛")).toBe("行动就是别光在手机上打字 周末两江新区 你敢出来见一面吗？");
-    expect(capReplyLength("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？", "你好")).toBe("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？");
+    expect(capReplyLength(JSON.stringify({ messages: [long] }), "在吗")).toBe("");
+    expect(capReplyLength("行动就是别光在手机上打字 周末两江新区 你敢出来见一面吗？", "你在干嘛")).toBe("");
+    expect(capReplyLength("白天规规矩矩的 晚上才有空喘口气 你看着挺老实的 心里是不是也好奇我这一面？", "你好")).toBe("");
   });
 
   it("only uses complete punctuation when an overlong message needs a safe fallback split", () => {
-    const first = "第一句完整内容要写得长一点";
-    const second = "第二句完整内容也要写得长一点";
+    const first = "第一句完整内容要写得长一点并且超过限制的字数";
+    const second = "第二句完整内容也要写得长一点并且也是完整的话";
     expect(capReplyLength(JSON.stringify({ messages: [first + "。" + second + "。"] }), "在吗"))
-      .toBe(first + "。|||" + second + "。");
+      .toBe("");
   });
 
   it("drops a repeated delay excuse but keeps the substance", () => {

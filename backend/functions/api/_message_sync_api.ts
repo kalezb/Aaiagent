@@ -50,21 +50,6 @@ export async function handleMessageSyncRequest({
       nowSec,
     );
     let skippedDuplicates = 0;
-    // 2026-10-07（方案 B 第二层）：手机重读同一条消息时，消息 key 可能变（时间标签会变），
-    // 以前就会在历史里插出重复行（稀奇真机就是这样）。这里按“谁发的+内容”再做一道时间窗去重。
-    const recentContentKeys = new Set();
-    try {
-      const recentRows = await env.DB.prepare(
-        "SELECT role, content FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? AND created_at > ?"
-      ).bind(tokenRow.token, platform, contact_id, nowSec - 6 * 3600).all();
-      for (const row of recentRows?.results || []) {
-        recentContentKeys.add(
-          String(row.role) + "\u001f" + normalizeTranscriptFingerprint(row.content),
-        );
-      }
-    } catch (_) {
-      // 查不到就跳过去重，不影响正常同步。
-    }
     for (let index = 0; index < messages.length; index++) {
       const msg = messages[index] || {};
       const role = msg.role === "assistant" ? "assistant" : "user";
@@ -78,14 +63,6 @@ export async function handleMessageSyncRequest({
         }
       }
       const source = normalizeMessageSource(msg.source);
-      const contentKey = role + "\u001f" + normalizeTranscriptFingerprint(content);
-      // 只挡“纯重复同步”；如果这次报的是 human_phone（本人手打确认），
-      // 那是对已有行的来源修正，不能挡。
-      if (source !== "human_phone" && recentContentKeys.has(contentKey)) {
-        skippedDuplicates += 1;
-        continue;
-      }
-      recentContentKeys.add(contentKey);
       validMessages.push({
         role,
         content,
@@ -106,6 +83,25 @@ export async function handleMessageSyncRequest({
         voice_seconds: Math.max(0, Math.min(600, Number(msg.voice_seconds || 0) || 0)),
       });
     }
+    // 旧版本把聊天页分组时间冒充成每条消息的时间，可能把新消息排到回复前面。
+    // 手机现在能确认“这条消息自己确实带时间”时，只修正同一条已有记录，不补造新消息。
+    // 判断顺序仍由纠偏后的绝对时间和消息编号共同完成。
+    const timeCorrections = validMessages
+      .filter((msg) => msg.time_kind === "ui_explicit")
+      .map((msg) => env.DB.prepare(
+        "UPDATE chat_history SET created_at = ?, time_kind = ? " +
+        "WHERE token = ? AND message_key = ? AND role = ? AND content = ? " +
+        "AND (time_kind != 'ui_explicit' OR created_at != ?)"
+      ).bind(
+        msg.created_at,
+        msg.time_kind,
+        tokenRow.token,
+        msg.message_key,
+        msg.role,
+        msg.content,
+        msg.created_at,
+      ));
+    if (timeCorrections.length) await env.DB.batch(timeCorrections);
     const stmt = env.DB.prepare(
       "INSERT OR IGNORE INTO chat_history (token, platform, contact_id, contact_name, role, content, created_at, source, message_key, persona_id, persona_version, time_kind, transcript, voice_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );

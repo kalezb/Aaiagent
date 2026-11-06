@@ -19,7 +19,7 @@ import { readDashboardScript } from "./dashboard-source";
 
 describe("dashboard rules, incidents, and replay", () => {
   it("seeds and edits the unified Agent rule catalog used by chat", async () => {
-    expect(LEGACY_AGENT_RULES).toHaveLength(41);
+    expect(LEGACY_AGENT_RULES).toHaveLength(36);
     expect(DEFAULT_AGENT_RULES.length).toBeGreaterThan(LEGACY_AGENT_RULES.length);
     expect(new Set(LEGACY_AGENT_RULES.map((rule) => rule.gate))).toEqual(
       new Set(["input", "prompt", "output", "execution"]),
@@ -40,6 +40,18 @@ describe("dashboard rules, incidents, and replay", () => {
       total: expect.any(Number),
       errors: expect.any(Number),
       warnings: expect.any(Number),
+    });
+    expect(listBody.sutang_health).toMatchObject({
+      persona_id: "female_sutang",
+      status: "ok",
+      summary: {
+        legacy_handled: 4,
+        legacy_active: 0,
+        residual_conflicts: 0,
+        rewritten_ok: 10,
+        cards_ok: 4,
+        retired_cards_removed: 40,
+      },
     });
     expect(new Set(listBody.rules.map((rule: any) => rule.gate))).toEqual(
       new Set(["input", "prompt", "output", "execution"]),
@@ -340,6 +352,14 @@ describe("dashboard rules, incidents, and replay", () => {
     expect(htmlSource).toContain('id="createDashboardReplayButton"');
     expect(htmlSource).toContain('id="saveDashboardIncidentStatusButton"');
     expect(htmlSource).toContain('id="runReplayCasesButton"');
+    expect(appSource).toContain("默认规则已收起");
+    expect(appSource).toContain("showDefaultAgentRules");
+    expect(appSource).toContain("renderSutangRuleHealth");
+    expect(appSource).toContain("data-sutang-health-rule");
+    expect(appSource).toContain("ruleAppliesToPersona(item, activePersonaId())");
+    expect(appSource).toContain("var personaRules = state.agentRules.filter");
+    expect(htmlSource).toContain('id="sutangRuleHealthCard"');
+    expect(htmlSource).toContain('id="sutangRuleHealthBody"');
   });
 
   it("turns an incident into a permanent replay case", async () => {

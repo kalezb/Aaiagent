@@ -54,8 +54,19 @@ internal fun MainActivity.toggleHosting(enable: Boolean) {
 internal fun MainActivity.startHostingPolling(engine: com.aaiagent.engine.MessageEngine) {
         statePollJob?.cancel()
         statePollJob = lifecycleScope.launch {
+            var tick = 0
             while (isHosting) {
                 engineState = engine.currentState().toString()
+                tick++
+                if (tick % 10 == 0) {
+                    val latest = withContext(Dispatchers.IO) { repository.getContactBlacklist() }
+                    if (latest != contactBlacklist) {
+                        contactBlacklist = latest
+                    }
+                }
+                if (tick % 30 == 0) {
+                    runCatching { loadServerConfig() }
+                }
                 kotlinx.coroutines.delay(500)
             }
         }

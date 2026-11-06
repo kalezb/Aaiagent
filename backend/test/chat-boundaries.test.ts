@@ -316,8 +316,8 @@ describe("chat boundaries", () => {
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    // 星暮的表达硬规则会把疑问句补上问号，这里只验证“原样发出、不再重写”。
-    expect(String(payload.reply || "")).toBe("嗯，怎么了？");
+    // 普通语气不再由后端补问号或改写。
+    expect(String(payload.reply || "")).toBe("嗯，怎么了");
   });
 
   it("sends an off-topic answer as-is now that the rewrite channel is off", async () => {
@@ -618,6 +618,19 @@ describe("chat boundaries", () => {
       config_version: 2,
       updated_at: now,
     });
+    let capturedBody = "";
+    const fetchMock = vi.fn().mockImplementation(async (input: Request | string, init?: RequestInit) => {
+      capturedBody = input instanceof Request
+        ? await input.clone().text()
+        : String(init?.body || "");
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "想聊就加我QQ 12345678" } }],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -638,51 +651,45 @@ describe("chat boundaries", () => {
       },
     } as never);
 
-    // 2026-10-12 用户要求：苏棠不再人工接管，微信、QQ、电话由她自己回绝，聊天继续。
+    // 苏棠的 QQ 时机交给模型判断，但号码只能来自 App 端资料。
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.action).toBe("send");
     expect(body.human_takeover).toBeUndefined();
-    expect(String(body.reply || "")).toMatch(/豆瓣|QQ/);
+    expect(body.reply).toBe("想聊就加我QQ 12345678");
+    expect(capturedBody).toContain("12345678");
+    expect(capturedBody).not.toContain("sutang2026");
   });
 
-  it("seeds the final Su Tang persona in schema and the v13 action-ladder migration", () => {
+  it("seeds the current Su Tang persona and removes child/hotel wording from the latest migration", () => {
     const schema = readFileSync(new URL("../db/schema.sql", import.meta.url), "utf8");
     const migration = readFileSync(
-      new URL("../db/migrations/20261012_sutang_persona_v13_action_ladder.sql", import.meta.url),
-      "utf8",
-    );
-    const stateMigration = readFileSync(
-      new URL("../db/migrations/20261012_sutang_persona_v15_state_transition.sql", import.meta.url),
+      new URL("../db/migrations/20261107_sutang_no_child_no_hotel.sql", import.meta.url),
       "utf8",
     );
     const sutangStart = schema.indexOf("VALUES ('female_sutang'");
     const sutangEnd = schema.indexOf("ON CONFLICT(id) DO UPDATE", sutangStart);
     const sutangSchema = schema.slice(sutangStart, sutangEnd);
 
-    expect(sutangSchema).toContain("沉浸式都市情感剧中的女主角“苏棠”");
-    expect(sutangSchema).toContain("3 到 20 个字");
-    expect(sutangSchema).toContain("书影音软件");
-    expect(sutangSchema).toContain("精神自留地");
-    expect(sutangSchema).toContain("偷拍或隐私风险");
-    expect(sutangSchema).toContain("两个人一起挑、一起确认");
-    expect(sutangSchema).toContain("言语轻浮却行动退缩");
-    expect(sutangSchema).toContain("State Transition & Progression");
-    expect(sutangSchema).toContain("1次认可 + 1次具体推进");
+    expect(sutangSchema).toContain("你扮演苏棠，29 岁，已婚");
+    expect(sutangSchema).toContain("没有孩子");
+    expect(sutangSchema).toContain("只谈线上");
+    expect(sutangSchema).not.toContain("3 岁女儿");
+    expect(sutangSchema).not.toContain("高档酒店");
+    expect(sutangSchema).not.toContain("发代付");
+    expect(sutangSchema).toContain("不催对方睡觉");
+    expect(sutangSchema).toContain("每次回复 1 到 3 条");
+    expect(sutangSchema).toContain("整轮最多 25 个字");
     expect(sutangSchema).not.toContain("黑丝");
     expect(sutangSchema).not.toContain("出浴真空");
-    expect(sutangSchema).not.toContain("最终奖励");
-    expect(sutangSchema).not.toContain("服从训练");
-    expect(migration).toContain("Action Progression & Anti-Loop");
-    expect(migration).toContain("sutang_action_ladder");
-    expect(migration).toContain("第一次可以试探，第二次必须给具体下一步");
-    expect(migration).toContain("同一诚意最多考一次");
-    expect(migration).toContain("隐私安全");
-    expect(stateMigration).toContain("State Transition & Progression");
-    expect(stateMigration).toContain("1次认可 + 1次具体推进");
-    expect(stateMigration).toContain("问号只用于二选一、时间确认、轻偏好确认");
-    expect(sutangSchema).not.toContain("男方主动承担所有成本与统筹责任");
-    expect(schema).toContain('"has_children":true,"children_age":3');
+    expect(sutangSchema).not.toContain("高位审视");
+    expect(sutangSchema).not.toContain("逼问对方");
+    expect(migration).toContain("sutang_night_meeting_boundary");
+    expect(migration).toContain("douban_relationship_premise");
+    expect(migration).toContain("DELETE FROM agent_rules");
+    expect(migration).toContain("只谈线上");
+    expect(migration).not.toContain("发代付");
+    expect(schema).toContain('"has_children":false,"children_age":null');
   });
 
   it("routes a first contact request through the model and only blocks a real account leak", async () => {
@@ -903,10 +910,9 @@ describe("chat boundaries", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    // 旧格式没有消息数组时按一条完整消息发，不再由后台猜着切开。
     expect(body).toMatchObject({
       action: "send",
-      reply: "认识一下可以啊，我平时做旧数码回收，主要看机子情况",
+      reply: "认识一下可以啊|||我平时做旧数码回收|||主要看机子情况",
     });
     expect(body.reply).not.toBe("嗯，你刚说的这个我记住了。");
   });

@@ -8,7 +8,7 @@ import {
   defaultDrawersForPersona,
   parsePersonaDrawers,
 } from "./_persona_drawers";
-import { EMPTY_REPLY_FALLBACK } from "./_reply_policy";
+import { RETIRED_SUTANG_DRAWER_IDS } from "./_persona_drawers_data";
 
 export function normalizeDrawerKeywords(value) {
   if (Array.isArray(value)) {
@@ -38,6 +38,12 @@ export function normalizeDrawerReplyMode(value, fallback = "guide") {
   return mode === "exact" ? "exact" : mode === "guide" ? "guide" : fallback;
 }
 
+function optionalMinute(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const minute = Number(value);
+  return Number.isFinite(minute) ? minute : undefined;
+}
+
 export function mergeDrawerCards(
   defaults,
   overrides,
@@ -61,6 +67,9 @@ export function mergeDrawerCards(
       activation: normalizeDrawerActivation(override.activation ?? item.activation, "keyword"),
       replyMode: normalizeDrawerReplyMode(override.replyMode ?? item.replyMode, "guide"),
       priority: Number(override.priority ?? item.priority ?? 0) || 0,
+      minExchanges: Math.max(0, Number(override.minExchanges ?? item.minExchanges ?? 0) || 0),
+      afterMinute: optionalMinute(override.afterMinute ?? item.afterMinute),
+      beforeMinute: optionalMinute(override.beforeMinute ?? item.beforeMinute),
       enabled: override.enabled === undefined ? item.enabled !== false : override.enabled !== false,
       deleted: override.deleted === true,
       source: "default",
@@ -74,6 +83,9 @@ export function mergeDrawerCards(
     activation: normalizeDrawerActivation(item.activation, "keyword"),
     replyMode: normalizeDrawerReplyMode(item.replyMode, "guide"),
     priority: Number(item.priority || 0) || 0,
+    minExchanges: Math.max(0, Number(item.minExchanges || 0) || 0),
+    afterMinute: optionalMinute(item.afterMinute),
+    beforeMinute: optionalMinute(item.beforeMinute),
     enabled: item.enabled !== false,
     deleted: item.deleted === true,
     source: "custom",
@@ -84,11 +96,30 @@ export function effectivePersonaDrawers(personaId, storedValue) {
   const stored = parsePersonaDrawers(storedValue);
   const defaults = defaultDrawersForPersona(personaId);
   const visible = (list) => (list || []).filter((item) => item.deleted !== true);
+  const topics = visible(mergeDrawerCards(defaults.topics || [], stored.topics, "topic", { includeUnknown: false }));
   return {
-    topics: visible(mergeDrawerCards(defaults.topics || [], stored.topics, "topic", { includeUnknown: false })),
+    topics,
     counters: visible(mergeDrawerCards(defaults.counters || [], stored.counters, "counter", { includeUnknown: false })),
     custom: visible(mergeDrawerCards([], stored.custom, "lore")),
   };
+}
+
+export function stripRetiredSutangDrawers(storedValue: unknown) {
+  const stored = parsePersonaDrawers(storedValue);
+  const retired = new Set(RETIRED_SUTANG_DRAWER_IDS);
+  let changed = false;
+  const cleanGroup = (list = []) => list.filter((item) => {
+    const remove = retired.has(String(item?.id || ""));
+    if (remove) changed = true;
+    return !remove;
+  });
+  const value = {
+    ...stored,
+    topics: cleanGroup(stored.topics || []),
+    counters: cleanGroup(stored.counters || []),
+    custom: cleanGroup(stored.custom || []),
+  };
+  return { changed, value };
 }
 
 export async function loadPublishedPersonaSnapshot(db, personaId) {
@@ -169,5 +200,5 @@ export function stripForeignPersonaSegments(value, foreignTerms) {
     .split(/\|\|\||\r?\n/u)
     .map((part) => part.trim())
     .filter((part) => part && !foreignTerms.some((term) => part.includes(term)));
-  return kept.length ? kept.join("|||") : EMPTY_REPLY_FALLBACK;
+  return kept.join("|||");
 }

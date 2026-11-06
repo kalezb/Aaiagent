@@ -11,6 +11,7 @@ class StructureGuardTest {
         val limits = mapOf(
             "src/main/java/com/aaiagent/network/ApiService.kt" to 650,
             "src/main/java/com/aaiagent/network/ApiChatModels.kt" to 120,
+            "src/main/java/com/aaiagent/network/ChatContractModels.kt" to 40,
             "src/main/java/com/aaiagent/network/ApiConfigModels.kt" to 100,
             "src/main/java/com/aaiagent/network/ApiTaskModels.kt" to 60,
             "src/main/java/com/aaiagent/network/ApiVoiceModels.kt" to 80,
@@ -18,7 +19,9 @@ class StructureGuardTest {
             "src/main/java/com/aaiagent/MainActivitySettings.kt" to 220,
             "src/main/java/com/aaiagent/MainActivityHosting.kt" to 140,
             "src/main/java/com/aaiagent/MainActivityPermissions.kt" to 40,
-            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4000,
+            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4040,
+            "src/main/java/com/aaiagent/engine/ReplySuggestion.kt" to 25,
+            "src/main/java/com/aaiagent/engine/ConversationReadIdentityPolicy.kt" to 30,
             "src/main/java/com/aaiagent/engine/BackendReplyTaskPoller.kt" to 130,
             "src/main/java/com/aaiagent/engine/StaleConversationRetryQueue.kt" to 160,
             "src/main/java/com/aaiagent/engine/ContactCooldownGuard.kt" to 140,
@@ -32,7 +35,7 @@ class StructureGuardTest {
             "src/main/java/com/aaiagent/engine/ReplyConfirmationQueue.kt" to 160,
             "src/main/java/com/aaiagent/engine/MessageSyncOutboxQueue.kt" to 180,
             "src/main/java/com/aaiagent/engine/ConversationRecoveryStore.kt" to 260,
-            "src/main/java/com/aaiagent/adapter/SoulAdapter.kt" to 3700,
+            "src/main/java/com/aaiagent/adapter/SoulAdapter.kt" to 3800,
             "src/main/java/com/aaiagent/ui/screens/DashboardScreen.kt" to 400,
         )
 

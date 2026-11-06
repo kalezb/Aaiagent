@@ -21,4 +21,22 @@ describe("transcript runtime", () => {
     expect(line).toContain("对方：[语音|转写：我到家了]");
     expect(line).toContain("·读到");
   });
+
+  it("uses the typed voice marker even when the page caption varies", () => {
+    const transcribed = formatTranscriptLine({
+      role: "user",
+      type: "voice",
+      content: "[语音消息]",
+      transcript: "我先去洗澡了",
+    }, 0, 1_700_000_010);
+    const missing = formatTranscriptLine({
+      role: "user",
+      type: "voice",
+      content: "[语音]",
+      transcript: "",
+    }, 0, 1_700_000_010);
+
+    expect(transcribed).toContain("[语音|转写：我先去洗澡了]");
+    expect(missing).toContain("[语音|未转写]");
+  });
 });

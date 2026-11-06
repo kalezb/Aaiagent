@@ -24,7 +24,10 @@ object SoulMessageTime {
 
     data class Context(
         val text: String = "",
-        val epochMillis: Long? = null
+        val epochMillis: Long? = null,
+        // 只有当前这条消息自己带着时间节点时才算真实页面时间。
+        // 沿用的分组时间只用于保持顺序，不能交给云端当成发送时间。
+        val explicit: Boolean = false,
     )
 
     /**
@@ -40,14 +43,20 @@ object SoulMessageTime {
         fun observe(raw: String?): Context {
             val text = raw?.trim().orEmpty()
             if (text.isNotEmpty()) {
+                val parsedEpochMillis = parseToEpochMillis(text, nowMillis())
                 current = Context(
                     text = text,
-                    epochMillis = parseToEpochMillis(text, nowMillis())
+                    epochMillis = parsedEpochMillis,
+                    explicit = parsedEpochMillis != null,
                 )
                 inheritedEpochMillis = current.epochMillis
             } else if (inheritedEpochMillis != null) {
                 inheritedEpochMillis = inheritedEpochMillis?.plus(INHERITED_GROUP_STEP_MS)
-                current = current.copy(epochMillis = inheritedEpochMillis)
+                current = Context(
+                    text = "",
+                    epochMillis = inheritedEpochMillis,
+                    explicit = false,
+                )
             }
             return current
         }

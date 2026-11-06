@@ -9,6 +9,7 @@ import { buildLayeredSystemPrompt } from "../functions/api/_reply_policy";
 import {
   MockD1,
   MockKV,
+  markHisPhotoSeen,
 } from "./chat-test-helpers";
 
 describe("media runtime", () => {
@@ -91,6 +92,7 @@ describe("media runtime", () => {
       ],
     });
     db.tokenPersonas.set("test-token", "assistant");
+    markHisPhotoSeen(db);
     // 2026-10-06：图片请求现在先叫一次模型写“欲拒还迎”那句话，图片本身仍按关键词兜底发。
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

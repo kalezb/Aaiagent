@@ -9,6 +9,7 @@ const dashboardScripts = [
   "dashboard-library.js",
   "dashboard-knowledge.js",
   "dashboard-program-rules.js",
+  "dashboard-sutang-health.js",
   "dashboard-rule-center.js",
   "dashboard-init.js",
 ];

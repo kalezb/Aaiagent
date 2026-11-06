@@ -22,7 +22,13 @@ object IncomingConversationTracker {
         if (currentFingerprint.isBlank()) return true
         val expected = expectedFingerprint.split(SEPARATOR).filter(String::isNotEmpty)
         val current = currentFingerprint.split(SEPARATOR).filter(String::isNotEmpty)
-        if (current.isEmpty() || current.size > expected.size) return false
+        if (current.isEmpty()) return true
+        if (current.size > expected.size) {
+            // A slightly taller viewport can reveal older incoming messages above
+            // the same latest batch. That is not a new message and must not cancel
+            // a prepared reply.
+            return current.takeLast(expected.size) == expected
+        }
         return expected.windowed(current.size).any { it == current }
     }
 

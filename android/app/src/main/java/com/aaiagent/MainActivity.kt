@@ -263,7 +263,7 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {}
     }
 
-    private suspend fun loadServerConfig() {
+    internal suspend fun loadServerConfig() {
         if (token.isBlank()) return
         try {
             val config = ApiService(apiBase).getConfig(token)
@@ -328,6 +328,11 @@ class MainActivity : ComponentActivity() {
                     personaFacts.workCity,
                     personaFacts.workDistrict,
                 )
+            }
+            config.contactBlacklist?.let { serverBlacklist ->
+                val normalized = com.aaiagent.data.repository.ContactListCodec.normalize(serverBlacklist)
+                contactBlacklist = normalized
+                withContext(Dispatchers.IO) { repository.setContactBlacklist(normalized) }
             }
         } catch (_: Exception) {}
     }
@@ -404,6 +409,10 @@ class MainActivity : ComponentActivity() {
         }
         resumeRequestedHosting()
         ForegroundService.ensureRunning(this)
+        lifecycleScope.launch {
+            contactBlacklist = withContext(Dispatchers.IO) { repository.getContactBlacklist() }
+            loadServerConfig()
+        }
     }
 
     override fun onDestroy() {

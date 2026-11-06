@@ -470,21 +470,20 @@ describe("时间感知与多会话状态管理模块 (_temporal_state)", () => {
         expect(promptLate).toContain("亲密");
       });
 
-      it("苏棠在同一天（activeDays: 1）连贯互动15条以上、要了2次联系方式即可放行豆瓣，不再强制卡2天", () => {
+      it("苏棠的联系方式不再由固定轮数代码直接放行", () => {
         const policy = resolveContactRequestPolicy({
-          requestCount: 2,
-          stage: 1,
-          activity: { totalExchanges: 16, activeDays: 1 },
-          incomingText: "加个豆瓣聊呗",
-          contactChannel: "douban",
-          contactQq: "sutang2026",
+          requestCount: 1,
+          stage: 2,
+          activity: { totalExchanges: 12, activeDays: 1 },
+          incomingText: "加个QQ聊呗",
+          contactChannel: "qq",
+          contactQq: "12345678",
           xingmuScope: false,
           sutangScope: true,
         });
-        expect(policy.allowed).toBe(true);
-        expect(policy.reply).toBe("前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026");
+        expect(policy.allowed).toBe(false);
+        expect(policy.reply).toBe("");
       });
     });
   });
-
 

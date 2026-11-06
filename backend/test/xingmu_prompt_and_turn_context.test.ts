@@ -5,8 +5,8 @@ import {
   classifyConversationTurn,
   isXingmuSoulScope,
   PROACTIVE_STYLE_GENERIC,
-  PROACTIVE_STYLE_SUTANG,
   PROACTIVE_STYLE_XINGMU,
+  SUTANG_ACTION_LADDER_RULE,
 } from "../functions/api/_reply_policy";
 
 describe("Xingmu prompt and turn context", () => {
@@ -83,7 +83,7 @@ describe("Xingmu prompt and turn context", () => {
     expect(qqPrompt).toContain("[[SELF_LEAVE:类型]]");
     expect(qqPrompt).not.toContain("见面或开房当成");
     expect(qqPrompt).toContain(PROACTIVE_STYLE_XINGMU);
-    expect(qqPrompt).not.toContain(PROACTIVE_STYLE_SUTANG);
+    expect(qqPrompt).not.toContain(SUTANG_ACTION_LADDER_RULE);
 
     const otherPersonaPrompt = promptFor("你是陈屿，33岁男性。", "soul");
     expect(otherPersonaPrompt).not.toContain("【星暮六段漏斗】");
@@ -92,7 +92,7 @@ describe("Xingmu prompt and turn context", () => {
     expect(otherPersonaPrompt).toContain("你是陈屿，33岁男性。");
     expect(otherPersonaPrompt).toContain(PROACTIVE_STYLE_GENERIC);
     expect(otherPersonaPrompt).not.toContain(PROACTIVE_STYLE_XINGMU);
-    expect(otherPersonaPrompt).not.toContain(PROACTIVE_STYLE_SUTANG);
+    expect(otherPersonaPrompt).not.toContain(SUTANG_ACTION_LADDER_RULE);
   });
 
   it("keeps Xingmu identity on non-Soul platforms after removing the platform guard", () => {

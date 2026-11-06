@@ -95,7 +95,7 @@ function setSharedFactValue(id, value) {
 }
 
 function sharedContactLabel() {
-  return ($("drawerPersona") && $("drawerPersona").value) === "female_sutang" ? "豆瓣号" : "QQ号";
+  return "QQ号";
 }
 
 function renderSharedFacts(facts, version) {

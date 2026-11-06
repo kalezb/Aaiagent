@@ -23,6 +23,10 @@ $("manualInput").addEventListener("keydown", (event) => {
   }
 });
 $("priorityButton").addEventListener("click", togglePriority);
+$("blacklistButton")?.addEventListener("click", toggleBlacklist);
+$("reflexionLearnBtn")?.addEventListener("click", () => {
+  if (window.openReflexionModal) window.openReflexionModal();
+});
 $("bindButton").addEventListener("click", openBindModal);
 $("saveBindButton").addEventListener("click", saveBindings);
 $("bindSearchInput").addEventListener("input", renderBindContacts);

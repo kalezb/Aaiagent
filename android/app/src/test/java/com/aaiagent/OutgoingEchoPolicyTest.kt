@@ -70,4 +70,38 @@ class OutgoingEchoPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `the same line said minutes ago must still be sent after the peer replies`() {
+        // 2026-11-03 真机（00:17，小张晨）：模型把三分钟前的“嘴上这么甜”又说了一遍。
+        // 对方已经接了话，这就是新的一轮，必须真发出去，不能当成我们自己的回声吞掉。
+        val visibleMessages = listOf(
+            ChatMessage(sender = "self", content = "嘴上这么甜"),
+            ChatMessage(sender = "self", content = "才刚认识呢"),
+            ChatMessage(sender = "peer", content = "小姐姐呀也没睡呀"),
+        )
+
+        assertFalse(
+            OutgoingEchoPolicy.shouldSkipSend(
+                text = "嘴上这么甜",
+                visibleMessages = visibleMessages,
+            )
+        )
+    }
+
+    @Test
+    fun `a bubble that is still the newest message is treated as our own echo`() {
+        // 真机：发出去以后没有验证到，几秒后重发一次。这时对方还没接话，属于回声，跳过。
+        val visibleMessages = listOf(
+            ChatMessage(sender = "peer", content = "在干嘛"),
+            ChatMessage(sender = "self", content = "刚哄完娃呢"),
+        )
+
+        assertTrue(
+            OutgoingEchoPolicy.shouldSkipSend(
+                text = "刚哄完娃呢",
+                visibleMessages = visibleMessages,
+            )
+        )
+    }
 }

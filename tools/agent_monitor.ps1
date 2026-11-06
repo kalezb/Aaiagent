@@ -10,6 +10,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding = $Utf8NoBom
+[Console]::OutputEncoding = $Utf8NoBom
 
 function Get-AdbState {
     try {
@@ -41,11 +44,12 @@ function Get-AccessibilityState {
 
 function Get-ForegroundPackage {
     $line = adb shell dumpsys activity activities 2>$null |
-        Select-String 'mResumedActivity' |
+        Select-String 'topResumedActivity|mResumedActivity|ResumedActivity' |
         Select-Object -First 1
     if ($null -eq $line) { return "" }
     $text = $line.Line
-    if ($text -match 'u0\s+([^/]+)/') { return $matches[1] }
+    if ($text -match 'u0\s+([^/\s]+)/') { return $matches[1] }
+    if ($text -match '([A-Za-z][A-Za-z0-9_.]+)/[A-Za-z0-9_.]+') { return $matches[1] }
     return $text.Trim()
 }
 
@@ -115,6 +119,10 @@ function Stop-Worker {
     }
     if (Test-Path -LiteralPath $pidPath) {
         $workerPid = [int]((Get-Content -LiteralPath $pidPath -Raw).Trim())
+        for ($attempt = 0; $attempt -lt 12; $attempt++) {
+            if ($null -eq (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Milliseconds 500
+        }
         Stop-Process -Id $workerPid -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
     }
@@ -154,10 +162,22 @@ function Run-Worker {
     $seenJournal = @{}
     $pendingClick = $null
     $pendingRead = $null
+    $currentContact = ""
+    $requestAttempts = @{}
     $roundTimes = New-Object System.Collections.Generic.List[datetime]
 
     $logPattern = 'FATAL EXCEPTION|ANR in com\.aaiagent|Process com\.aaiagent.*(died|killed)|E/AIA|W/AIA|D/AIA'
     $journalWatch = '状态变化|点进会话|读消息|发消息|点错页面|恢复|失败|异常|无法|重试|超时|卡死|崩溃'
+
+    # Treat pre-existing history as already seen. A monitor session should only
+    # report incidents that happen after it starts.
+    foreach ($line in ((adb logcat -d -v time -t 1500 2>$null) | Select-String -Pattern $logPattern)) {
+        $seenLogs[$line.Line] = $true
+    }
+    foreach ($line in ((adb shell run-as $PackageName cat files/journal/runtime_journal.txt 2>$null) |
+            Select-String -Pattern $journalWatch)) {
+        $seenJournal[$line.Line] = $true
+    }
 
     Append-JsonLine $eventsPath @{
         time = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -218,6 +238,25 @@ function Run-Worker {
                     $roundTimes.Clear()
                 }
             }
+            if ($text -match 'chat request attempt=\d+/\d+ .*requestId=([^\s]+)') {
+                $requestId = $matches[1]
+                if (!$requestAttempts.ContainsKey($requestId)) {
+                    $requestAttempts[$requestId] = @{
+                        count = 1
+                        firstAt = $now
+                        contact = $currentContact
+                        alerted = $false
+                    }
+                } else {
+                    $requestAttempts[$requestId].count += 1
+                }
+                $attemptState = $requestAttempts[$requestId]
+                if ($attemptState.count -ge 4 -and !$attemptState.alerted) {
+                    Add-Alert $SessionDir "STUCK_REQUEST" `
+                        "same chat request repeated $($attemptState.count) times contact=$($attemptState.contact) requestId=$requestId"
+                    $attemptState.alerted = $true
+                }
+            }
         }
 
         $journal = adb shell run-as $PackageName cat files/journal/runtime_journal.txt 2>$null
@@ -232,16 +271,36 @@ function Run-Worker {
             }
             if ($text -match '点进会话 \| 成功 \| 联系人=(.+)$') {
                 $contact = $matches[1].Trim()
+                $currentContact = $contact
                 $pendingClick = @{ contact = $contact; at = $now }
             }
             if ($text -match '状态变化 \| Idle → ReadingMessages') {
                 $pendingClick = $null
             }
             if ($text -match '读消息 \| 读到') {
-                $pendingRead = @{ at = $now; text = $text }
+                $readText = if ($text -match '读消息 \| (.*)$') {
+                    $matches[1].Trim()
+                } else {
+                    $text.Trim()
+                }
+                $readKey = "$currentContact|$readText"
+                if ($null -eq $pendingRead -or $pendingRead.key -ne $readKey) {
+                    $pendingRead = @{
+                        key = $readKey
+                        at = $now
+                        text = $readText
+                        contact = $currentContact
+                        count = 1
+                        repeatAlerted = $false
+                        timeoutAlerted = $false
+                    }
+                } else {
+                    $pendingRead.count += 1
+                }
             }
             if ($text -match '发消息 \| 成功') {
                 $pendingRead = $null
+                $currentContact = ""
             }
             if ($text -match '失败|异常|无法|点错|重试|超时|卡死|崩溃') {
                 Add-Alert $SessionDir "JOURNAL" $text
@@ -251,9 +310,21 @@ function Run-Worker {
             Add-Alert $SessionDir "STUCK_CLICK" "no reading state after click contact=$($pendingClick.contact)"
             $pendingClick = $null
         }
-        if ($null -ne $pendingRead -and ($now - $pendingRead.at).TotalSeconds -gt 35) {
+        if ($null -ne $pendingRead -and
+            $pendingRead.count -ge 3 -and
+            ($now - $pendingRead.at).TotalSeconds -ge 12 -and
+            !$pendingRead.repeatAlerted
+        ) {
+            Add-Alert $SessionDir "STUCK_REPEAT" `
+                "same message read $($pendingRead.count) times without send contact=$($pendingRead.contact) text=$($pendingRead.text)"
+            $pendingRead.repeatAlerted = $true
+        }
+        if ($null -ne $pendingRead -and
+            ($now - $pendingRead.at).TotalSeconds -gt 35 -and
+            !$pendingRead.timeoutAlerted
+        ) {
             Add-Alert $SessionDir "STUCK_SEND" "read but no send after 35 seconds: $($pendingRead.text)"
-            $pendingRead = $null
+            $pendingRead.timeoutAlerted = $true
         }
 
         if ($seenLogs.Count -gt 8000) { $seenLogs.Clear() }

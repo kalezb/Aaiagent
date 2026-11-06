@@ -2,6 +2,7 @@ package com.aaiagent.adapter
 
 object SoulMediaType {
     const val STICKER = "sticker"
+    const val DYNAMIC_VISUAL = "dynamic_visual"
     const val VOICE = "voice"
     const val VOICE_EMOJI = "voice_emoji"
 

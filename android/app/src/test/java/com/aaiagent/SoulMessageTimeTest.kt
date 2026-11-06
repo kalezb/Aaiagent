@@ -49,13 +49,14 @@ class SoulMessageTimeTest {
     }
 
     @Test
-    fun `timestamp context is inherited by following bubbles in the same group`() {
+    fun `timestamp context keeps order without pretending later bubbles have real send times`() {
         val tracker = SoulMessageTime.ContextTracker { now }
         val separator = tracker.observe("9月22日 06:59")
         val followingBubble = tracker.observe("")
 
-        assertEquals("9月22日 06:59", followingBubble.text)
+        assertEquals("", followingBubble.text)
         assertEquals(separator.epochMillis, followingBubble.epochMillis?.minus(SoulMessageTime.INHERITED_GROUP_STEP_MS))
+        assertEquals(false, followingBubble.explicit)
     }
 
     @Test

@@ -124,6 +124,7 @@ interface PlatformAdapter {
         pageIndex: Int? = null,
         requireUnread: Boolean = false,
         expectedPreview: String = "",
+        expectedTime: String = "",
     ): ConversationInfo? = null
 
     suspend fun navigateToMessageList(service: AccessibilityService, root: AccessibilityNodeInfo): Boolean
@@ -147,7 +148,12 @@ interface PlatformAdapter {
         val identityKey: String = "",
         // 2026-10-07 方案A：语音的转写文字与时长单独带出去（内容里的身份锚点仍是 [语音]，不受影响）。
         val transcript: String = "",
-        val voiceSeconds: Int = 0
+        val voiceSeconds: Int = 0,
+        // 页面或列表明确给出、可以作为真实消息时间使用的时间。
+        // 聊天页沿用的分组时间、一次读取时临时推算的时间不算。
+        val timestampTrusted: Boolean = timestampMillis != null,
+        // 这条消息在当前对话里的稳定位置，用来区分“同一句话又说了一遍”。
+        val ledgerKey: String = "",
     )
 
     data class ConversationInfo(

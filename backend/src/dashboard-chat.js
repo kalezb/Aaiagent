@@ -149,6 +149,45 @@ async function togglePriority() {
   }
 }
 
+async function toggleBlacklist() {
+  const group = state.selected;
+  if (!group) return;
+  if ($("blacklistButton")) $("blacklistButton").disabled = true;
+  try {
+    const isBlacklistFn = typeof isGroupBlacklisted === "function"
+      ? isGroupBlacklisted
+      : (window.DashboardUtils && window.DashboardUtils.isGroupBlacklisted);
+    const isCurrentlyBlacklisted = isBlacklistFn
+      ? isBlacklistFn(group)
+      : (group.aliases || []).some((alias) => Number(alias.is_whitelisted ?? 1) === 0);
+    const targetBlacklisted = !isCurrentlyBlacklisted;
+
+    $("actionStatus").textContent = targetBlacklisted ? "正在加入黑名单..." : "正在移出黑名单...";
+    const data = await api("PUT", "/customer-groups/blacklist", {
+      token: group.token,
+      group_id: group.id,
+      blacklisted: targetBlacklisted,
+    });
+    state.selected = {
+      ...state.selected,
+      ...data.group,
+      platforms: group.platforms || [],
+      last_message: group.last_message,
+      last_at: group.last_at,
+      message_count: group.message_count,
+    };
+    $("actionStatus").textContent = targetBlacklisted ? "已拉黑" : "已移出黑名单";
+    showToast(targetBlacklisted ? "已加入黑名单（手机端将同步停止回复）" : "已移出黑名单（已恢复正常回复）");
+    await loadCustomers();
+  } catch (error) {
+    $("actionStatus").textContent = `更新失败：${error.message}`;
+    showToast(error.message, "error");
+  } finally {
+    if ($("blacklistButton")) $("blacklistButton").disabled = false;
+    updateChatHeader();
+  }
+}
+
 async function openBindModal() {
   const group = state.selected;
   if (!group) return;

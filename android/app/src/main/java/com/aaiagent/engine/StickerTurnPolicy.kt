@@ -3,8 +3,7 @@ package com.aaiagent.engine
 import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 
 /**
- * 表情是一轮聊天里的状态和语气，不是一条必须单独回复的任务。
- * 只有带明显交流意图的问好、晚安这类表情，才继续走模型回复。
+ * 表情是一轮聊天里的状态和语气，不论是打招呼还是搞笑表情/动图，都正常交给大模型接茬回复。
  */
 object StickerTurnPolicy {
     private val MEDIA_PLACEHOLDER = Regex(
@@ -23,6 +22,7 @@ object StickerTurnPolicy {
         "image",
         "exchange",
         "voice_emoji",
+        "dynamic_visual",
         "moment_card",
     )
 
@@ -55,6 +55,6 @@ object StickerTurnPolicy {
         }
         if (incoming.any { it.type in NON_STICKER_MEDIA }) return true
         val stickers = incoming.filter { isStateSticker(it.content) }
-        return stickers.isNotEmpty() && stickers.any { isGreetingSticker(it.content) }
+        return stickers.isNotEmpty()
     }
 }

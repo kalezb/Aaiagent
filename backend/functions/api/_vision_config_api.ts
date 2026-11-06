@@ -114,6 +114,132 @@ export async function handleVisionConfigRequest({ request, env, path, method }) 
     });
   }
 
+  // POST /api/vision/ground - visual grounding for mobile UI popups and target coordinates
+  if (path === "/api/vision/ground" && method === "POST") {
+    const authHeader = request.headers.get("Authorization") || "";
+    const tokenRow = await validateToken(env.DB, authHeader);
+    if (!tokenRow) return json({ error: "无效的设备密钥" }, 401);
+
+    const body = await request.json();
+    const imageBase64 = typeof body.image_base64 === "string" ? body.image_base64.trim() : "";
+    const mimeType = typeof body.mime_type === "string" && body.mime_type.startsWith("image/")
+      ? body.mime_type
+      : "image/jpeg";
+    if (!imageBase64) return json({ success: false, error: "missing_image_base64" }, 400);
+    if (imageBase64.length > 8_000_000) {
+      return json({ success: false, error: "image_too_large" }, 413);
+    }
+
+    const screenWidth = Number(body.screen_width) || 1220;
+    const screenHeight = Number(body.screen_height) || 2712;
+    const intent = typeof body.intent === "string" && body.intent.trim()
+      ? body.intent.trim()
+      : "close_popup_or_find_input";
+
+    const prompt =
+      `你是移动端UI自主智能体视觉定位中枢。分析这张手机屏幕截图。\n` +
+      `屏幕物理分辨率：${screenWidth} x ${screenHeight}。\n` +
+      `当前执行意图：${intent}。\n\n` +
+      `任务：\n` +
+      `1. 检查页面是否有遮挡正常打字输入的弹窗、浮层、悬浮表情栏(含X关闭)、送礼打招呼或全屏遮罩。\n` +
+      `2. 若有遮挡：找出关闭按钮(X)或确认按钮的精确像素坐标(x, y)。\n` +
+      `3. 若无遮挡：找出消息输入框、发送按钮或当前最应该点击的目标坐标(x, y)。\n\n` +
+      `请只输出纯 JSON，不带任何 Markdown 代码块：\n` +
+      `{\n` +
+      `  "has_popup": true,\n` +
+      `  "popup_kind": "meme_bar",\n` +
+      `  "action": "click",\n` +
+      `  "target_point": {"x": 171, "y": 2346},\n` +
+      `  "normalized_point": {"x": 0.140, "y": 0.865},\n` +
+      `  "confidence": 0.95,\n` +
+      `  "reason": "检测到输入框上方悬浮表情栏，定位到左侧(X)关闭按钮"\n` +
+      `}`;
+
+    const budget = await enforceTokenBudget(env.DB, tokenRow);
+    if (!budget.allowed) return json({ success: false, error: "monthly_budget_exhausted" }, 429);
+
+    const visionSettings = await loadDeviceSettings(env.DB, tokenRow.token);
+    const visionConfig = await loadLlmConfig(env.KV, env, visionSettings.model_line);
+    const usingGeminiVision = isGeminiModelConfig(visionConfig);
+    const visionKey = usingGeminiVision
+      ? (visionConfig.apiKeyOverride || env.GEMINI_API_KEY || "")
+      : (env.VISION_API_KEY || env.DEEPSEEK_API_KEY || "");
+    if (!visionKey) return json({ success: false, error: "vision_not_configured" }, 503);
+    const visionBase = usingGeminiVision
+      ? visionConfig.baseUrl
+      : (env.VISION_API_BASE || env.DEEPSEEK_API_BASE || "https://api.deepseek.com/v1")
+        .replace(/\/+$/, "");
+    const visionModel = usingGeminiVision
+      ? visionConfig.modelName
+      : (env.VISION_MODEL || "deepseek-flash");
+
+    const upstream = await fetch(visionBase + "/chat/completions", {
+      method: "POST",
+      headers: buildModelHeaders(
+        visionKey,
+        usingGeminiVision ? visionConfig : { provider: "deepseek" },
+      ),
+      body: JSON.stringify(buildModelRequestPayload(
+        usingGeminiVision ? visionConfig : { provider: "deepseek" },
+        visionModel,
+        [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: { url: "data:" + mimeType + ";base64," + imageBase64 },
+            },
+          ],
+        }],
+        0.1,
+        512,
+      )),
+    });
+
+    if (!upstream.ok) {
+      return json({
+        success: false,
+        error: "vision_upstream_error",
+        status: upstream.status,
+      }, 502);
+    }
+
+    const result = await upstream.json();
+    const rawContent = result.choices?.[0]?.message?.content?.trim() || "";
+    await recordTokenUsage(
+      env.DB,
+      tokenRow.token,
+      estimateLlmCost({
+        usage: result.usage,
+        inputChars: prompt.length + imageBase64.length / 8,
+        outputChars: rawContent.length,
+      }, env, usingGeminiVision ? visionConfig : { provider: "deepseek" }),
+    );
+
+    let parsed: any = null;
+    const jsonMatch = rawContent.match(/\{[\s\S]*\}/u);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        parsed = null;
+      }
+    }
+
+    return json({
+      success: true,
+      has_popup: Boolean(parsed?.has_popup),
+      popup_kind: String(parsed?.popup_kind || "none"),
+      action: String(parsed?.action || "none"),
+      target_point: parsed?.target_point || null,
+      normalized_point: parsed?.normalized_point || null,
+      confidence: Number(parsed?.confidence) || 0.0,
+      reason: String(parsed?.reason || rawContent.slice(0, 100)),
+      provider: usingGeminiVision ? "gemini" : "deepseek",
+    });
+  }
+
   // POST /api/config/save — unified config save (device_key required)
   if (path === "/api/config/save" && method === "POST") {
     const body = await request.json();

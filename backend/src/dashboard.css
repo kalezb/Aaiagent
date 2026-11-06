@@ -210,6 +210,13 @@ button[data-lib-toggle][data-lib-next="0"]:hover {
   color: #faad14 !important;
 }
 
+/* 黑名单状态 */
+.blacklist-button.active {
+  background: #fff1f0 !important;
+  border: 1px solid #ffa39e !important;
+  color: #cf1322 !important;
+}
+
 .small-button { min-height: 24px; padding: 2px 7px; font-size: 11px; }
 .text-button { padding: 2px 0; color: var(--blue-text); font-weight: 500; font-size: 12px; }
 
@@ -513,6 +520,32 @@ button[data-lib-toggle][data-lib-next="0"]:hover {
 .rule-stat.warn strong { color: var(--warning); }
 .rule-stat.ok { background: var(--blue-soft); }
 .rule-stat.ok strong { color: var(--blue-text); }
+.rule-health-card { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-sm); overflow: hidden; }
+.rule-health-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line-soft); }
+.rule-health-head h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.rule-health-head p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.rule-health-stats { display: grid; grid-template-columns: repeat(4,1fr); border-bottom: 1px solid var(--line-soft); }
+.rule-health-stats > div { padding: 10px 14px; border-right: 1px solid var(--line-soft); }
+.rule-health-stats > div:last-child { border-right: 0; }
+.rule-health-stats span, .rule-health-stats small { display: block; color: var(--muted); font-size: 10px; }
+.rule-health-stats strong { display: block; margin: 3px 0 1px; font-size: 18px; line-height: 1.1; }
+.rule-health-body { display: grid; gap: 12px; padding: 12px 16px 14px; }
+.rule-health-group h4 { margin: 0 0 6px; font-size: 12px; }
+.rule-health-list { display: grid; gap: 5px; }
+.rule-health-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 9px; border: 1px solid var(--line-soft); background: var(--panel-soft); }
+.rule-health-item-main { min-width: 0; }
+.rule-health-item-main b { display: block; font-size: 11px; }
+.rule-health-item-main small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.rule-health-item-actions { display: flex; align-items: center; gap: 5px; flex: none; }
+.rule-health-ok { color: var(--blue-text); }
+.rule-health-bad { color: var(--danger-text); }
+.rule-health-warn { color: var(--warning); }
+@media (max-width: 760px) {
+  .rule-health-stats { grid-template-columns: repeat(2,1fr); }
+  .rule-health-stats > div:nth-child(2) { border-right: 0; }
+  .rule-health-stats > div:nth-child(-n+2) { border-bottom: 1px solid var(--line-soft); }
+  .rule-health-head, .rule-health-item { flex-direction: column; align-items: stretch; }
+}
 .rule-section { padding: 14px 16px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-sm); }
 .rule-section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
 .rule-section-head h3 { font-size: 14px; font-weight: 600; }
@@ -546,6 +579,10 @@ button[data-lib-toggle][data-lib-next="0"]:hover {
 @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 18px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* ===== 规则卡片 ===== */
+.rule-default-fold { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
+.rule-default-fold b { display: block; margin-bottom: 3px; font-size: 13px; }
+.rule-default-fold p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+@media (max-width: 640px) { .rule-default-fold { align-items: flex-start; flex-direction: column; } }
 .rule-list-grid { display: grid; gap: 8px; }
 .rule-card { padding: 12px 14px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); transition: var(--transition); }
 .rule-card:hover { border-color: var(--blue-light); box-shadow: var(--shadow); }

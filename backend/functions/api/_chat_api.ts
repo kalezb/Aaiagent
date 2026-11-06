@@ -1,49 +1,16 @@
 import {
-  avoidRepeatedAssistantReply,
-  buildLayeredSystemPrompt,
-  countContactRequests,
-  currentUserBatchText,
-  hasEvaluationQuote,
-  extractSelfLeaveInstruction,
-  isIntimateTopic,
-  EMPTY_REPLY_FALLBACK,
-  LATE_REPLY_RULE,
-  isContactRequest,
-  inferSocialExitCooldownMs,
-  isXingmuEvaluationTopic,
-  latestIncomingText,
-  loadOrCreatePendingReply,
-  localAgeReply,
-  localExcludedRecycleReply,
-  localVoiceReply,
-  normalizeLateReplyPersonaPrompt,
-  replyGenerationSettings,
-  resolveContactRequestPolicy,
-  resolvePersonaScope,
-  resolveXingmuEvaluationReply,
-  sanitizeContactDisclosure,
-  sanitizeGroundingMismatch,
-  sanitizeBusinessTopicDrift,
-  sanitizeBoundaryConsistency,
-  sanitizeIntimateTopicReply,
-  sanitizeMediaBoundaryReply,
-  sanitizeNewContactBusinessReply,
-  sanitizePersonaFactsReply,
-  sanitizeXingmuProductLeak,
-  fixSpousePerspective,
-  owesReplyFromHistory,
-  isPhotoAuthenticityChallenge,
-  capReplyLength,
-  detectContactMaritalStatus,
-  stripLateReplyExcuse,
-  heHasSentPhoto,
-  sheHasSentPhoto,
-  voiceStickerPressure,
-  voiceSpamLine,
-  dropPhotoAdmissionClauses,
-  normalizeAssistantReplyPresentation,
-  parseSocialExitInstruction,
-  isFragmentedMessage,
+  avoidRepeatedAssistantReply, countContactRequests,
+  currentUserBatchText, hasEvaluationQuote, extractSelfLeaveInstruction,
+  isIntimateTopic, LATE_REPLY_RULE, isContactRequest,
+  inferSocialExitCooldownMs, isXingmuEvaluationTopic, latestIncomingText,
+  loadOrCreatePendingReply, normalizeLateReplyPersonaPrompt, replyGenerationSettings,
+  resolveContactRequestPolicy, resolvePersonaScope, resolveXingmuEvaluationReply,
+  sanitizeContactDisclosure, sanitizeGroundingMismatch, sanitizeMediaBoundaryReply,
+  sanitizePersonaFactsReply, owesReplyFromHistory, isPhotoAuthenticityChallenge,
+  detectContactMaritalStatus, stripLateReplyExcuse,
+  heHasSentPhoto, sheHasSentPhoto, voiceStickerPressure, voiceSpamLine,
+  dropPhotoAdmissionClauses, parseSocialExitInstruction, isFragmentedMessage,
+  extractCustomerDialogueSlots, capReplyLength,
 } from "./_reply_policy";
 import {
   evaluateActivityState,
@@ -66,6 +33,8 @@ import {
   createImmediateReplyDecision,
 } from "./_reply_decision";
 import { respondWithImmediateReply } from "./_chat_delivery";
+import { respondWithLocalChatReply } from "./_chat_local_replies";
+import { buildLeanConversationPrompt } from "./_lean_conversation_prompt";
 import { handleChatConfirmRequest } from "./_chat_confirm_api";
 import {
   findMatchingMediaGroup,
@@ -100,17 +69,28 @@ import {
   validateChatMessages,
   validateTurnSnapshot,
 } from "./_chat_input";
-import { parseStructuredReply } from "./_reply_length";
+import {
+  buildChatContractEcho,
+  buildContractSendPayload,
+  splitContractReplyParts,
+} from "./_chat_contract";
+import {
+  checkCriticPersonaViolation,
+  needsReplyLengthRewrite,
+  parseStructuredReply,
+} from "./_reply_length";
 import {
   buildConversationTurnMessages,
   normalizeConversationTurnContext,
+  selectRecentConversationTurns,
 } from "./_conversation_turn";
+import { localGreetingFallback } from "./_greeting_runtime";
 import {
   buildConversationMemoryPrompt,
+  captureUserMemoryBeforeReply,
   loadConversationMemory,
   updateConversationMemory,
 } from "./_conversation_memory";
-import { isGreetingStickerContent, isStickerOnlyTurn } from "./_message_text";
 import {
   createTimeoutSignal,
   elapsedSince,
@@ -140,7 +120,10 @@ import {
   loadScopedMediaGroups,
   mediaDirectiveFallback,
   mediaTeaserLine,
-  stageScopedMediaReply,
+  photoExchangeBlockedResponse,
+  photoExchangeGateReply,
+  resolvePhotoExchangeForTurn,
+  stageScopedMediaResponse,
 } from "./_media_runtime";
 import {
   enforceChatRateLimit,
@@ -190,6 +173,11 @@ import {
   recordContactEvents,
 } from "./_contact_events";
 import {
+  recoverIncomingPhotoFromHistory,
+  rememberIncomingPhotoFromMessages,
+} from "./_photo_memory";
+import { applySutangTurnToFunnelState } from "./_sutang_funnel";
+import {
   isXingmuPersonaScope,
   resolveContactConfig,
 } from "./_persona_scope_runtime";
@@ -205,6 +193,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       const body = parsedBody.body;
       const normalizedRequest = normalizeChatRequest(body);
       const {
+        schemaVersion,
         platform,
         contactId: contact_id,
         contactName: contact_name,
@@ -216,9 +205,17 @@ export async function handleChatRequest({ request, env, context, path, method })
         conversationStage,
         relationshipOrigin,
         requestId,
+        snapshot,
       } = normalizedRequest;
       if (!platform || !contact_id || !contact_name) return json({ error: "缺少必要参数" }, 400);
       if (!validateChatMessages(rawMessages)) return json({ error: "消息格式无效或数量超限" }, 400);
+      const contractFields = schemaVersion >= 2
+        ? buildChatContractEcho({
+          requestId,
+          turnId: snapshot?.turn_id,
+          inputDigest: snapshot?.message_digest,
+        })
+        : {};
       const programRules = await loadProgramRules(env.KV);
       const preparedInput = prepareChatInput(rawMessages, programRules);
       if (preparedInput.kind === "skip") {
@@ -226,33 +223,39 @@ export async function handleChatRequest({ request, env, context, path, method })
           action: "skip",
           reason: preparedInput.reason,
           request_id: requestId,
+          ...contractFields,
         });
       }
       if (preparedInput.kind === "fixed_reply") {
         return json({
           action: "send",
           reply: preparedInput.reply,
+          reply_parts: splitContractReplyParts(preparedInput.reply),
           reason: preparedInput.reason,
           request_id: requestId,
+          ...contractFields,
         });
       }
       let messages = preparedInput.messages;
-      const snapshotCheck = validateTurnSnapshot(normalizedRequest.snapshot, messages);
+      await rememberIncomingPhotoFromMessages(env.DB, {
+        token: tokenRow.token,
+        platform,
+        contactId: contact_id,
+        contactName: contact_name,
+        messages,
+        nowSec: Math.floor(Date.now() / 1000),
+      });
+      const snapshotCheck = await validateTurnSnapshot(snapshot, messages, schemaVersion);
       if (!snapshotCheck.ok) {
         return json({
           action: "resync",
           reason: snapshotCheck.reason,
           request_id: requestId,
-        });
-      }
-      if (
-        isStickerOnlyTurn(messages) &&
-        !messages.some((message) => isGreetingStickerContent(message?.content))
-      ) {
-        return json({
-          action: "skip",
-          reason: "sticker_state_only",
-          request_id: requestId,
+          ...(schemaVersion >= 2 ? buildChatContractEcho({
+            requestId,
+            turnId: snapshot?.turn_id,
+            inputDigest: snapshot?.message_digest,
+          }) : {}),
         });
       }
       const activePersonaId = String(tokenRow.active_persona_id || "female");
@@ -276,11 +279,21 @@ export async function handleChatRequest({ request, env, context, path, method })
         const conv = await env.DB.prepare("SELECT mode FROM conversation_stats WHERE token = ? AND platform = ? AND contact_id = ?").bind(tokenRow.token, platform, contact_id).first();
         if (conv && String(conv.mode || "") === "manual") {
           await env.DB.prepare("UPDATE conversation_stats SET waiting_since = CASE WHEN waiting_since = 0 THEN ? ELSE waiting_since END, updated_at = ? WHERE token = ? AND platform = ? AND contact_id = ?").bind(Math.floor(Date.now() / 1000), Math.floor(Date.now() / 1000), tokenRow.token, platform, contact_id).run();
-          return json({ action: "skip", reason: "human_takeover_active", request_id: requestId });
+          return json({
+            action: "skip",
+            reason: "human_takeover_active",
+            request_id: requestId,
+            ...contractFields,
+          });
         }
       } catch (_) { /* missing columns before migration: fail open */ }
       if (!isWithinAiHours(deviceSettings)) {
-        return json({ action: "skip", reason: "outside_ai_hours", request_id: requestId });
+        return json({
+          action: "skip",
+          reason: "outside_ai_hours",
+          request_id: requestId,
+          ...contractFields,
+        });
       }
       const chatStartedAt = Date.now();
       const timing = {
@@ -308,7 +321,17 @@ export async function handleChatRequest({ request, env, context, path, method })
         const nowSec2 = Math.floor(Date.now() / 1000);
         await env.DB.prepare("INSERT INTO contacts (token, platform, contact_id, contact_name, is_whitelisted, notes, created_at) VALUES (?, ?, ?, ?, 1, '', ?)").bind(tokenRow.token, platform, contact_id, contact_name, nowSec2).run();
       } else if (contact.is_whitelisted === 0) {
-        return json({ action: "skip" });
+        return json({ action: "skip", reason: "contact_not_whitelisted", ...contractFields });
+      }
+      if (contact && Number(contact.his_photo_at || 0) === 0) {
+        const recoveredPhotoAt = await recoverIncomingPhotoFromHistory(env.DB, {
+          token: tokenRow.token,
+          platform,
+          contactId: contact_id,
+          contactName: contact_name,
+          nowSec: Math.floor(Date.now() / 1000),
+        });
+        if (recoveredPhotoAt > 0) contact.his_photo_at = recoveredPhotoAt;
       }
 
       // 2026-10-12 动作静默守门员：洗漱中（20分钟内）或当晚入睡后，接口直接静默跳过回复，防已读不回与秒回穿帮
@@ -325,6 +348,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           action: "skip",
           reason: activityEval.silenceReason || "activity_in_progress",
           activity: contact?.last_activity,
+          ...contractFields,
         });
       }
       if (activityEval.shouldClear && contact?.last_activity) {
@@ -373,7 +397,7 @@ export async function handleChatRequest({ request, env, context, path, method })
             "UPDATE contacts SET marital_status = 'married' WHERE token = ? AND platform = ? AND contact_id = ?"
           ).bind(tokenRow.token, platform, contact_id).run();
         }
-        return json({ action: "skip", reason: "contact_married" });
+        return json({ action: "skip", reason: "contact_married", ...contractFields });
       }
       // 问到单身就记下来，之后不用再问。
       if (!storedMarital && maritalSeen === "single") {
@@ -388,6 +412,13 @@ export async function handleChatRequest({ request, env, context, path, method })
         "SELECT role, content, transcript, voice_seconds FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? ORDER BY id DESC LIMIT 10"
       ).bind(tokenRow.token, platform, contact_id).all();
       const pressure = voiceStickerPressure(recentForPressure?.results || [], messages);
+      const photoHistory = recentForPressure?.results || [];
+      const photoExchangeGate = resolvePhotoExchangeForTurn({
+        contact,
+        currentMessages: messages,
+        historyMessages: photoHistory,
+        ruleEnabled: agentRuleState.isEnabled("her_photo_memory", true),
+      });
       if (pressure.level === "warn") {
         const warnedAt = Number(contact?.voice_warn_at || 0);
         const nowSec3 = Math.floor(Date.now() / 1000);
@@ -395,18 +426,25 @@ export async function handleChatRequest({ request, env, context, path, method })
           await env.DB.prepare(
             "UPDATE contacts SET voice_warn_at = ? WHERE token = ? AND platform = ? AND contact_id = ?"
           ).bind(nowSec3, tokenRow.token, platform, contact_id).run();
-          return json({
-            action: "send",
+          return json(buildContractSendPayload({
             reply: voiceSpamLine(nowSec3 + pressure.voiceCount + pressure.stickerCount),
-            reason: "voice_sticker_warning",
-            pressure,
-          });
+            extra: {
+              reason: "voice_sticker_warning",
+              pressure,
+            },
+            contract: contractFields,
+          }));
         }
         // 警告过了还继续刷：停回他（不拉黑账号，只不再自动回；看板上可改回）。
         await env.DB.prepare(
           "UPDATE contacts SET is_whitelisted = 0 WHERE token = ? AND platform = ? AND contact_id = ?"
         ).bind(tokenRow.token, platform, contact_id).run();
-        return json({ action: "skip", reason: "voice_sticker_muted", pressure });
+        return json({
+          action: "skip",
+          reason: "voice_sticker_muted",
+          pressure,
+          ...contractFields,
+        });
       }
 
       const personaStartedAt = Date.now();
@@ -447,11 +485,13 @@ export async function handleChatRequest({ request, env, context, path, method })
           return json({
             action: existingPending.status === "confirmed" ? "skip" : (existingPayload ? "send_media" : "send"),
             reply: existingPending.content,
+            reply_parts: splitContractReplyParts(existingPending.content),
             reply_id: existingPending.id,
             media: existingPayload || undefined,
             status: existingPending.status,
             persona_id: activePersonaId,
             persona_version: personaVersion,
+            ...contractFields,
           });
         }
       }
@@ -464,23 +504,35 @@ export async function handleChatRequest({ request, env, context, path, method })
       });
       const funnelNowSec = Math.floor(Date.now() / 1000);
       const funnelGroupId = currentLink?.group_id || makeSingleGroupId(tokenRow.token, platform, contact_id);
-      let funnelState = starSoulScope
+      const isSutangScope = activePersonaScope === "sutang";
+      let funnelState = (starSoulScope || isSutangScope)
         ? await loadFunnelState(env.DB, tokenRow.token, funnelGroupId, funnelNowSec)
         : emptyFunnelState();
       let funnelAdvancedThisRequest = false;
-      if (starSoulScope && funnelState.lastRequestId !== requestId) {
-        const funnelTurn = applyFunnelTurn({
-          state: funnelState,
-          messages,
-          platform,
-          requestId,
-          countTurn: true,
-          allowAdvance: true,
-          nowSec: funnelNowSec,
-        });
-        funnelState = funnelTurn.state;
-        funnelAdvancedThisRequest = funnelTurn.advanced;
-        await persistFunnelState(env.DB, tokenRow.token, funnelGroupId, funnelState);
+      if (funnelState.lastRequestId !== requestId) {
+        if (starSoulScope) {
+          const funnelTurn = applyFunnelTurn({
+            state: funnelState,
+            messages,
+            platform,
+            requestId,
+            countTurn: true,
+            allowAdvance: true,
+            nowSec: funnelNowSec,
+          });
+          funnelState = funnelTurn.state;
+          funnelAdvancedThisRequest = funnelTurn.advanced;
+          await persistFunnelState(env.DB, tokenRow.token, funnelGroupId, funnelState);
+        } else if (isSutangScope) {
+          funnelState = applySutangTurnToFunnelState({
+            state: funnelState,
+            messages,
+            requestId,
+            hasSeenPhoto: Boolean(contact?.his_photo_at),
+            nowSec: funnelNowSec,
+          });
+          await persistFunnelState(env.DB, tokenRow.token, funnelGroupId, funnelState);
+        }
       }
 
       let scopedMediaGroups = [];
@@ -507,9 +559,23 @@ export async function handleChatRequest({ request, env, context, path, method })
             ? resolveMediaGroupForDirective(scopedMediaGroups, mediaMatch.group.id, recentUserTexts)
             : null;
           if (resolvedMediaGroup) {
-            keywordMediaGroup = resolvedMediaGroup;
-            const nowSec = Math.floor(Date.now() / 1000);
-            const staged = await stageScopedMediaReply({
+            keywordMediaGroup = String(resolvedMediaGroup.id || "");
+            if (!photoExchangeGate.canSend) {
+              const blocked = photoExchangeBlockedResponse({
+                requestId,
+                contactId: contact_id,
+                gate: photoExchangeGate,
+              });
+              return json({
+                ...blocked,
+                reply_parts: splitContractReplyParts(blocked.reply),
+                ...contractFields,
+              });
+            }
+            const teaser = starSoulScope
+              ? ""
+              : mediaTeaserLine(requestId + "|" + contact_id);
+            const mediaResponse = await stageScopedMediaResponse({
               db: env.DB,
               token: tokenRow.token,
               personaId: activePersonaId,
@@ -519,28 +585,10 @@ export async function handleChatRequest({ request, env, context, path, method })
               contactName: contact_name,
               requestId,
               group: resolvedMediaGroup,
-              createdAt: nowSec,
+              reply: teaser,
+              local: true,
             });
-            if (staged) {
-              await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
-                .bind(nowSec, tokenRow.token).run();
-              const teaser = starSoulScope
-                ? ""
-                : mediaTeaserLine(requestId + "|" + contact_id);
-              return json({
-                action: "send_media",
-                media: {
-                  ...staged.mediaPayload,
-                  asset_id: staged.pending.media_asset_id || staged.mediaPayload.asset_id,
-                  group_id: staged.pending.media_group_id || staged.mediaPayload.group_id,
-                },
-                // 2026-10-06 用户要求：正常要照片要“欲拒还迎地给”——先说一句再发图。
-                ...(teaser ? { reply: teaser } : {}),
-                reply_id: staged.pending.id,
-                status: "pending",
-                local: true,
-              });
-            }
+            if (mediaResponse) return json({ ...mediaResponse, ...contractFields });
           }
         }
       }
@@ -552,93 +600,27 @@ export async function handleChatRequest({ request, env, context, path, method })
         contact_id,
         activePersonaId,
       );
-      const incomingForLocalReply = latestIncomingText(messages);
-      const localVoice = agentRuleState.isEnabled("voice_call_boundary", true)
-        ? localVoiceReply(messages, recentAssistantReplies)
-        : "";
-      if (localVoice) {
-        return respondWithImmediateReply({
-          env,
-          tokenRow,
-          requestId,
-          platform,
-          contactId: contact_id,
-          contactName: contact_name,
-          personaId: activePersonaId,
-          personaVersion,
-          personaScope: activePersonaScope,
-          incomingText: latestIncomingText(messages),
-          skipLengthCap: true,
-          skipPresentation: true,
-          decision: createImmediateReplyDecision(
-            "local_voice",
-            "voice_call_request",
-            localVoice,
-          ),
-        });
-      }
-
-      const localExcludedReply = starSoulScope &&
-        agentRuleState.isEnabled("business_scope", true)
-        ? localExcludedRecycleReply(messages)
-        : "";
-      const localReply = avoidRepeatedAssistantReply(
-        localExcludedReply,
-        recentAssistantReplies,
-        incomingForLocalReply,
-        funnelNowSec,
-        "这些不收，只收带屏幕、带电池、带电路的旧数码。",
-      );
-      if (localReply) {
-        return respondWithImmediateReply({
-          env,
-          tokenRow,
-          requestId,
-          platform,
-          contactId: contact_id,
-          contactName: contact_name,
-          personaId: activePersonaId,
-          personaVersion,
-          personaScope: activePersonaScope,
-          incomingText: latestIncomingText(messages),
-          decision: createImmediateReplyDecision(
-            "local_recycle",
-            "excluded_recycle_item",
-            localReply,
-          ),
-        });
-      }
-
-      const localAge = (agentRuleState.isEnabled("fixed_age", true) ||
-        agentRuleState.isEnabled("children_facts", true))
-        ? localAgeReply(
+      const localReplyResponse = await respondWithLocalChatReply({
+        env,
+        tokenRow,
+        requestId,
+        platform,
+        contactId: contact_id,
+        contactName: contact_name,
         messages,
-        personaPrompt,
+        agentRuleState,
         recentAssistantReplies,
-        funnelNowSec,
-        effectiveAge || 0,
+        starSoulScope,
+        nowSec: funnelNowSec,
+        effectiveAge: effectiveAge || 0,
         effectivePersonaFacts,
-        )
-        : "";
-      if (localAge) {
-        return respondWithImmediateReply({
-          env,
-          tokenRow,
-          requestId,
-          platform,
-          contactId: contact_id,
-          contactName: contact_name,
-          personaId: activePersonaId,
-          personaVersion,
-          personaScope: activePersonaScope,
-          incomingText: latestIncomingText(messages),
-          decision: createImmediateReplyDecision(
-            "local_age",
-            "self_age_question",
-            localAge,
-          ),
-        });
-      }
+        personaPrompt,
+        activePersonaId,
+        personaVersion,
+        activePersonaScope,
+        contractFields,
+      });
+      if (localReplyResponse) return localReplyResponse;
 
       // history
       const budget = await enforceTokenBudget(env.DB, tokenRow);
@@ -665,7 +647,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         if (aliases.length) historyAliases = aliases;
         const clauses = aliases.map(() => "(platform = ? AND contact_id = ?)");
         historyStatement = env.DB.prepare(
-          "SELECT id, platform, role, content, created_at, source, persona_id, persona_version, time_kind FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") AND (role = 'user' OR source = 'human_phone' OR (role = 'assistant' AND persona_id = ?)) ORDER BY created_at DESC, id DESC LIMIT ?"
+          "SELECT id, platform, role, content, created_at, source, message_key, persona_id, persona_version, time_kind FROM chat_history WHERE token = ? AND (" + clauses.join(" OR ") + ") AND (role = 'user' OR source = 'human_phone' OR (role = 'assistant' AND persona_id = ?)) ORDER BY created_at DESC, id DESC LIMIT ?"
         ).bind(
           tokenRow.token,
           ...aliases.flatMap((alias) => [alias.platform, alias.contact_id]),
@@ -674,7 +656,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         );
       } else {
         historyStatement = env.DB.prepare(
-          "SELECT id, platform, role, content, created_at, source, persona_id, persona_version, time_kind FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? AND (role = 'user' OR source = 'human_phone' OR (role = 'assistant' AND persona_id = ?)) ORDER BY created_at DESC, id DESC LIMIT ?"
+          "SELECT id, platform, role, content, created_at, source, message_key, persona_id, persona_version, time_kind FROM chat_history WHERE token = ? AND platform = ? AND contact_id = ? AND (role = 'user' OR source = 'human_phone' OR (role = 'assistant' AND persona_id = ?)) ORDER BY created_at DESC, id DESC LIMIT ?"
         ).bind(tokenRow.token, platform, contact_id, activePersonaId, MAX_MSGS + HISTORY_FETCH_BUFFER);
       }
       const profileGroupId = funnelGroupId;
@@ -717,6 +699,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       });
       historyMessages = normalizedTurn.historyMessages;
       messages = normalizedTurn.currentMessages;
+      const promptHistoryMessages = selectRecentConversationTurns(historyMessages);
       const recentMediaContext = [...historyMessages, ...messages]
         .filter((message) => message?.role === "user")
         .map((message) => String(message?.content || "").trim())
@@ -727,7 +710,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           .filter((message) => Number(message.id || 0) > memoryRow.summarizedUpToId)
         : [];
       const summary = mergeMemorySummary(memoryRow.summary, olderMessages);
-      const structuredMemory = buildConversationMemoryPrompt({
+      let structuredMemory = buildConversationMemoryPrompt({
         summary,
         olderMessages,
         memory: conversationMemory,
@@ -767,8 +750,24 @@ export async function handleChatRequest({ request, env, context, path, method })
       const chinaTimeForGating = getChinaTimeContext();
       const matchHour = String(chinaTimeForGating.currentDatetime || "").match(/(\d{1,2}):(\d{2})/);
       const currentHour = matchHour ? Number(matchHour[1]) : new Date().getHours();
+      const currentMinute = matchHour
+        ? Number(matchHour[1]) * 60 + Number(matchHour[2])
+        : new Date().getHours() * 60 + new Date().getMinutes();
+      const drawerExchanges = [
+        ...(Array.isArray(historyMessages) ? historyMessages : []),
+        ...(Array.isArray(messages) ? messages : []),
+      ].filter((message) => message?.role === "user").length;
       const latestText = latestIncomingText(messages);
       const isFrag = isFragmentedMessage(latestText);
+
+      const hisPhotoOnFile = Number(contact?.his_photo_at || 0) > 0;
+      const customerSlots = extractCustomerDialogueSlots({
+        customerProfile: customerProfile?.profile,
+        contact,
+        messages,
+        historyMessages,
+        hisPhotoOnFile,
+      });
 
       const matchedDrawerTips = matchActiveDrawers(
         personaDrawers,
@@ -778,16 +777,19 @@ export async function handleChatRequest({ request, env, context, path, method })
             ? {}
             : { maxKeywordCards: Number.MAX_SAFE_INTEGER, maxChars: Number.MAX_SAFE_INTEGER }),
           currentHour,
+          currentMinute,
+          totalExchanges: drawerExchanges,
+          maturityGateEnabled: activePersonaScope === "sutang" &&
+            agentRuleState.isEnabled("sutang_drawer_maturity_gate", true),
           weatherCondition: weather?.condition,
           weatherTemp: weather?.temp,
           isFragmented: isFrag,
+          customerSlots,
         },
       );
       const matchedKnowledgeCardIds = matchedDrawerTips
         .map((tip) => String(tip).match(/【id:([^】]+)】/u)?.[1] || "")
         .filter(Boolean);
-
-
 
       // model config
       const modelConfig = await loadLlmConfig(env.KV, env, deviceSettings.model_line);
@@ -803,7 +805,10 @@ export async function handleChatRequest({ request, env, context, path, method })
       const weekday = chinaTime.weekday;
       const nowSec2 = Math.floor(Date.now() / 1000);
       const activity = await loadActivityStats(env.DB, tokenRow.token, historyAliases, nowSec2);
-      const currentExchanges = (Array.isArray(messages) ? messages.length : 0) + (Array.isArray(historyMessages) ? historyMessages.length : 0);
+      const currentExchanges = [
+        ...(Array.isArray(messages) ? messages : []),
+        ...(Array.isArray(historyMessages) ? historyMessages : []),
+      ].filter((message) => message?.role === "user").length;
       const isDoubanArrival = activePersonaScope === "sutang" && platform === "douban";
       const sutangRelationshipStage = computeRelationshipStage(
         contact?.relationship_stage || (isDoubanArrival ? "familiar" : "new"),
@@ -819,6 +824,8 @@ export async function handleChatRequest({ request, env, context, path, method })
             : sutangRelationshipStage === "familiar"
               ? "熟悉阶段，自然分享日常，话题顺畅展开。"
               : "刚认识阶段，从当前话题自然延续，保持合适边界。");
+      const capturedMemory = await captureUserMemoryBeforeReply({ db: env.DB, token: tokenRow.token, platform, contactId: contact_id, previous: conversationMemory, messages, relationshipStage: sutangRelationshipStage, nowSec: nowSec2 });
+      structuredMemory = buildConversationMemoryPrompt({ summary, olderMessages, memory: capturedMemory });
       const profileContext = customerProfilePrompt(customerProfile.profile);
       const messageDelay = deviceSettings.time_enabled
         ? resolveIncomingDelayPolicy(messages, historyMessages, nowSec2)
@@ -850,6 +857,7 @@ export async function handleChatRequest({ request, env, context, path, method })
             platform,
             contactId: contact_id,
             contactName: contact_name,
+            contractFields,
             personaId: activePersonaId,
             personaVersion,
             personaScope: activePersonaScope,
@@ -883,6 +891,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           platform,
           contactId: contact_id,
           contactName: contact_name,
+          contractFields,
           personaId: activePersonaId,
           personaVersion,
           personaScope: activePersonaScope,
@@ -895,74 +904,60 @@ export async function handleChatRequest({ request, env, context, path, method })
           ),
         });
       }
+      const isLihuiScope = activePersonaScope === "lihui";
       const contactConfig = resolveContactConfig(
         env,
         starSoulScope,
         effectivePersonaFacts,
         ruleSnapshot.personaFacts.hasOverride,
         activePersonaScope === "sutang",
+        isLihuiScope,
       );
-      const contactPolicy = resolveContactRequestPolicy({
-        requestCount: countContactRequests(historyMessages, messages),
-        stage,
-        activity,
-        incomingText: latestIncomingText(messages),
-        historyMessages,
-        messages,
-        contactChannel: contactConfig.channel,
-        contactAccount: contactConfig.account,
-        xingmuScope: starSoulScope,
-        sutangScope: activePersonaScope === "sutang",
-        dealCompleted: funnelState.evidence.dealCompleted === true,
-        acceptedBusinessTopic: funnelState.evidence.acceptedBusinessTopic === true,
-        willingToRecycle: funnelState.evidence.willingToRecycle === true,
-        platform,
-        agentRuleState,
-        customerProfile: customerProfile?.profile,
-      });
-      const currentContactRequest = messages.some((message) =>
+      const sutangScope = activePersonaScope === "sutang";
+      const contactPolicy = sutangScope
+        ? {
+          isRequest: false,
+          allowed: false,
+          reply: "",
+          requestCount: 0,
+          contactChannel: "qq",
+          contactAccount: contactConfig.account,
+          contactDisplay: contactConfig.account,
+        }
+        : resolveContactRequestPolicy({
+          requestCount: countContactRequests(historyMessages, messages),
+          stage,
+          activity,
+          incomingText: latestIncomingText(messages),
+          historyMessages,
+          messages,
+          contactChannel: contactConfig.channel,
+          contactAccount: contactConfig.account,
+          xingmuScope: starSoulScope,
+          sutangScope: false,
+          lihuiScope: isLihuiScope,
+          dealCompleted: funnelState.evidence.dealCompleted === true,
+          acceptedBusinessTopic: funnelState.evidence.acceptedBusinessTopic === true,
+          willingToRecycle: funnelState.evidence.willingToRecycle === true,
+          platform,
+          agentRuleState,
+        });
+      const currentContactRequest = !sutangScope && messages.some((message) =>
         message?.role === "user" && isContactRequest(message?.content)
       );
       const contactRulesEnabled = agentRuleState.isEnabled("no_contact_leak", true) ||
         agentRuleState.isEnabled("business_contact_boundary", true);
       let contactReply = "";
       if (contactRulesEnabled && currentContactRequest) {
-        let targetReply = contactPolicy.reply;
-        // 2026-10-13 用户要求：苏棠在未到放号阶段时，若对方要微信且知识库配有私人通讯抽屉卡（如 scene_17_private_contact），优先匹配知识库话术
-        const isWechatRequest = /(?:微信|微|vx|v信)/iu.test(latestIncomingText(messages));
-        if (activePersonaScope === "sutang" && !contactPolicy.allowed && platform !== "douban" && isWechatRequest) {
-          const contactCards = [
-            ...(personaDrawers?.counters || []),
-            ...(personaDrawers?.topics || []),
-            ...(personaDrawers?.custom || []),
-          ];
-          const matchedCard = contactCards.find((card) =>
-            card && card.enabled !== false && (card.id === "scene_17_private_contact" || card.id === "custom_contact_refusal")
-          );
-          if (matchedCard && String(matchedCard.content || "").trim()) {
-            const cardSegments = String(matchedCard.content)
-              .trim()
-              .split(/\n\s*\n/gu)
-              .map((s) => s.trim().replace(/\r?\n+/gu, " "))
-              .filter(Boolean);
-            if (cardSegments.length > 0) {
-              const cardIndex = Math.max(0, contactPolicy.requestCount - 1) % cardSegments.length;
-              targetReply = cardSegments[cardIndex];
-            }
-          }
-        }
+        const targetReply = contactPolicy.reply;
         contactReply = avoidRepeatedAssistantReply(
           targetReply,
           [...historyMessages, ...recentAssistantReplies],
           latestIncomingText(messages),
           nowSec2,
-          contactConfig.channel === "douban"
-            ? (activePersonaScope === "sutang"
-                ? "豆瓣号之前给过你了，往上翻翻看"
-                : "豆瓣号已经给过你了，往上翻一下哈，加的时候说下你是谁")
-            : contactConfig.channel === "qq"
-              ? "QQ号已经给过你了，往上翻一下哈，加的时候说下你是谁"
-              : "私人微信已经给过你了，往上翻一下哈，加的时候说下你是谁",
+          contactConfig.channel === "qq"
+            ? "QQ号已经给过你了，往上翻一下哈，加的时候说下你是谁"
+            : "私人微信已经给过你了，往上翻一下哈，加的时候说下你是谁",
         );
       }
       if (contactReply) {
@@ -973,6 +968,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           platform,
           contactId: contact_id,
           contactName: contact_name,
+          contractFields,
           personaId: activePersonaId,
           personaVersion,
           personaScope: activePersonaScope,
@@ -988,18 +984,9 @@ export async function handleChatRequest({ request, env, context, path, method })
         });
       }
 
-            // 2026-10-07 用户要求（第②步）：他发过照片就永久记住——写在他档案上，清掉聊天记录也不丢。
-      // 只写档案，不影响她怎么回；万一写失败也只是没记住，不连累回话。
+      // 她发过照片后永久记住，避免重复判断。
       try {
         const photoStamp = Math.floor(Date.now() / 1000);
-        if (
-          agentRuleState.isEnabled("his_photo_memory", true) &&
-          heHasSentPhoto(messages, historyMessages)
-        ) {
-          await env.DB.prepare(
-            "UPDATE contacts SET his_photo_at = ? WHERE token = ? AND platform = ? AND contact_id = ? AND his_photo_at = 0"
-          ).bind(photoStamp, token, platform, String(contactId || contactName || "")).run();
-        }
         if (
           agentRuleState.isEnabled("her_photo_memory", true) &&
           sheHasSentPhoto(messages, historyMessages)
@@ -1011,12 +998,12 @@ export async function handleChatRequest({ request, env, context, path, method })
       } catch (photoStampError) {
         console.log(JSON.stringify({ event: "photo_stamp_failed", error: String(photoStampError) }));
       }
-      const mediaActionsEnabled = hostingMode === "full_auto" &&
+      const mediaActionsReady = hostingMode === "full_auto" &&
         scopedMediaGroups.length > 0 &&
         agentRuleState.isEnabled("photo_only_explicit", true) &&
         agentRuleState.isEnabled("media_group_selection", true);
       let classifiedPhotoIntent = null;
-      if (mediaActionsEnabled && shouldClassifyPersonalPhotoIntent(recentMediaContext)) {
+      if (mediaActionsReady && shouldClassifyPersonalPhotoIntent(recentMediaContext)) {
         const mediaIntentStartedAt = Date.now();
         const mediaIntent = await classifyPersonalPhotoIntent({
           env,
@@ -1039,8 +1026,19 @@ export async function handleChatRequest({ request, env, context, path, method })
           ? resolveMediaGroupForDirective(scopedMediaGroups, mediaIntent, recentMediaContext)
           : null;
         if (resolvedMediaGroup) {
-          const nowSec = Math.floor(Date.now() / 1000);
-          const staged = await stageScopedMediaReply({
+          if (!photoExchangeGate.canSend) {
+            const blocked = photoExchangeBlockedResponse({
+              requestId,
+              contactId: contact_id,
+              gate: photoExchangeGate,
+            });
+            return json({
+              ...blocked,
+              reply_parts: splitContractReplyParts(blocked.reply),
+              ...contractFields,
+            });
+          }
+          const mediaResponse = await stageScopedMediaResponse({
             db: env.DB,
             token: tokenRow.token,
             personaId: activePersonaId,
@@ -1050,32 +1048,23 @@ export async function handleChatRequest({ request, env, context, path, method })
             contactName: contact_name,
             requestId,
             group: resolvedMediaGroup,
-            createdAt: nowSec,
           });
-          if (staged) {
-            await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
-              .bind(nowSec, tokenRow.token).run();
+          if (mediaResponse) {
             timing.total_ms = Date.now() - chatStartedAt;
             console.log("chat_timing", JSON.stringify({ request_id: requestId, token: tokenRow.token.slice(-6), platform, timing }));
             return json({
-              action: "send_media",
-              media: {
-                ...staged.mediaPayload,
-                asset_id: staged.pending.media_asset_id || staged.mediaPayload.asset_id,
-                group_id: staged.pending.media_group_id || staged.mediaPayload.group_id,
-              },
-              reply_id: staged.pending.id,
-              status: "pending",
-              request_id: requestId,
+              ...mediaResponse,
               persona_id: activePersonaId,
               persona_version: personaVersion,
               model_line: deviceSettings.model_line || (isGeminiModelConfig(modelConfig) ? "b" : "a"),
               model_name: modelName,
               timing,
+              ...contractFields,
             });
           }
         }
       }
+      const mediaActionsEnabled = mediaActionsReady && photoExchangeGate.canSend;
       const contactEventsPrompt = buildContactEventsPrompt(contactEvents, {
         enabled: agentRuleState.isEnabled("summary_budget", true),
       });
@@ -1118,6 +1107,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         messageDelay,
         messages,
         historyMessages,
+        totalExchanges: currentExchanges,
         conversationTimeline,
         conversationStage: isDoubanArrival && (!conversationStage || conversationStage === "first_contact")
           ? "familiar"
@@ -1134,8 +1124,10 @@ export async function handleChatRequest({ request, env, context, path, method })
         matchedDrawerTips,
         programRules,
         agentRuleState,
+        customerSlots,
+        activePersonaScope,
       };
-      const systemPrompt = buildLayeredSystemPrompt(layeredPromptOptions);
+      const systemPrompt = buildLeanConversationPrompt(layeredPromptOptions);
       timing.context_ms = Date.now() - contextStartedAt;
       const activeStickerMeanings = programRules.sticker.enabled
         ? programRules.sticker.meanings
@@ -1145,7 +1137,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         return [
           { role: "system", content: prompt },
           ...buildConversationTurnMessages({
-            historyMessages: includeHistory ? historyMessages : [],
+            historyMessages: includeHistory ? promptHistoryMessages : [],
             currentMessages: messages,
             nowSec: Math.floor(Date.now() / 1000),
             stickerMeanings: activeStickerMeanings,
@@ -1153,7 +1145,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         ];
       };
       let llmMessages = buildLlmMessages(true);
-      const minimalSystemPrompt = () => buildLayeredSystemPrompt({
+      const minimalSystemPrompt = () => buildLeanConversationPrompt({
         ...layeredPromptOptions,
         profileContext: "",
         stageText: "",
@@ -1180,8 +1172,9 @@ export async function handleChatRequest({ request, env, context, path, method })
       const llmFetchTimeoutMs = Math.max(1, llmDeadlineAt - Date.now());
       let data;
       let safetyBlockedReply = false;
+      let callLlm: ((outgoingMessages: any[], maxTokens?: number, responseFormat?: string) => Promise<any>) | null = null;
       try {
-        const callLlm = async (outgoingMessages, maxTokens = effectiveLlmMaxTokens) => {
+        callLlm = async (outgoingMessages, maxTokens = effectiveLlmMaxTokens, responseFormat = "json_object") => {
           const response = await fetch(modelConfig.baseUrl + "/chat/completions", {
             method: "POST",
             headers: buildModelHeaders(apiKey, modelConfig),
@@ -1191,7 +1184,7 @@ export async function handleChatRequest({ request, env, context, path, method })
               outgoingMessages,
               requestTemperature,
               maxTokens,
-              "json_object",
+              responseFormat,
             )),
             signal: createTimeoutSignal(llmFetchTimeoutMs),
           });
@@ -1343,7 +1336,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           outputChars: String(data.choices?.[0]?.message?.content || "").length,
         }, env, modelConfig)
       );
-      const rawModelContent = data.choices?.[0]?.message?.content;
+      let rawModelContent = data.choices?.[0]?.message?.content;
       if (!String(rawModelContent || "").trim()) {
         console.error(
           "chat_empty_model_content",
@@ -1361,24 +1354,55 @@ export async function handleChatRequest({ request, env, context, path, method })
           })
         );
       }
-            // 2026-10-09: cover line must match the real gap. Saying "just stepped away"
-      // when he texted 1 minute ago is an obvious lie, so measure it instead of guessing.
-      let safetyCover = "\u6069\u6069\uff0c\u597d\u7684\u3002";
-      if (safetyBlockedReply) {
-        const nowSec = Math.floor(Date.now() / 1000);
-        let lastUserAt = 0;
-        for (const m of messages) {
-          const at = Number(m?.created_at || 0);
-          if (m?.role === "user" && at > lastUserAt) lastUserAt = at;
+      let parsedModelReply = parseStructuredReply(String(rawModelContent || "").trim());
+      const greetingFallback = !safetyBlockedReply
+        ? localGreetingFallback(latestIncomingText(messages))
+        : "";
+      if (
+        !safetyBlockedReply &&
+        !greetingFallback &&
+        (!parsedModelReply.ok || !parsedModelReply.messages.length)
+      ) {
+        const rescueBudget = isGeminiModelConfig(modelConfig)
+          ? Math.max(640, generation.maxTokens * 4)
+          : Math.max(480, generation.maxTokens * 4);
+        const rescueMessages = buildLlmMessages(false, minimalSystemPrompt());
+        timing.repair_attempted = true;
+        const rescue = await callLlm(rescueMessages, rescueBudget, "");
+        if (rescue.response.ok && String(rescue.data?.choices?.[0]?.message?.content || "").trim()) {
+          data = rescue.data;
+          rawModelContent = rescue.data?.choices?.[0]?.message?.content;
+          parsedModelReply = parseStructuredReply(String(rawModelContent || "").trim());
+          await recordTokenUsage(
+            env.DB,
+            tokenRow.token,
+            estimateLlmCost({
+              usage: rescue.data?.usage,
+              inputChars: rescueMessages.reduce((total: number, message: any) => total + String(message.content || "").length, 0),
+              outputChars: String(rawModelContent || "").length,
+            }, env, modelConfig),
+          );
         }
-        const gapSec = lastUserAt > 0 ? nowSec - lastUserAt : 86400;
-        safetyCover = gapSec < 300 ? "\u5728\u5462 \u4f60\u8bf4" : "\u5728\u5462 \u521a\u624d\u8d70\u5f00\u4e86\u4e00\u4e0b";
       }
-      const parsedModelReply = parseStructuredReply(String(rawModelContent || "").trim());
-      const modelReply = parsedModelReply.ok
+      if (!parsedModelReply.ok || !parsedModelReply.messages.length) {
+        if (greetingFallback) {
+          rawModelContent = greetingFallback;
+        } else {
+          timing.total_ms = Date.now() - chatStartedAt;
+          return json({
+            action: "skip",
+            reason: "model_reply_empty_or_invalid",
+            request_id: requestId,
+            timing,
+            ...contractFields,
+          });
+        }
+      }
+      const modelReply = parsedModelReply.ok && parsedModelReply.messages.length
         ? parsedModelReply.messages.join("|||")
-        : safetyCover;
-      const mediaDirective = mediaActionsEnabled ? parseMediaDirective(modelReply) : "";
+        : String(rawModelContent || "").trim();
+      const attemptedMediaDirective = parseMediaDirective(modelReply);
+      const mediaDirective = mediaActionsReady ? attemptedMediaDirective : "";
       let rawReply = stripMediaDirective(modelReply);
       if (mediaDirective) {
         const incomingMediaText = latestIncomingText(messages);
@@ -1398,39 +1422,29 @@ export async function handleChatRequest({ request, env, context, path, method })
               : (keywordMediaGroup || ""))
           : null;
         if (resolvedMediaGroup) {
-          const nowSec = Math.floor(Date.now() / 1000);
-          const staged = await stageScopedMediaReply({
-            db: env.DB,
-            token: tokenRow.token,
-            personaId: activePersonaId,
-            personaVersion,
-            platform,
-            contactId: contact_id,
-            contactName: contact_name,
-            requestId,
-            group: resolvedMediaGroup,
-            createdAt: nowSec,
-          });
-          if (staged) {
-            await env.DB.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
-              .bind(nowSec, tokenRow.token).run();
-            timing.total_ms = Date.now() - chatStartedAt;
-            console.log("chat_timing", JSON.stringify({ request_id: requestId, token: tokenRow.token.slice(-6), platform, timing }));
-            return json({
-              action: "send_media",
-              media: {
-                ...staged.mediaPayload,
-                asset_id: staged.pending.media_asset_id || staged.mediaPayload.asset_id,
-                group_id: staged.pending.media_group_id || staged.mediaPayload.group_id,
-              },
-              // 2026-10-06 用户要求：正常要照片要“欲拒还迎地给”——先说一句再发图。
-              // 模型写在图片指令前面的那句话放这里，手机端会先发文字再发图。
-              ...(rawReply ? { reply: rawReply } : {}),
-              reply_id: staged.pending.id,
-              status: "pending",
-              request_id: requestId,
-              timing,
+          if (!photoExchangeGate.canSend) {
+            rawReply = photoExchangeGateReply(
+              photoExchangeGate.stage,
+              requestId + "|" + contact_id,
+            );
+          } else {
+            const mediaResponse = await stageScopedMediaResponse({
+              db: env.DB,
+              token: tokenRow.token,
+              personaId: activePersonaId,
+              personaVersion,
+              platform,
+              contactId: contact_id,
+              contactName: contact_name,
+              requestId,
+              group: resolvedMediaGroup,
+              reply: rawReply,
             });
+            if (mediaResponse) {
+              timing.total_ms = Date.now() - chatStartedAt;
+              console.log("chat_timing", JSON.stringify({ request_id: requestId, token: tokenRow.token.slice(-6), platform, timing }));
+              return json({ ...mediaResponse, timing, ...contractFields });
+            }
           }
         }
         if (!rawReply) rawReply = mediaDirectiveFallback(incomingMediaText);
@@ -1469,20 +1483,22 @@ export async function handleChatRequest({ request, env, context, path, method })
             source: "goodnight_rule",
             reason: "sleep_exit_care",
           }));
-          return json({
-            action: "send",
+          return json(buildContractSendPayload({
             reply: pending.content,
-            reply_id: pending.id,
-            status: "pending",
-            request_id: requestId,
-            timing,
-            cooldown_ms: cooldownMs,
-            persona_id: activePersonaId,
-            persona_version: personaVersion,
-            model_line: deviceSettings.model_line || (isGeminiModelConfig(modelConfig) ? "b" : "a"),
-            model_name: modelName,
-            reply_audit: { source: "goodnight_rule", reason: "sleep_exit_care" },
-          });
+            extra: {
+              reply_id: pending.id,
+              status: "pending",
+              request_id: requestId,
+              timing,
+              cooldown_ms: cooldownMs,
+              persona_id: activePersonaId,
+              persona_version: personaVersion,
+              model_line: deviceSettings.model_line || (isGeminiModelConfig(modelConfig) ? "b" : "a"),
+              model_name: modelName,
+              reply_audit: { source: "goodnight_rule", reason: "sleep_exit_care" },
+            },
+            contract: contractFields,
+          }));
         }
         timing.total_ms = Date.now() - chatStartedAt;
         console.log("chat_timing", JSON.stringify({ request_id: requestId, token: tokenRow.token.slice(-6), platform, timing }));
@@ -1492,6 +1508,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           cooldown_ms: cooldownMs,
           request_id: requestId,
           timing,
+          ...contractFields,
         });
       }
       const selfLeave = starSoulScope && agentRuleState.isEnabled("self_leave_marker", true)
@@ -1526,11 +1543,11 @@ export async function handleChatRequest({ request, env, context, path, method })
         if (stripped) {
           if (stripped !== String(visibleReply).trim()) visibleReply = stripped;
         } else {
-          visibleReply = "在呢";
+          visibleReply = "";
         }
       }
       const pipelineStartedAt = Date.now();
-      const safetyPipeline = applyReplyDecisionPipeline(visibleReply, [
+      const applyReplySafety = (value) => applyReplyDecisionPipeline(value, [
         {
           rule: "persona_isolation",
           reason: "foreign_persona_term",
@@ -1566,54 +1583,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           rule: "stale_guard",
           reason: "stale_or_empty_model_reply",
           apply: (value) => agentRuleState.isEnabled("late_reply_current_only", true)
-            ? (sanitizeStaleAssistantReply(value, messageDelay) || EMPTY_REPLY_FALLBACK)
-            : value,
-        },
-        {
-          rule: "business_topic_drift",
-          reason: "unsolicited_business_drift",
-          apply: (value) => agentRuleState.isEnabled("business_scope", true)
-            ? sanitizeBusinessTopicDrift(
-                value,
-                incomingText,
-                historyMessages,
-                incomingTurnText,
-                activePersonaScope,
-              )
-            : value,
-        },
-        {
-          rule: "intimate_topic",
-          reason: "intimate_topic_boundary",
-          apply: (value) => agentRuleState.isEnabled("explicit_boundary", true)
-            ? sanitizeIntimateTopicReply(value, incomingText, historyMessages, stage, starSoulScope)
-            : value,
-        },
-        {
-          rule: "boundary_consistency",
-          reason: "relationship_boundary_reversal",
-          apply: (value) => agentRuleState.isEnabled("intimate_label_consistency", true)
-            ? sanitizeBoundaryConsistency(value, incomingText, historyMessages)
-            : value,
-        },
-        {
-          rule: "product_leak",
-          reason: "xingmu_product_leak",
-          apply: (value) => (starSoulScope && agentRuleState.isEnabled("business_scope", true))
-            ? sanitizeXingmuProductLeak(value, starSoulScope)
-            : value,
-        },
-        {
-          rule: "new_contact_business",
-          reason: "premature_business_disclosure",
-          apply: (value) => (starSoulScope && agentRuleState.isEnabled("no_sales_pressure", true))
-            ? sanitizeNewContactBusinessReply(
-                value,
-                stage,
-                incomingText,
-                starSoulScope,
-                incomingTurnText,
-              )
+            ? sanitizeStaleAssistantReply(value, messageDelay)
             : value,
         },
         {
@@ -1639,7 +1609,7 @@ export async function handleChatRequest({ request, env, context, path, method })
         {
           rule: "contact_disclosure",
           reason: "contact_disclosure_not_allowed",
-          apply: (value) => contactRulesEnabled
+          apply: (value) => contactRulesEnabled && !sutangScope
             ? sanitizeContactDisclosure(value, {
               allowed: contactPolicy.allowed,
               contactChannel: contactPolicy.contactChannel,
@@ -1656,61 +1626,72 @@ export async function handleChatRequest({ request, env, context, path, method })
             ? sanitizeGroundingMismatch(value, incomingText, historyMessages)
             : value,
         },
-
-        {
-          rule: "repeat_guard",
-          reason: "reply_repeated_recently",
-          apply: (value) => agentRuleState.isEnabled("no_repeat", true)
-            ? avoidRepeatedAssistantReply(
-                value,
-                [...historyMessages, ...recentAssistantReplies],
-                incomingText,
-                nowSec2,
-              )
-            : value,
-        },
-        {
-          rule: "spouse_perspective",
-          reason: "spouse_perspective_fixed",
-          apply: (value) => (activePersonaScope === "sutang" && agentRuleState.isEnabled("spouse_perspective", true))
-            ? fixSpousePerspective(value)
-            : value,
-        },
-        {
-          rule: "presentation",
-          reason: "presentation_normalized",
-          apply: (value) => agentRuleState.isEnabled("casual_punctuation", true)
-            ? normalizeAssistantReplyPresentation(value, { softParticles: activePersonaScope === "sutang" })
-            : value,
-        },
-        {
-          // 2026-10-07：长度收口必须放最后——先让别的清理把该换的换掉（比如微信泄露那句），
-          // 再按“一段3到20个字、最多三条”整理。放前面会先把该保留的内容吃掉。
-          rule: "length_budget",
-          reason: "reply_longer_than_his_message",
-          apply: (value) => {
-            if (!agentRuleState.isEnabled("output_shape_hard", true)) return value;
-            if (contactPolicy.contactAccount && value.includes(contactPolicy.contactAccount)) {
-              return value;
-            }
-            if (/sutang2026/iu.test(value)) {
-              return value;
-            }
-            return capReplyLength(value, incomingText);
-          },
-        },
       ]);
+      let safetyPipeline = applyReplySafety(visibleReply);
       // 2026-10-07 修 bug：清理/删段之后偶尔会留下空段（真机见过 "|||嘴硬怎么了…"），
       // 空段会被手机端跳过、白白吃掉一句话，所以在出口统一丢掉。
-      const safeReply = String(safetyPipeline.reply || "")
-        .split("|||")
+      const settledBubbles = String(safetyPipeline.reply || "")
+        .split(/\|\|\||\r?\n/u)
         .map((part) => part.trim())
-        .filter(Boolean)
-        .join("|||");
+        .filter(Boolean);
+      let settledReply = settledBubbles.join("|||");
+      const userTurnCount = (Array.isArray(historyMessages) ? historyMessages : []).filter((m) => m?.role === "user").length + 1;
+      let criticViolation = checkCriticPersonaViolation(settledReply, activePersonaScope, userTurnCount);
+      let safeReply = criticViolation
+        ? ""
+        : splitContractReplyParts(capReplyLength(settledReply, incomingText, activePersonaScope)).join("|||");
+      if (!safeReply && typeof callLlm === "function" && (criticViolation || needsReplyLengthRewrite(settledReply, activePersonaScope))) {
+        const repairStartedAt = Date.now();
+        timing.repair_attempted = true;
+        const lengthRepairPrompt = systemPrompt + (criticViolation
+          ? `\n\n${criticViolation}请重新回答，严禁破防或违背人设，只返回要求的 JSON。`
+          : (activePersonaScope === "lihui"
+              ? "\n\n【只改长度｜最后一次重说】回复太长或没有自然断句。按李辉的打字铁律重新说：每次回复 1 到 2 条，不要一次发长段，单条通常 6 到 18 个字，整轮不超过 35 个字。像微信随手单手敲字自然断句，少用句号，多用空格和逗号，严禁堆砌‘哈哈’。只返回要求的 JSON。"
+              : "\n\n【只改长度｜最后一次重说】上一条回复超过 15 个字，又不适合自然拆分成完整短句。不要硬切半截话，也不要改变原本要表达的意思、人物态度和事实。按这些限制重新说：每次回复 1 到 3 条，通常 1 到 2 条；每条通常 3 到 10 个字；只有一句必须解释清楚、又确实拆不开时，才允许单条到 15 个字；整轮最多 25 个字；“嗯、好、在的、对呀、哈哈”这类自然短回应允许 1 到 2 个字。只返回要求的 JSON。"));
+        const repairResult = await callLlm(
+          buildLlmMessages(false, lengthRepairPrompt),
+          effectiveLlmMaxTokens,
+        );
+        if (repairResult?.response?.ok) {
+          const repairRaw = String(repairResult.data?.choices?.[0]?.message?.content || "").trim();
+          const repairParsed = parseStructuredReply(repairRaw);
+          if (repairParsed.ok && repairParsed.messages.length) {
+            safetyPipeline = applyReplySafety(stripMediaDirective(repairParsed.messages.join("|||")));
+            settledReply = String(safetyPipeline.reply || "")
+              .split(/\|\|\||\r?\n/u)
+              .map((part) => part.trim())
+              .filter(Boolean)
+              .join("|||");
+            criticViolation = checkCriticPersonaViolation(settledReply, activePersonaScope, userTurnCount);
+            safeReply = criticViolation
+              ? ""
+              : splitContractReplyParts(capReplyLength(settledReply, incomingText, activePersonaScope)).join("|||");
+          }
+          await recordTokenUsage(
+            env.DB,
+            tokenRow.token,
+            estimateLlmCost({
+              usage: repairResult.data?.usage,
+              inputChars: lengthRepairPrompt.length + incomingText.length,
+              outputChars: repairRaw.length,
+            }, env, modelConfig)
+          );
+        }
+        timing.repair_ms = elapsedSince(repairStartedAt);
+        timing.llm_ms = timing.main_llm_ms + timing.repair_ms;
+      }
+      if (!safeReply) {
+        timing.total_ms = Date.now() - chatStartedAt;
+        return json({
+          action: "skip",
+          reason: "empty_reply_after_pipeline",
+          request_id: requestId,
+          timing,
+          ...contractFields,
+        });
+      }
       const replySafetyOverrides = safetyPipeline.overrides;
       timing.pipeline_ms = Date.now() - pipelineStartedAt;
-      // 2026-10-05 决策：连“太低信息量就不发”的闸也一起关掉。
-      // 不重写又不发＝对方等不到任何回复（未读还会被清掉），比敷衍一句更糟。
       const nowSec = Math.floor(Date.now() / 1000);
 
       const persistStartedAt = Date.now();
@@ -1787,6 +1768,7 @@ export async function handleChatRequest({ request, env, context, path, method })
       return json({
         action: "send",
         reply: pending.content,
+        reply_parts: splitContractReplyParts(pending.content),
         reply_id: pending.id,
         status: "pending",
         request_id: requestId,
@@ -1802,6 +1784,7 @@ export async function handleChatRequest({ request, env, context, path, method })
           overrides: replySafetyOverrides,
         },
         matched_knowledge_card_ids: matchedKnowledgeCardIds,
+        ...contractFields,
         ...(selfLeave.cooldownMs > 0 ? { self_leave_ms: selfLeave.cooldownMs } : {}),
         // 调试提示词默认关闭，只有环境里显式打开时才允许请求方拿到。
         ...(body?.debug_prompt === true && String(env.DEBUG_PROMPT_ENABLED || "") === "1"

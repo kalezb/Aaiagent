@@ -7,6 +7,10 @@ data class SyncSnapshotItem(
     val content: String,
     val createdAt: Long? = null,
     val stableKey: String? = null,
+    // 只按“谁发的 + 类型 + 内容”得到的原始身份，用于下次读取时重新接上对话顺序。
+    val contentKey: String? = null,
+    // 本次对话里单调增加的顺序号，不拿页面相对时间去猜。
+    val ledgerOrdinal: Long? = null,
     // 2026-10-07（时间可信）：界面上到底有没有写出这条消息的时间。
     // 写了 → 这是他真实发送的时间；没写 → 只是我们读到它的时间。
     val explicitTime: Boolean? = null,

@@ -19,6 +19,9 @@ data class ConversationEntryTask(
     val nextAttemptAtMs: Long = 0L,
     val attempts: Int = 0,
     val lastReason: String = "",
+    val handledPreview: String = "",
+    val handledLastMessageTime: String = "",
+    val handledUnreadCount: Int = 0,
 )
 
 sealed interface ConversationEntryOutcome {
@@ -61,6 +64,7 @@ class ConversationEntryCoordinator(
     private val clock: () -> Long = System::currentTimeMillis,
     private val verifyAttempts: Int = 20,
     private val verifyDelayMs: Long = 100L,
+    private val multiContactCooldownMs: Long = MULTI_CONTACT_COOLDOWN_MS,
 ) {
     private val tasks = linkedMapOf<String, ConversationEntryTask>()
     private val lastServedAtMs = mutableMapOf<String, Long>()
@@ -91,7 +95,10 @@ class ConversationEntryCoordinator(
         if (allowed.isEmpty()) {
             return ConversationEntryOutcome.NoWork
         }
-        val hasOtherCandidates = allowed.size > 1
+        val hasOtherCandidates = allowed.size > 1 ||
+            lastServedAtMs.size > 1 ||
+            tasks.size > 1 ||
+            snapshot.unreadCount > 1
         val candidates = allowed.filter { candidate -> shouldTry(candidate, nowMs, hasOtherCandidates) }
         if (candidates.isEmpty()) {
             return ConversationEntryOutcome.NoWork
@@ -157,13 +164,21 @@ class ConversationEntryCoordinator(
         )
     }
 
-    fun markComplete(identityKey: String) {
+    fun markComplete(
+        identityKey: String,
+        handledIdentity: ConversationIdentity? = null,
+    ) {
         val task = tasks[identityKey] ?: return
         tasks[identityKey] = task.copy(
+            identity = handledIdentity ?: task.identity,
             state = ConversationEntryState.COMPLETE,
             updatedAtMs = clock(),
             nextAttemptAtMs = 0L,
             lastReason = "",
+            handledPreview = handledIdentity?.preview ?: task.handledPreview,
+            handledLastMessageTime =
+                handledIdentity?.lastMessageTime ?: task.handledLastMessageTime,
+            handledUnreadCount = handledIdentity?.unreadCount ?: task.handledUnreadCount,
         )
         lastServedAtMs[identityKey] = clock()
     }
@@ -185,11 +200,21 @@ class ConversationEntryCoordinator(
         nowMs: Long,
         hasOtherCandidates: Boolean = false,
     ): Boolean {
-        val gap = if (hasOtherCandidates) MULTI_CONTACT_COOLDOWN_MS else SINGLE_CONTACT_SETTLE_MS
+        val gap = if (hasOtherCandidates) multiContactCooldownMs else SINGLE_CONTACT_SETTLE_MS
         val task = tasks[identity.key] ?: run {
             // 没被 task 追踪过，但可能刚被回复过（上一次生命周期里记的 lastServedAtMs）
             val servedAt = lastServedAtMs[identity.key] ?: return true
             return nowMs - servedAt >= gap
+        }
+        if (task.state == ConversationEntryState.COMPLETE &&
+            ConversationUnreadAdmissionPolicy.isStaleReminder(
+                current = identity,
+                handledPreview = task.handledPreview,
+                handledLastMessageTime = task.handledLastMessageTime,
+                handledUnreadCount = task.handledUnreadCount,
+            )
+        ) {
+            return false
         }
         return when (task.state) {
             ConversationEntryState.COMPLETE,

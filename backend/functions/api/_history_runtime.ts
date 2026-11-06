@@ -233,6 +233,10 @@ export async function listCustomerGroups(db, token, platformFilter, searchQuery)
     link,
   ]));
   const aliasToGroup = new Map();
+  const contactWhitelistMap = new Map(contacts.map((c) => [
+    makeContactKey(c.token, c.platform, c.contact_id),
+    c.is_whitelisted ?? 1,
+  ]));
 
   function ensureGroup(record) {
     let group = groupRecords.get(record.id);
@@ -266,8 +270,17 @@ export async function listCustomerGroups(db, token, platformFilter, searchQuery)
       notes: meta?.notes,
       priority_reply: meta?.priority_reply,
     });
-    if (!group.aliases.some((alias) => alias.platform === platform && alias.contact_id === contactId)) {
-      group.aliases.push({ platform, contact_id: contactId, contact_name: contactName || contactId });
+    const isWhitelisted = contactWhitelistMap.has(key) ? Number(contactWhitelistMap.get(key) ?? 1) : 1;
+    const existingAlias = group.aliases.find((alias) => alias.platform === platform && alias.contact_id === contactId);
+    if (!existingAlias) {
+      group.aliases.push({
+        platform,
+        contact_id: contactId,
+        contact_name: contactName || contactId,
+        is_whitelisted: isWhitelisted,
+      });
+    } else if (contactWhitelistMap.has(key)) {
+      existingAlias.is_whitelisted = isWhitelisted;
     }
     if (!group.platforms.includes(platform)) group.platforms.push(platform);
     aliasToGroup.set(key, groupId);
@@ -362,6 +375,15 @@ export function dedupeNearbyHistory(messages) {
   const result = [];
   for (const message of messages || []) {
     const previous = result[result.length - 1];
+    const previousClientId = String(
+      previous?.client_message_id || previous?.message_key || "",
+    ).trim();
+    const currentClientId = String(
+      message?.client_message_id || message?.message_key || "",
+    ).trim();
+    const differentStableMessages = previousClientId &&
+      currentClientId &&
+      previousClientId !== currentClientId;
     const sameSpeaker = previous &&
       String(previous.role || "user") === String(message.role || "user") &&
       String(previous.platform || "") === String(message.platform || "") &&
@@ -370,7 +392,7 @@ export function dedupeNearbyHistory(messages) {
       String(previous.content || "").trim() === String(message.content || "").trim();
     const nearby = previous &&
       Math.abs(Number(previous.created_at || 0) - Number(message.created_at || 0)) <= 10;
-    if (sameSpeaker && sameContent && nearby) continue;
+    if (!differentStableMessages && sameSpeaker && sameContent && nearby) continue;
     result.push(message);
   }
   return result;
@@ -378,6 +400,15 @@ export function dedupeNearbyHistory(messages) {
 
 export function dedupeHistoryAgainstCurrent(historyMessages, currentMessages) {
   historyMessages = dedupeNearbyHistory(historyMessages);
+  const stableIds = new Set(
+    (Array.isArray(currentMessages) ? currentMessages : [])
+      .map((message) => String(
+        message?.client_message_id ||
+        message?.message_key ||
+        "",
+      ).trim())
+      .filter(Boolean),
+  );
   const remaining = new Map();
   for (const message of currentMessages || []) {
     const key = String(message.role || "user") + "\u0000" + String(message.content || "").trim();
@@ -386,7 +417,17 @@ export function dedupeHistoryAgainstCurrent(historyMessages, currentMessages) {
   const result = [];
   for (let index = historyMessages.length - 1; index >= 0; index--) {
     const message = historyMessages[index];
+    const stableId = String(
+      message?.client_message_id ||
+      message?.message_key ||
+      "",
+    ).trim();
     const key = String(message.role || "user") + "\u0000" + String(message.content || "").trim();
+    if (stableId && stableIds.has(stableId)) {
+      const matchedCount = remaining.get(key) || 0;
+      if (matchedCount > 0) remaining.set(key, matchedCount - 1);
+      continue;
+    }
     const count = remaining.get(key) || 0;
     if (count > 0) {
       remaining.set(key, count - 1);

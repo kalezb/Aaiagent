@@ -276,7 +276,7 @@ fun DashboardScreen(
 
         Spacer(Modifier.height(18.dp))
         SectionHeader(title = "共享人设资料")
-        SharedPersonaFactsCard(facts = personaFacts, activePersonaId = activePersonaId)
+        SharedPersonaFactsCard(facts = personaFacts)
 
         Spacer(Modifier.height(18.dp))
         SectionHeader(title = "客户策略")

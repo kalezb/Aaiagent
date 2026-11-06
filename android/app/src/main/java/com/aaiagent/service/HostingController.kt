@@ -10,7 +10,11 @@ import com.aaiagent.engine.HostingMode
 import com.aaiagent.engine.HostingSessionPolicy
 import com.aaiagent.engine.HostingStartNoticePolicy
 import com.aaiagent.network.ApiService
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 object HostingController {
@@ -22,6 +26,9 @@ object HostingController {
         val enabled: Boolean,
         val message: String
     )
+
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var blacklistSyncJob: Job? = null
 
     suspend fun setHosting(
         context: Context,
@@ -56,16 +63,8 @@ object HostingController {
         ForegroundService.ensureRunning(appContext)
 
         if (enable) {
-            val apiBase = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
-            val tokenVerified = token.isNotBlank() && runCatching {
-                ApiService(apiBase).saveConfig(
-                    token,
-                    mapOf("action" to "verify_token")
-                ).success
-            }.getOrDefault(false)
             val failure = HostingControlPolicy.startFailure(
                 hasToken = token.isNotBlank(),
-                tokenVerified = tokenVerified,
                 accessibilityReady = AssistantAccessibilityService.sharedEngine != null
             )
             if (failure != null) {
@@ -96,19 +95,46 @@ object HostingController {
 
             HostingSessionPolicy.markStarted(platform, mode)
             publishState(appContext, enabled = true)
-            val filters = withContext(Dispatchers.IO) {
-                repository.getContactWhitelist() to repository.getContactBlacklist()
+            backgroundScope.launch {
+                val filters = runCatching {
+                    repository.getContactWhitelist() to repository.getContactBlacklist()
+                }.getOrNull()
+                val notice = filters?.let { (white, black) ->
+                    HostingStartNoticePolicy.notice(white, black)
+                }.orEmpty()
+                if (notice.isNotBlank()) {
+                    withContext(Dispatchers.Main.immediate) {
+                        Toast.makeText(appContext, notice, Toast.LENGTH_LONG).show()
+                    }
+                }
+                syncBackend(repository, token, enabled = true)
             }
-            val notice = HostingStartNoticePolicy.notice(filters.first, filters.second)
-            if (notice.isNotBlank()) {
-                withContext(Dispatchers.Main.immediate) {
-                    Toast.makeText(appContext, notice, Toast.LENGTH_LONG).show()
+            blacklistSyncJob?.cancel()
+            blacklistSyncJob = backgroundScope.launch {
+                val effectiveToken = token.ifBlank {
+                    withContext(Dispatchers.IO) {
+                        repository.getActiveToken()?.token?.trim().orEmpty()
+                    }
+                }
+                while (effectiveToken.isNotBlank()) {
+                    runCatching {
+                        val apiBase = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
+                        val config = ApiService(apiBase).getConfig(effectiveToken)
+                        config.contactBlacklist?.let { serverBlacklist ->
+                            val normalized = com.aaiagent.data.repository.ContactListCodec.normalize(serverBlacklist)
+                            withContext(Dispatchers.IO) {
+                                repository.setContactBlacklist(normalized)
+                            }
+                        }
+                    }
+                    kotlinx.coroutines.delay(15_000L)
                 }
             }
-            syncBackend(repository, token, enabled = true)
             return Result(success = true, enabled = true, message = "已开启 AI 托管")
         }
 
+        blacklistSyncJob?.cancel()
+        blacklistSyncJob = null
         withContext(Dispatchers.Main.immediate) {
             AssistantAccessibilityService.sharedEngine?.let { engine ->
                 engine.stopHosting()
@@ -122,7 +148,9 @@ object HostingController {
             repository.setConfig(HostingSessionPolicy.ENABLED_KEY, "false")
         }
         publishState(appContext, enabled = false)
-        syncBackend(repository, token, enabled = false)
+        backgroundScope.launch {
+            syncBackend(repository, token, enabled = false)
+        }
         return Result(success = true, enabled = false, message = "已关闭 AI 托管")
     }
 
@@ -131,11 +159,16 @@ object HostingController {
         token: String,
         enabled: Boolean
     ) {
-        if (token.isBlank()) return
+        val effectiveToken = token.ifBlank {
+            withContext(Dispatchers.IO) {
+                repository.getActiveToken()?.token?.trim().orEmpty()
+            }
+        }
+        if (effectiveToken.isBlank()) return
         runCatching {
             val apiBase = withContext(Dispatchers.IO) { repository.getApiBaseUrl() }
             ApiService(apiBase).saveConfig(
-                token,
+                effectiveToken,
                 mapOf("action" to "toggle_hosting", "enabled" to enabled.toString())
             )
         }

@@ -10,6 +10,7 @@ import {
   localAgeReply,
   localExcludedRecycleReply,
   resolveXingmuEvaluationReply,
+  sanitizeAgeConsistency,
   sanitizeXingmuProductLeak,
   XINGMU_FIXED_AGE,
   XINGMU_PRODUCT_REPLY,
@@ -197,5 +198,15 @@ describe("Xingmu funnel and age rules", () => {
       [{ role: "assistant", content: "29呀 你呢", created_at: 1_790_000_000 - 30 }],
       1_790_000_000,
     )).toBe("刚说过了呀 我29");
+    expect(sanitizeAgeConsistency(
+      "快三十了|||查户口呢？",
+      "你多大了",
+      29,
+    )).toBe("29呀 你呢");
+    expect(sanitizeAgeConsistency(
+      "我29了|||你呢",
+      "你多大了",
+      29,
+    )).toBe("我29了|||你呢");
   });
 });

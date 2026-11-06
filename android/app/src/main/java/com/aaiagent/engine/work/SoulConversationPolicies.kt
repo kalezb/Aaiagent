@@ -57,6 +57,44 @@ object SoulContactIdentityPolicy {
     }
 }
 
+object SoulConversationRowPolicy {
+    fun matches(
+        expectedPreview: String,
+        actualPreview: String,
+        expectedTime: String,
+        actualTime: String,
+    ): Boolean {
+        val preview = normalizePreview(expectedPreview)
+        val actual = normalizePreview(actualPreview)
+        val time = normalizeTime(expectedTime)
+        val actualClock = normalizeTime(actualTime)
+        if (preview.isNotEmpty()) {
+            if (actual.isEmpty()) return false
+            val previewHead = preview.take(12)
+            val actualHead = actual.take(12)
+            if (!preview.contains(actualHead) && !actual.contains(previewHead)) return false
+        }
+        if (time.isNotEmpty()) {
+            if (actualClock.isEmpty()) return false
+            if (time != actualClock &&
+                !(time.length >= 4 && actualClock.length >= 4 &&
+                    (time.contains(actualClock) || actualClock.contains(time)))
+            ) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun normalizePreview(value: String): String {
+        return value.replace(Regex("\\s+"), "").trim()
+    }
+
+    private fun normalizeTime(value: String): String {
+        return value.replace(Regex("\\s+"), "").trim()
+    }
+}
+
 object SoulRiskOverlayPolicy {
     const val POST_RISK_REASON = "SOUL_MOMENT_POST_RISK_DIALOG"
     const val POST_RISK_TEXT = "本次交易存在欺诈风险"

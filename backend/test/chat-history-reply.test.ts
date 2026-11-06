@@ -24,7 +24,7 @@ import {
   ADVANCEMENT_RULE,
   OUTPUT_HARD_RULE,
   QUESTION_PACING_RULE,
-  PROACTIVE_STYLE_SUTANG,
+  SUTANG_ACTION_LADDER_RULE,
 } from "../functions/api/_reply_policy";
 import {
   MockD1,
@@ -215,7 +215,7 @@ describe("chat history and reply", () => {
     expect(eveningRule).toContain("现在是晚上");
     expect(eveningRule).toContain("绝对不许说“早上好、下午好”");
     expect(resolveDaypart("2026-10-05 08:10:00").label).toBe("早上");
-    expect(buildDaypartRule("2026-10-05 08:10:00")).toContain("不许说娃哄睡了");
+    expect(buildDaypartRule("2026-10-05 08:10:00")).toContain("不许说准备睡觉");
     expect(resolveDaypart("2026-10-05 23:40:00").label).toBe("深夜");
   });
 
@@ -273,16 +273,11 @@ describe("chat history and reply", () => {
     const systemPrompt = String(payload.messages[0].content);
     expect(systemPrompt).not.toContain("二手手机");
     expect(systemPrompt).not.toContain("旧数码");
-    expect(systemPrompt).toContain("【时段约束】");
-    expect(systemPrompt).not.toContain("【生活素材】");
-    // 2026-10-06 新增的两条“必须分辨”：第三方归属、她欠回复时不许倒打一耙
-    expect(systemPrompt).toContain("分清是谁的人");
-    expect(systemPrompt).toContain("只接对方最新一句；不主动解释、不主动道歉、不主动汇报自己在忙什么。");
-    // 2026-10-07 事实一致：生活细节可以编，但编了就守住，不许改口。
-    // 真机事故：卡卡罗特（重庆本地人）那边，位置一会儿一个说法，对方两次说“你在逗我”。
-    expect(systemPrompt).toContain("【事实一致】");
-    expect(systemPrompt).toContain("编了就守住");
-    expect(systemPrompt).toContain("不能拿它给生活细节改口");
+    expect(systemPrompt).toContain("做电商运营");
+    expect(systemPrompt).toContain("【事实底线】");
+    expect(systemPrompt).toContain("没给出的生活经历不要编");
+    expect(systemPrompt).not.toContain("编了就守住");
+    expect(systemPrompt).toContain("从事什么行业呢");
   });
 
   it("adds relative age and blocks only a false just-arrived claim", async () => {
@@ -396,7 +391,7 @@ describe("chat history and reply", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("lets Su Tang ask his look once, then never again after he sends a photo", () => {
+  it("only discusses photos when he raises the topic and never nags", () => {
     const base = {
       personaPrompt: "你是苏棠，做电商运营。",
       personaFacts: null,
@@ -414,26 +409,68 @@ describe("chat history and reply", () => {
       historyMessages: [],
       xingmuSoulScope: false,
     };
-    const fresh = buildLayeredSystemPrompt(base);
-    expect(fresh).toContain("当前档案：他还没发过照片");
-    expect(fresh).toContain("你长什么样呀 发张我看看");
-    expect(fresh).toContain("可以主动问一次");
+    const normalChat = buildLayeredSystemPrompt(base);
+    expect(normalChat).not.toContain("【照片记忆】");
+    expect(normalChat).not.toContain("【照片交换顺序");
+    expect(normalChat).not.toContain("发张我看看");
 
-    const byFile = buildLayeredSystemPrompt({ ...base, hisPhotoOnFile: true });
-    expect(byFile).toContain("永不再问");
-    expect(byFile).toContain("当前档案：他已经发过照片");
+    const photoBase = {
+      ...base,
+      messages: [{ role: "user", content: "能发张你的照片看看吗" }],
+    };
+    const fresh = buildLayeredSystemPrompt(photoBase);
+    expect(fresh).toContain("当前档案：他还没发过照片");
+    expect(fresh).toContain("最多顺口问一次");
+    expect(fresh).toContain("【照片交换顺序｜最高优先级】");
+    expect(fresh).toContain("最多顺口问一次他的近照");
+
+    const byFile = buildLayeredSystemPrompt({ ...photoBase, hisPhotoOnFile: true });
+    expect(byFile).toContain("他之前已经发过照片");
+    expect(byFile).not.toContain("你长什么样呀 发张我看看");
 
     const byHistory = buildLayeredSystemPrompt({
-      ...base,
+      ...photoBase,
       historyMessages: [{ role: "user", content: "[图片]" }],
     });
-    expect(byHistory).toContain("永不再问");
-    expect(byHistory).toContain("当前档案：他已经发过照片");
+    expect(byHistory).toContain("他之前已经发过照片");
+    expect(byHistory).not.toContain("当前档案：他还没发过照片");
 
-    const herFresh = buildLayeredSystemPrompt(base);
-    expect(herFresh).toContain("当前档案：她还没给他看过照片");
-    const herSent = buildLayeredSystemPrompt({ ...base, herPhotoOnFile: true });
+    const justReceived = buildLayeredSystemPrompt({
+      ...photoBase,
+      messages: [
+        { role: "user", content: "[图片]" },
+        { role: "user", content: "换个照片看看" },
+      ],
+    });
+    expect(justReceived).toContain("他刚发来照片，本轮先接住这张照片");
+
+    const alreadyProbed = buildLayeredSystemPrompt({
+      ...photoBase,
+      historyMessages: [{ role: "assistant", content: "近照还没发呢" }],
+      customerSlots: {
+        ageKnown: false,
+        ageValue: "",
+        ageProbedRecently: false,
+        maritalKnown: false,
+        maritalValue: "",
+        maritalProbedRecently: false,
+        locationKnown: false,
+        locationValue: "",
+        locationProbedRecently: false,
+        workKnown: false,
+        workValue: "",
+        workProbedRecently: false,
+        hisPhotoKnown: false,
+        hisPhotoProbedRecently: true,
+      },
+    });
+    expect(alreadyProbed).toContain("最近已经要过他的照片");
+    expect(alreadyProbed).not.toContain("最多顺口问一次他的近照");
+
+    const herSent = buildLayeredSystemPrompt({ ...photoBase, herPhotoOnFile: true });
     expect(herSent).toContain("当前档案：她已经给他看过照片");
+    expect(herSent).toContain("不要再追着要他的照片");
+    expect(herSent).not.toContain("可以主动问一次");
   });
 
   it("tells her to lead when he only offers a weak opener or keeps brushing her off", () => {
@@ -477,7 +514,9 @@ describe("chat history and reply", () => {
     expect(prompt).toContain(ADVANCEMENT_RULE);
     expect(prompt).toContain(OUTPUT_HARD_RULE);
     expect(prompt).toContain(QUESTION_PACING_RULE);
-    expect(prompt).toContain(PROACTIVE_STYLE_SUTANG);
+    expect(prompt).toContain(SUTANG_ACTION_LADDER_RULE);
+    expect(prompt).toContain("推进不等于每轮追问");
+    expect(prompt).not.toContain("绝不原地打转");
     // 不许再出现“让他自己交代一句”的教法（旧句是“要么认一句自己没接上（睡着了、忙忘了）”）
     expect(prompt).not.toContain("认一句自己没接上");
     expect(prompt).not.toContain("这两天忙晕了");
@@ -844,8 +883,8 @@ describe("chat history and reply", () => {
             message: {
               content: JSON.stringify({
                 messages: [
-                  "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86",
-                  "[soul 10/01 18:57] \u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
+                  "\u4f4d\u7f6e\u5c31\u7b97\u4e86",
+                  "[soul 10/01 18:57] \u89c1\u9762\u5148\u653e\u653e",
                 ],
               }),
             },
@@ -874,7 +913,7 @@ describe("chat history and reply", () => {
     await expect(response.json()).resolves.toMatchObject({
       action: "send",
       // 模型已经分成两条；后台只清掉第二条前面的泄露标记，不重新断句或拼接。
-      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86\uff0c\u624d\u804a\u51e0\u5929\u5c31\u4e92\u6362\u5730\u5740\u592a\u5feb\u4e86|||\u4f60\u4e5f\u662f\u6025\u6027\u5b50\uff0c\u89c1\u9762\u7684\u4e8b\u5148\u653e\u653e\u5427",
+      reply: "\u4f4d\u7f6e\u5c31\u7b97\u4e86|||\u89c1\u9762\u5148\u653e\u653e",
     });
   });
 

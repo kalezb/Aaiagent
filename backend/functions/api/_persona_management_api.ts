@@ -44,6 +44,9 @@ function drawersForStorage(list: PersonaDrawerItem[] = []): PersonaDrawerItem[] 
     activation: item.activation || "keyword",
     replyMode: normalizeDrawerReplyMode(item.replyMode, "guide"),
     priority: Number(item.priority || 0),
+    minExchanges: Math.max(0, Number(item.minExchanges || 0) || 0),
+    afterMinute: item.afterMinute,
+    beforeMinute: item.beforeMinute,
     enabled: item.enabled !== false,
     deleted: item.deleted === true,
   }));
@@ -242,7 +245,7 @@ export async function handlePersonaManagementRequest({
       const basePrompt = [
         snapshot.systemPrompt,
         buildPersonaFactsPrompt(snapshot.facts, {
-          contactLabel: personaId === "female_sutang" ? "豆瓣号" : "QQ号",
+          contactLabel: "QQ号",
         }),
         "只输出对客户可见的回复。如果规则要求忽略某类平台内容，只输出 [忽略]。",
       ].filter(Boolean).join("\n\n");

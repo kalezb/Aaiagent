@@ -71,6 +71,22 @@ export async function handleDashboardCustomerRequest({
         district: effectivePersona.facts.work_district,
       },
     };
+    const blacklistedContacts = tokenRow
+      ? ((await env.DB.prepare(
+          "SELECT DISTINCT c.contact_name, c.contact_id, g.display_name FROM contacts c LEFT JOIN contact_links l ON l.token = c.token AND l.platform = c.platform AND l.contact_id = c.contact_id LEFT JOIN customer_groups g ON g.token = c.token AND g.id = l.group_id WHERE c.token = ? AND c.is_whitelisted = 0"
+        ).bind(tokenRow.token).all()).results || [])
+      : [];
+    const contactBlacklist = Array.from(new Set(
+      blacklistedContacts
+        .flatMap((row: any) => {
+          const names: string[] = [];
+          if (row.display_name && String(row.display_name).trim()) names.push(String(row.display_name).trim());
+          if (row.contact_name && String(row.contact_name).trim()) names.push(String(row.contact_name).trim());
+          if (names.length === 0 && row.contact_id && String(row.contact_id).trim()) names.push(String(row.contact_id).trim());
+          return names;
+        })
+        .filter((name: string) => name.length > 0)
+    ));
     return json({
       active_persona_id: personaId,
       active_persona_name: persona?.name || "\u2606\u2622",
@@ -91,6 +107,7 @@ export async function handleDashboardCustomerRequest({
       ai_hours_enabled: settings.ai_hours_enabled ?? false,
       ai_start_hour: settings.ai_start_hour ?? 8,
       ai_end_hour: settings.ai_end_hour ?? 23,
+      contact_blacklist: contactBlacklist,
     });
   }
 
@@ -312,6 +329,48 @@ export async function handleDashboardCustomerRequest({
       return json({ success: true, group: identity });
     } catch (error) {
       return json({ error: "优先回复更新失败：" + String(error?.message || error) }, 500);
+    }
+  }
+
+  // PUT /api/customer-groups/blacklist - blacklist or un-blacklist this customer across linked accounts
+  if (path === "/api/customer-groups/blacklist" && method === "PUT") {
+    if (!isDashboardAuthorized(request, env)) return json({ error: "未授权" }, 401);
+    const body = await request.json();
+    const token = String(body.token || "").trim();
+    const groupId = String(body.group_id || "").trim();
+    const blacklisted = Boolean(body.blacklisted);
+    const targetWhitelisted = blacklisted ? 0 : 1;
+    if (!token || !groupId) return json({ error: "缺少必要参数" }, 400);
+
+    try {
+      let identity = await loadGroupIdentity(env.DB, groupId, token);
+      if (!identity) return json({ error: "客户不存在" }, 404);
+      const aliases = identity.aliases || [];
+      if (aliases.length === 0) {
+        return json({ error: "这个联系人还不在客户库里，先让设备同步一次再试" }, 400);
+      }
+      const now = Math.floor(Date.now() / 1000);
+      for (const alias of aliases) {
+        await env.DB.prepare(
+          "INSERT INTO contacts (token, platform, contact_id, contact_name, is_whitelisted, notes, created_at) VALUES (?, ?, ?, ?, ?, '', ?) ON CONFLICT(token, platform, contact_id) DO UPDATE SET is_whitelisted = excluded.is_whitelisted"
+        ).bind(
+          token,
+          alias.platform,
+          alias.contact_id,
+          alias.contact_name || identity.display_name || alias.contact_id,
+          targetWhitelisted,
+          now
+        ).run();
+        if (!blacklisted) {
+          await env.DB.prepare(
+            "UPDATE contacts SET voice_warn_at = 0 WHERE token = ? AND platform = ? AND contact_id = ?"
+          ).bind(token, alias.platform, alias.contact_id).run();
+        }
+      }
+      identity = await loadGroupIdentity(env.DB, groupId, token);
+      return json({ success: true, group: identity, blacklisted });
+    } catch (error) {
+      return json({ error: "拉黑状态更新失败：" + String(error?.message || error) }, 500);
     }
   }
 

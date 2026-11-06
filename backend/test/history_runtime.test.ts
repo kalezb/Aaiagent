@@ -27,10 +27,61 @@ describe("history runtime", () => {
     expect(dedupeNearbyHistory(messages)).toHaveLength(1);
   });
 
+  it("keeps nearby same words when their message positions are different", () => {
+    const messages = [
+      {
+        role: "user",
+        content: "还在躺着呢",
+        created_at: 100,
+        message_key: "message-1",
+        platform: "soul",
+        contact_id: "a",
+      },
+      {
+        role: "user",
+        content: "还在躺着呢",
+        created_at: 104,
+        message_key: "message-2",
+        platform: "soul",
+        contact_id: "a",
+      },
+    ];
+
+    expect(dedupeNearbyHistory(messages)).toHaveLength(2);
+  });
+
   it("keeps the current request from appearing twice", () => {
     const history = [{ role: "user", content: "你好", created_at: 100, platform: "soul", contact_id: "a" }];
     const current = [{ role: "user", content: "你好" }];
     expect(dedupeHistoryAgainstCurrent(history, current)).toEqual([]);
+  });
+
+  it("matches stable message ids before falling back to content", () => {
+    const history = [
+      {
+        role: "user",
+        content: "还在躺着呢",
+        created_at: 100,
+        message_key: "message-1",
+        platform: "soul",
+        contact_id: "a",
+      },
+      {
+        role: "user",
+        content: "还在躺着呢",
+        created_at: 200,
+        message_key: "message-2",
+        platform: "soul",
+        contact_id: "a",
+      },
+    ];
+    const current = [{
+      role: "user",
+      content: "还在躺着呢",
+      client_message_id: "message-2",
+    }];
+
+    expect(dedupeHistoryAgainstCurrent(history, current)).toEqual([history[0]]);
   });
 
   it("loads only recent replies from the same platform and contact", async () => {

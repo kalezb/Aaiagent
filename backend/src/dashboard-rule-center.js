@@ -2,6 +2,7 @@ async function loadAgentRules() {
   var data = await api("GET", "/agent-rules");
   state.agentRules = data.rules || [];
   state.agentRuleConflicts = data.conflicts || [];
+  state.sutangRuleHealth = data.sutang_health || null;
   state.agentRuleSummary = data.summary || {
     total: state.agentRuleConflicts.length,
     errors: 0,
@@ -10,6 +11,7 @@ async function loadAgentRules() {
     muted: 0,
   };
   renderRuleCenterSummary();
+  renderSutangRuleHealth();
   renderAgentRuleConflicts();
   ensurePlainLanguageRulePanel();
   renderAgentRules();
@@ -22,7 +24,11 @@ function filteredAgentRules() {
   var gate = $("agentRuleGateFilter") ? $("agentRuleGateFilter").value : "";
   var status = $("agentRuleStatusFilter") ? $("agentRuleStatusFilter").value : "";
   var conflictFilter = $("agentRuleConflictFilter") ? $("agentRuleConflictFilter").value : "";
+  var showDefaults = state.showDefaultAgentRules === true;
+  var hasExplicitFilter = Boolean(query || gate || status || conflictFilter);
   return state.agentRules.filter(function (item) {
+    if (!ruleAppliesToPersona(item, activePersonaId())) return false;
+    if (!showDefaults && !hasExplicitFilter && item.source !== "user" && item.is_custom !== true) return false;
     if (gate && item.gate !== gate) return false;
     if (status === "enabled" && item.enabled === false) return false;
     if (status === "disabled" && item.enabled !== false) return false;
@@ -37,6 +43,13 @@ function filteredAgentRules() {
       ruleTopicLabel(item),
     ].join(" ").toLowerCase().includes(query);
   });
+}
+
+function ruleAppliesToPersona(item, personaId) {
+  var scopes = String(item.persona_id || "").split(/[,\n]/u).map(function (value) {
+    return value.trim();
+  }).filter(Boolean);
+  return !scopes.length || scopes.indexOf(personaId) >= 0;
 }
 
 function conflictsForRule(item) {
@@ -54,34 +67,50 @@ function conflictWorstLevel(item) {
 }
 
 function renderRuleCenterSummary() {
-  var enabled = state.agentRules.filter(function (item) { return item.enabled !== false; }).length;
-  var disabled = state.agentRules.length - enabled;
-  var summary = state.agentRuleSummary || {};
-  if ($("ruleSummaryActive")) $("ruleSummaryActive").textContent = enabled;
+  var personaRules = state.agentRules.filter(function (item) {
+    return ruleAppliesToPersona(item, activePersonaId());
+  });
+  var enabled = personaRules.filter(function (item) { return item.enabled !== false; }).length;
+  var disabled = personaRules.length - enabled;
+  var personaRuleKeys = new Set(personaRules.map(ruleKey));
+  var personaConflicts = state.agentRuleConflicts.filter(function (conflict) {
+    return (conflict.rule_ids || []).some(function (ruleId) { return personaRuleKeys.has(ruleId); });
+  });
+  var activeConflicts = personaConflicts.filter(function (conflict) {
+    return (conflict.rule_ids || []).some(function (id) {
+      var r = state.agentRules.find(function (item) { return ruleKey(item) === id; });
+      return r && (r.source === "user" || r.is_custom === true);
+    });
+  });
+  var targetConflicts = state.showDefaultAgentRules ? personaConflicts : activeConflicts;
+  var summary = {
+    errors: targetConflicts.filter(function (item) { return item.level === "error"; }).length,
+    warnings: targetConflicts.filter(function (item) { return item.level === "warn"; }).length,
+  };
+  var customRules = personaRules.filter(function (item) { return item.source === "user" || item.is_custom === true; });
+  if ($("ruleSummaryActive")) $("ruleSummaryActive").textContent = customRules.length || "已接管";
   if ($("ruleSummaryDisabled")) $("ruleSummaryDisabled").textContent = disabled;
   if ($("ruleSummaryErrors")) $("ruleSummaryErrors").textContent = Number(summary.errors || 0);
   if ($("ruleSummaryWarnings")) $("ruleSummaryWarnings").textContent = Number(summary.warnings || 0);
-  if ($("ruleNavOverviewCount")) $("ruleNavOverviewCount").textContent = enabled + " 条";
-  if ($("ruleNavRulesCount")) $("ruleNavRulesCount").textContent = state.agentRules.length + " 条";
-  if ($("ruleNavConflictCount")) {
-    $("ruleNavConflictCount").textContent = Number(summary.errors || 0) + Number(summary.warnings || 0) + " 个";
-  }
-  if ($("ruleNavPersonaCount")) {
-    $("ruleNavPersonaCount").textContent = Number(state.agentOverview?.cards?.length || 0) + " 张";
-  }
-  if ($("ruleNavExecutionCount")) {
-    $("ruleNavExecutionCount").textContent = state.programRules?.customized ? "已设置" : "默认";
-  }
+  if ($("ruleNavOverviewCount")) $("ruleNavOverviewCount").textContent = "自学经验库";
+  if ($("ruleNavRulesCount")) $("ruleNavRulesCount").textContent = customRules.length ? (customRules.length + " 条") : "已归档";
+  if ($("ruleNavConflictCount")) $("ruleNavConflictCount").textContent = (Number(summary.errors || 0) + Number(summary.warnings || 0)) + " 个";
+  if ($("ruleNavPersonaCount")) $("ruleNavPersonaCount").textContent = Number(state.agentOverview?.cards?.length || 0) + " 张";
+  if ($("ruleNavExecutionCount")) $("ruleNavExecutionCount").textContent = state.programRules?.customized ? "已设置" : "默认";
 }
 
 function renderAgentRuleConflicts() {
   var host = $("agentRuleConflictList");
   if (!host) return;
   var level = $("ruleConflictLevelFilter") ? $("ruleConflictLevelFilter").value : "";
-  var list = state.agentRuleConflicts.filter(function (item) {
-    return !level || item.level === level;
+  var baseList = state.showDefaultAgentRules ? state.agentRuleConflicts : state.agentRuleConflicts.filter(function (c) {
+    return (c.rule_ids || []).some(function (id) {
+      var r = state.agentRules.find(function (item) { return ruleKey(item) === id; });
+      return r && (r.source === "user" || r.is_custom === true);
+    });
   });
-  if ($("ruleConflictCount")) $("ruleConflictCount").textContent = state.agentRuleConflicts.length + " 个提醒";
+  var list = baseList.filter(function (item) { return !level || item.level === level; });
+  if ($("ruleConflictCount")) $("ruleConflictCount").textContent = list.length ? (list.length + " 个提醒") : "0 个冲突（已全部归位）";
   host.innerHTML = list.length ? list.map(function (conflict) {
     var titles = (conflict.rule_titles || []).map(function (title) {
       return '<span class="rule-badge">' + esc(title) + "</span>";
@@ -99,7 +128,7 @@ function renderAgentRuleConflicts() {
           return '<button class="ghost-button small-button" data-conflict-edit="' + esc(id) + '">查看并修改</button>';
         }).join("")
       + "</div></div></article>";
-  }).join("") : '<div class="rule-empty">没有符合当前筛选的冲突。</div>';
+  }).join("") : '<div class="rule-empty">所有旧规则冲突已全部由状态机与经验库归位接管，当前 0 冲突。</div>';
   host.querySelectorAll("[data-conflict-edit]").forEach(function (button) {
     button.addEventListener("click", function () {
       var rule = state.agentRules.find(function (item) { return ruleKey(item) === button.dataset.conflictEdit; });
@@ -112,9 +141,20 @@ function renderAgentRules() {
   var host = $("legacyAgentRules");
   if (!host) return;
   var list = filteredAgentRules();
-  if ($("legacyRuleCount")) $("legacyRuleCount").textContent = state.agentRules.length + " 条";
+  var personaRules = state.agentRules.filter(function (item) {
+    return ruleAppliesToPersona(item, activePersonaId());
+  });
+  var customCount = personaRules.filter(function (item) { return item.source === "user" || item.is_custom === true; }).length;
+  if ($("legacyRuleCount")) $("legacyRuleCount").textContent = list.length ? (list.length + " 条") : "已全部归档";
+  var defaultCount = personaRules.filter(function (item) { return item.source !== "user" && item.is_custom !== true; }).length;
+  var fold = '<div class="rule-default-fold" style="border-left:3px solid #10b981;background:rgba(16,185,129,0.06);padding:10px 14px;border-radius:6px;margin-bottom:12px;">'
+    + '<div><b>默认规则已收起（已全量由状态机与经验库接管）</b>'
+    + '<p style="margin:4px 0 0 0;font-size:13px;color:#475569;">历史 60 次更新的 ' + defaultCount + ' 条旧补丁规则已安全归档，不再参与对白干扰。您无需维护任何复杂规则，平时修改直接在【人设与资料】使用大白话即可。</p></div>'
+    + '<button class="ghost-button small-button" id="toggleDefaultAgentRules" style="margin-top:6px;">'
+    + (state.showDefaultAgentRules ? "收起默认规则" : "查看全部默认规则（历史存档）") + "</button></div>";
   if (!list.length) {
-    host.innerHTML = '<div class="rule-empty">没有匹配的规则。换个筛选条件，或者新增一条规则。</div>';
+    host.innerHTML = fold + '<div class="rule-empty">没有自定义规则。历史 60 次更新的补丁规则已安全归档接管，无需打补丁。</div>';
+    bindDefaultRuleFold();
     return;
   }
   var groups = new Map();
@@ -123,7 +163,7 @@ function renderAgentRules() {
     if (!groups.has(topic)) groups.set(topic, []);
     groups.get(topic).push(item);
   });
-  host.innerHTML = [...groups.entries()].map(function (entry) {
+  host.innerHTML = fold + [...groups.entries()].map(function (entry) {
     var topic = entry[0];
     var items = entry[1];
     return '<div class="rule-topic-group"><div class="rule-topic-title"><span>' + esc(topic) + "</span></div>"
@@ -175,6 +215,17 @@ function renderAgentRules() {
       showRuleTab("conflicts");
       showToast(conflictsForRule(rule).length ? "已定位到相关冲突" : "这条规则暂时没有冲突");
     });
+  });
+  bindDefaultRuleFold();
+}
+
+function bindDefaultRuleFold() {
+  var button = $("toggleDefaultAgentRules");
+  if (!button) return;
+  button.addEventListener("click", function () {
+    state.showDefaultAgentRules = state.showDefaultAgentRules !== true;
+    renderRuleCenterSummary();
+    renderAgentRules();
   });
 }
 

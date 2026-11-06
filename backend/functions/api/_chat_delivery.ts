@@ -1,11 +1,13 @@
 import {
   capReplyLength,
+  isMachineCodeOrJson,
   loadOrCreatePendingReply,
   normalizeAssistantReplyPresentation,
 } from "./_reply_policy";
 import { sanitizeAssistantReply } from "./_assistant_output";
 import type { ImmediateReplyDecision } from "./_reply_decision";
 import { json } from "./_http_runtime";
+import { buildContractSendPayload } from "./_chat_contract";
 
 export async function respondWithImmediateReply({
   env,
@@ -21,6 +23,7 @@ export async function respondWithImmediateReply({
   incomingText = "",
   skipLengthCap = false,
   skipPresentation = false,
+  contractFields = {},
 }: {
   env: any;
   tokenRow: any;
@@ -35,6 +38,7 @@ export async function respondWithImmediateReply({
   incomingText?: string;
   skipLengthCap?: boolean;
   skipPresentation?: boolean;
+  contractFields?: Record<string, unknown>;
 }) {
   const rawContent = String(decision.content || "").trim();
   const sutang = String(personaScope || "") === "sutang";
@@ -45,7 +49,10 @@ export async function respondWithImmediateReply({
   const presented = skipPresentation
     ? sanitized
     : normalizeAssistantReplyPresentation(sanitized, { softParticles: sutang });
-  const content = (skipLengthCap ? presented : capReplyLength(presented, incomingText)).trim() || rawContent;
+  const capped = (skipLengthCap ? presented : capReplyLength(presented, incomingText)).trim();
+  const safeContent = isMachineCodeOrJson(capped) ? "" : capped;
+  const safeRaw = isMachineCodeOrJson(rawContent) ? "" : rawContent;
+  const content = safeContent || safeRaw;
   if (!content) return null;
   const activePersonaId = String(personaId || tokenRow.active_persona_id || "female");
   const activePersonaVersion = Number(personaVersion || 0);
@@ -59,22 +66,24 @@ export async function respondWithImmediateReply({
       reason: decision.reason,
       reply_id: existingReplyId,
     }));
-    return json({
-      action: "send",
+    return json(buildContractSendPayload({
       reply: content,
-      reply_id: existingReplyId,
-      status: "pending",
-      local: true,
-      request_id: requestId,
-      persona_id: activePersonaId,
-      persona_version: activePersonaVersion,
-      reply_audit: {
-        source: decision.source,
-        reason: decision.reason,
-        overrides: [],
+      extra: {
+        reply_id: existingReplyId,
+        status: "pending",
+        local: true,
+        request_id: requestId,
+        persona_id: activePersonaId,
+        persona_version: activePersonaVersion,
+        reply_audit: {
+          source: decision.source,
+          reason: decision.reason,
+          overrides: [],
+        },
+        ...(decision.extra || {}),
       },
-      ...(decision.extra || {}),
-    });
+      contract: contractFields,
+    }));
   }
   const nowSec = Math.floor(Date.now() / 1000);
   const pending = await loadOrCreatePendingReply(env.DB, {
@@ -104,16 +113,18 @@ export async function respondWithImmediateReply({
     source: decision.source,
     reason: decision.reason,
   }));
-  return json({
-    action: "send",
+  return json(buildContractSendPayload({
     reply: pending.content,
-    reply_id: pending.id,
-    status: "pending",
-    local: true,
-    request_id: requestId,
-    persona_id: activePersonaId,
-    persona_version: activePersonaVersion,
-    reply_audit: replyAudit,
-    ...(decision.extra || {}),
-  });
+    extra: {
+      reply_id: pending.id,
+      status: "pending",
+      local: true,
+      request_id: requestId,
+      persona_id: activePersonaId,
+      persona_version: activePersonaVersion,
+      reply_audit: replyAudit,
+      ...(decision.extra || {}),
+    },
+    contract: contractFields,
+  }));
 }

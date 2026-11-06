@@ -527,6 +527,37 @@ class ApiService internal constructor(
         }
     }
 
+    suspend fun groundVision(
+        token: String,
+        imageBase64: String,
+        screenWidth: Int = 1220,
+        screenHeight: Int = 2712,
+        intent: String = "close_popup_or_find_input",
+        mimeType: String = "image/jpeg"
+    ): VisualGroundingResponse = withContext(Dispatchers.IO) {
+        try {
+            val payload = mapOf(
+                "image_base64" to imageBase64,
+                "mime_type" to mimeType,
+                "screen_width" to screenWidth,
+                "screen_height" to screenHeight,
+                "intent" to intent
+            )
+            val body = gson.toJson(payload).toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url(baseUrl.trimEnd('/') + "/api/vision/ground")
+                .header("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            val response = modelClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: "{}"
+            gson.fromJson(responseBody, VisualGroundingResponse::class.java)
+                ?: VisualGroundingResponse(success = false, error = "empty_response")
+        } catch (e: Exception) {
+            VisualGroundingResponse(success = false, error = e.message ?: "vision grounding failed")
+        }
+    }
+
     suspend fun saveConfig(deviceKey: String, params: Map<String, String>): ConfigSaveResult = withContext(Dispatchers.IO) {
         try {
             val map = mutableMapOf("device_key" to deviceKey)

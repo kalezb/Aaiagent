@@ -2,9 +2,19 @@ package com.aaiagent
 
 import com.aaiagent.engine.AssistantReplySanitizer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AssistantReplySanitizerTest {
+    @Test
+    fun `checks every final bubble without treating separators as dirty content`() {
+        assertFalse(AssistantReplySanitizer.requiresCleanup(listOf("在的", "刚忙完")))
+        assertFalse(AssistantReplySanitizer.requiresCleanup(listOf("晚点聊")))
+        assertTrue(AssistantReplySanitizer.requiresCleanup(listOf("在的", "你说：刚忙完")))
+        assertTrue(AssistantReplySanitizer.requiresCleanup(listOf("在的", "[图片:daily_04]")))
+    }
+
     @Test
     fun `removes leaked speaker markers from every reply segment`() {
         val raw = "给谁 你对象啊\n你说：我眯了啊 明天还一堆单子\n你说：明天还得跑单子"

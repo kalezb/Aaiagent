@@ -39,8 +39,7 @@ class UnansweredTimelineTest {
         assertTrue(timeline.contains("【9月27日 10:20】互动表情：对方发来 Soul 互动表情「皮一下」"))
         assertTrue(timeline.contains("只把最新一句当成本轮起点"))
         assertTrue(timeline.contains("按时间顺序理解"))
-        assertTrue(timeline.contains("【待处理事项】"))
-        assertTrue(timeline.contains("先处理第1项"))
+        assertTrue(!timeline.contains("【待处理事项】"))
     }
 
     @Test
@@ -51,6 +50,19 @@ class UnansweredTimelineTest {
         )
 
         assertTrue(UnansweredTimeline.build(messages)!!.contains("同一轮未回复消息"))
+    }
+
+    @Test
+    fun `timeline labels unknown dynamic expressions without exposing debug ids`() {
+        val messages = listOf(
+            ChatMessage("other", "你看", "text", "今天 10:00"),
+            ChatMessage("other", "[动态表情]", "dynamic_visual", "今天 10:03"),
+        )
+
+        val timeline = UnansweredTimeline.build(messages)!!
+
+        assertTrue(timeline.contains("动态表情："))
+        assertTrue(!timeline.contains("dynamic_visual"))
     }
 
     @Test

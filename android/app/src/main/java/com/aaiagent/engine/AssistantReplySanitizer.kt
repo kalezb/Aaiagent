@@ -67,6 +67,13 @@ object AssistantReplySanitizer {
             .joinToString("\n")
     }
 
+    fun requiresCleanup(parts: List<String>?): Boolean {
+        return parts.orEmpty().any { part ->
+            val trimmed = part.trim()
+            trimmed.isEmpty() || cleanSegment(trimmed) != trimmed
+        }
+    }
+
     fun cleanSegment(value: String?): String {
         var reply = value.orEmpty().trim()
         while (reply.isNotEmpty()) {

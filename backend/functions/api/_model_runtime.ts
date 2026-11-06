@@ -82,6 +82,11 @@ export async function loadLlmConfig(kv, env, lineOverride = "") {
       providerValue,
       geminiModelValue,
       geminiBaseValue,
+      legacyTemperature,
+      legacyMaxTokens,
+      legacyModel,
+      legacyBaseUrl,
+      legacyProvider,
     ] = await Promise.all([
       kv.get("llm:temperature"),
       kv.get("llm:max_tokens"),
@@ -90,15 +95,23 @@ export async function loadLlmConfig(kv, env, lineOverride = "") {
       kv.get("llm:provider"),
       kv.get("llm:gemini_model"),
       kv.get("llm:gemini_base_url"),
+      kv.get("temperature"),
+      kv.get("max_tokens"),
+      kv.get("model"),
+      kv.get("base_url"),
+      kv.get("provider"),
     ]);
-    const parsedTemperature = parseFloat(temperatureValue);
-    const parsedMaxTokens = parseInt(maxTokensValue, 10);
+    const parsedTemperature = parseFloat(temperatureValue || legacyTemperature);
+    const parsedMaxTokens = parseInt(maxTokensValue || legacyMaxTokens, 10);
+    const rawDeepseekModel = modelNameValue || legacyModel;
+    const rawDeepseekBase = baseUrlValue || legacyBaseUrl;
+    const rawProvider = providerValue || legacyProvider;
     base = {
       temperature: Number.isFinite(parsedTemperature) ? parsedTemperature : 0.8,
-      maxTokens: Number.isFinite(parsedMaxTokens) ? parsedMaxTokens : 120,
-      legacyProvider: String(providerValue || "").trim().toLowerCase() === "gemini" ? "gemini" : "deepseek",
-      deepseekModelName: modelNameValue || "deepseek-v4-flash",
-      deepseekBaseUrl: normalizeLlmBaseUrl(baseUrlValue) ||
+      maxTokens: Number.isFinite(parsedMaxTokens) ? parsedMaxTokens : 800,
+      legacyProvider: String(rawProvider || "").trim().toLowerCase() === "gemini" ? "gemini" : "deepseek",
+      deepseekModelName: rawDeepseekModel || "deepseek-chat",
+      deepseekBaseUrl: normalizeLlmBaseUrl(rawDeepseekBase) ||
         normalizeLlmBaseUrl(env?.DEEPSEEK_API_BASE) ||
         DEFAULT_LLM_BASE_URL,
       geminiModelName: String(geminiModelValue || "").trim() ||

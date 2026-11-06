@@ -17,4 +17,15 @@ object MessagePageCachePolicy {
         if (currentSignature.isNullOrEmpty()) return false
         return cachedSignature == currentSignature
     }
+
+    /**
+     * 空结果绝不缓存。
+     *
+     * Soul 动效播放时，消息框会先出现、内容节点稍后才补上。如果第一次把空结果
+     * 缓存下来，后续签名又没变，就会一直复用“没有消息”，看起来像 Agent 看一眼
+     * 就退出。空结果每次都必须重新读。
+     */
+    fun shouldStore(signature: String?, messageCount: Int): Boolean {
+        return !signature.isNullOrEmpty() && messageCount > 0
+    }
 }

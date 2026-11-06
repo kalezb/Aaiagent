@@ -93,6 +93,10 @@ class ReplyDeliveryPolicyTest {
     fun `more than three parts drop the tail and never glue fragments together`() {
         assertEquals(
             listOf("一", "二", "三"),
+            ReplyDeliveryPolicy.prepareParts(listOf("一", "二", "三", "四", "五", "六"))
+        )
+        assertEquals(
+            listOf("一", "二", "三"),
             ReplyDeliveryPolicy.prepareParts(listOf("一", "二", "三", "四", "五"))
         )
     }
@@ -118,6 +122,18 @@ class ReplyDeliveryPolicyTest {
         assertEquals(
             listOf("在的", "刚忙完"),
             ReplyDeliveryPolicy.planParts(listOf("在的", "刚忙完"), randomUnit = 0.2)
+        )
+    }
+
+    @Test
+    fun `final contract parts keep duplicate bubbles and cap the tail at three`() {
+        assertEquals(
+            listOf("哈哈", "哈哈", " 这句保留原样 "),
+            ReplyDeliveryPolicy.finalParts(listOf("哈哈", "哈哈", " 这句保留原样 ")),
+        )
+        assertEquals(
+            listOf("一", "二", "三"),
+            ReplyDeliveryPolicy.finalParts(listOf("一", "二", "三", "四", "五", "六")),
         )
     }
 

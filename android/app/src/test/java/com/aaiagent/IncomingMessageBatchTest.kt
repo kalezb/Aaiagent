@@ -92,6 +92,17 @@ class IncomingMessageBatchTest {
     }
 
     @Test
+    fun `unknown dynamic expression remains the media target for vision`() {
+        val dynamic = ChatMessage("other", "[动态表情]", "dynamic_visual")
+
+        val batch = IncomingMessageBatch.select(listOf(dynamic))
+
+        assertSame(dynamic, batch?.mediaTarget)
+        assertFalse(batch?.preferTextOnly == true)
+        assertEquals(listOf(dynamic), batch?.let(IncomingMessageBatch::replyMessages))
+    }
+
+    @Test
     fun `recognized sticker stays attached to the text turn`() {
         val text = ChatMessage("other", "我", "text", identityKey = "1")
         val sticker = ChatMessage(
@@ -308,6 +319,23 @@ class IncomingMessageBatchTest {
             listOf(first, second, third, fourth)
         )
         val current = IncomingMessageBatch.incomingHistoryFingerprint(listOf(third, fourth))
+
+        assertFalse(ReplyDeliveryPolicy.incomingChanged(expected, current))
+    }
+
+    @Test
+    fun `old messages scrolling in do not invalidate the pending reply`() {
+        val first = ChatMessage("other", "one", "text", identityKey = "1")
+        val second = ChatMessage("other", "two", "text", identityKey = "2")
+        val third = ChatMessage("other", "three", "text", identityKey = "3")
+        val fourth = ChatMessage("other", "four", "text", identityKey = "4")
+
+        val expected = IncomingMessageBatch.incomingHistoryFingerprint(
+            listOf(third, fourth)
+        )
+        val current = IncomingMessageBatch.incomingHistoryFingerprint(
+            listOf(first, second, third, fourth)
+        )
 
         assertFalse(ReplyDeliveryPolicy.incomingChanged(expected, current))
     }

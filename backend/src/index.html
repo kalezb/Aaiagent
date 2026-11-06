@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aaiagent 客户看板</title>
-<link rel="stylesheet" href="dashboard.css">
+<link rel="stylesheet" href="dashboard.css?v=20261018-1335">
 </head>
 <body>
 
@@ -131,6 +131,8 @@
               <span class="action-status" id="actionStatus"></span>
               <button class="ghost-button" id="bindButton" disabled>关联账号</button>
               <button class="ghost-button priority-button" id="priorityButton" disabled>优先回复</button>
+              <button class="ghost-button blacklist-button" id="blacklistButton" disabled>拉黑</button>
+              <button class="ghost-button" id="reflexionLearnBtn" disabled title="智能复盘当前对话，提炼避坑经验">💡 一键复盘</button>
               <button class="ghost-button toggle-profile-btn" id="toggleProfileBtn" title="展开/收起客户资料">
                 <svg viewBox="0 0 24 24" class="nav-icon" style="width:14px;height:14px;"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
                 资料卡
@@ -396,7 +398,7 @@
             <div class="rule-center-layout">
               <aside class="rule-center-nav" id="ruleCenterNav">
                 <button class="rule-nav-button on" data-rule-tab="overview">规则总览 <span class="rule-nav-count" id="ruleNavOverviewCount"></span></button>
-                <button class="rule-nav-button" data-rule-tab="rules">全部规则 <span class="rule-nav-count" id="ruleNavRulesCount"></span></button>
+                <button class="rule-nav-button" data-rule-tab="rules">当前人设规则 <span class="rule-nav-count" id="ruleNavRulesCount"></span></button>
                 <button class="rule-nav-button" data-rule-tab="conflicts">冲突提醒 <span class="rule-nav-count alert" id="ruleNavConflictCount"></span></button>
                 <button class="rule-nav-button" data-rule-tab="persona">人设与资料 <span class="rule-nav-count" id="ruleNavPersonaCount"></span></button>
                 <button class="rule-nav-button" data-rule-tab="execution">手机执行规则 <span class="rule-nav-count" id="ruleNavExecutionCount"></span></button>
@@ -409,6 +411,24 @@
                     <div class="rule-stat error"><div class="rule-stat-top"><span class="rule-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Zm0 6v5m0 3h.01"/></svg></span><span>严重冲突</span></div><strong id="ruleSummaryErrors">0</strong><small>可能互相打架</small><em>优先处理</em></div>
                     <div class="rule-stat warn"><div class="rule-stat-top"><span class="rule-stat-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 3h.01M4 4l16 16"/></svg></span><span>需要确认</span></div><strong id="ruleSummaryWarnings">0</strong><small>范围或内容重叠</small><em>建议检查</em></div>
                   </div>
+                  <section class="rule-health-card" id="sutangRuleHealthCard">
+                    <div class="rule-health-head">
+                      <div>
+                        <h3>智能体自学经验库 (Reflexion Playbook) <span class="rule-badge on" id="sutangRuleHealthStatus">正在运行</span></h3>
+                        <p>基于顶会 Reflexion 语言强化学习：运行时动态装配避坑经验，自主分析会话死穴，无需手写代码或打正则补丁。</p>
+                      </div>
+                      <button class="ghost-button small-button" id="refreshSutangHealthButton" type="button">刷新经验库</button>
+                    </div>
+                    <div class="rule-health-stats">
+                      <div><span>常驻避坑锦囊</span><strong id="sutangHealthCardCount">6 条</strong><small>实时装配</small></div>
+                      <div><span>推进状态机</span><strong id="sutangHealthRuleCount">4 阶推进</strong><small>永不迷失</small></div>
+                      <div><span>发出前质检镜</span><strong id="sutangHealthLegacyCount">200ms自愈</strong><small>防怼人防早熟</small></div>
+                      <div><span>旧冲突残留</span><strong id="sutangHealthResidualCount">0</strong><small>全部安全归档</small></div>
+                    </div>
+                    <div id="sutangRuleHealthBody" class="rule-health-body">
+                      <div class="rule-empty">打开规则中心后自动加载自学经验库。</div>
+                    </div>
+                  </section>
                   <div class="rule-help-strip">
                     <div class="rule-help-item"><b>先看冲突</b><span>红色和黄色提醒会告诉你哪两条规则可能打架。</span></div>
                     <div class="rule-help-item"><b>再改规则</b><span>点编辑、停用或删除，保存后下一条聊天立即生效。</span></div>
@@ -446,7 +466,7 @@
                 </select>
               </label>
               <label>孩子年龄<input id="sharedFactsChildrenAge" type="number" min="0" max="80" placeholder="例如：3"></label>
-              <label><span id="sharedFactsContactLabel">联系方式</span><input id="sharedFactsQq" inputmode="text" placeholder="QQ号填数字，豆瓣号填字母数字，可留空"></label>
+              <label><span id="sharedFactsContactLabel">联系方式</span><input id="sharedFactsQq" inputmode="numeric" placeholder="填写苏棠要放行的QQ号，可留空"></label>
               <label>老家/籍贯<input id="sharedFactsHometown" placeholder="例如：重庆"></label>
               <label>现居城市<input id="sharedFactsCurrentCity" placeholder="例如：重庆"></label>
               <label>现居区县<input id="sharedFactsCurrentDistrict" placeholder="例如：两江新区"></label>
@@ -488,11 +508,11 @@
           </section>
           <section class="settings-card agent-editor-card rule-tab-panel" id="rulePersonaEditorCard">
             <div class="section-title">
-              <div><h3>人设正文</h3><span>这里负责她是谁、性格、整体表达方式</span></div>
+              <div><h3>大白话人设与任务推进</h3><span>纯大白话配置：直接写清我是谁、推进目标、绝对红线，点击保存立即全量生效</span></div>
               <button class="primary-button" id="savePersonaPromptButton">保存人设正文</button>
             </div>
             <label class="drawer-field">人设名字<input id="personaNameEditor" placeholder="例如：苏棠"></label>
-            <textarea id="personaPromptEditor" class="persona-prompt-editor" placeholder="写她是谁、性格、工作、整体怎么说话..."></textarea>
+            <textarea id="personaPromptEditor" class="persona-prompt-editor" style="min-height:220px;" placeholder="【推荐大白话三段式写法（直接复制修改）：】&#10;1. 身份底色：29岁已婚少妇，住在重庆两江新区，带3岁儿子，平时在家带娃做家务，说话随手发微信短句（3到8个字），温和但有分寸。&#10;2. 推进目标：&#10;   - 刚认识正常日常打招呼，了解对方工作，严禁主动撩骚；&#10;   - 聊熟后倾诉带娃劳累与婚姻搭伙过日子，产生情感依赖。聊久了对方不提线下，主动叹一句被窝好冷引诱对方提见面；&#10;   - 对方提见面，前2次犹豫说婆婆在走不开，第3次松口说只能在自己家附近顺路干净酒店；&#10;   - 双方确认酒店体面干净，由男方主动承担全包开销，确认后才出门。&#10;3. 绝对红线：拒绝微信时自然说现实生活顾虑太多、不想被打扰；私下联系只认后台填写的QQ，并在时机合适时自然给；绝不去车里、不去对方家；男方发过照片后绝不催照；对方赞美或解释词义时娇嗔接话，绝不恶语回怼。"></textarea>
             <div class="small-muted" id="personaPromptStatus"></div>
           </section>
           <section class="settings-card rule-tab-panel" id="rulePromptOrderCard">
@@ -646,7 +666,7 @@
           </section>
           <section class="settings-card legacy-rules-card rule-tab-panel" id="ruleRulesCard">
             <div class="section-title">
-              <div><h3>全部规则 <span class="profile-updated" id="legacyRuleCount"></span></h3><span>每条规则都能编辑、停用或删除；保存后下一条聊天立即使用新状态</span></div>
+              <div><h3>当前人设规则 <span class="profile-updated" id="legacyRuleCount"></span></h3><span>只显示当前选中人设能用的专属规则和通用规则；保存后下一条聊天立即使用新状态</span></div>
               <div class="toolbar">
                 <input id="legacyRuleSearch" type="search" placeholder="搜索规则">
                 <select id="agentRuleGateFilter">
@@ -976,16 +996,17 @@
 
 <button class="dashboard-feedback-button" id="dashboardFeedbackButton" type="button">记录网站问题</button>
 <div class="toast-stack" id="toastStack"></div>
-<script src="dashboard-utils.js"></script>
-<script src="dashboard-core.js"></script>
-<script src="dashboard-customers.js"></script>
-<script src="dashboard-chat.js"></script>
-<script src="dashboard-operations.js"></script>
-<script src="dashboard-settings.js"></script>
-<script src="dashboard-library.js"></script>
-<script src="dashboard-knowledge.js"></script>
-<script src="dashboard-program-rules.js"></script>
-<script src="dashboard-rule-center.js"></script>
-<script src="dashboard-init.js"></script>
+<script src="dashboard-utils.js?v=20261018-1338"></script>
+<script src="dashboard-core.js?v=20261018-1338"></script>
+<script src="dashboard-customers.js?v=20261018-1338"></script>
+<script src="dashboard-chat.js?v=20261018-1338"></script>
+<script src="dashboard-operations.js?v=20261018-1338"></script>
+<script src="dashboard-settings.js?v=20261018-1338"></script>
+<script src="dashboard-library.js?v=20261018-1338"></script>
+<script src="dashboard-knowledge.js?v=20261030-1205"></script>
+<script src="dashboard-program-rules.js?v=20261018-1338"></script>
+<script src="dashboard-sutang-health.js?v=20261030-1205"></script>
+<script src="dashboard-rule-center.js?v=20261018-1338"></script>
+<script src="dashboard-init.js?v=20261018-1338"></script>
 </body>
 </html>

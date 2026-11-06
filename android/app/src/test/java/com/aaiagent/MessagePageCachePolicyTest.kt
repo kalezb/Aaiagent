@@ -27,4 +27,11 @@ class MessagePageCachePolicyTest {
     fun `第一次读没有缓存，不能复用`() {
         assertFalse(MessagePageCachePolicy.shouldReuse(null, "soul|1|0|在吗"))
     }
+
+    @Test
+    fun `空消息结果不能缓存，动效恢复后必须重新读`() {
+        assertFalse(MessagePageCachePolicy.shouldStore("soul|1|0|", 0))
+        assertFalse(MessagePageCachePolicy.shouldStore(null, 1))
+        assertTrue(MessagePageCachePolicy.shouldStore("soul|1|0|[动态表情]", 1))
+    }
 }

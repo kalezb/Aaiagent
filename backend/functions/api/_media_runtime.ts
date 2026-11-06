@@ -5,7 +5,13 @@ import {
   mediaDownloadUrl,
   normalizePersonalPhotoIntent,
 } from "./_media_policy";
-import { loadOrCreatePendingReply } from "./_reply_policy";
+import { resolvePhotoExchangeGate } from "./_photo_exchange_policy";
+import { splitContractReplyParts } from "./_chat_contract";
+import {
+  heHasSentPhoto,
+  loadOrCreatePendingReply,
+  sheHasSentPhoto,
+} from "./_reply_policy";
 import { requestReplyRepair } from "./_model_call_runtime";
 
 export function buildMediaPayload(asset) {
@@ -72,6 +78,52 @@ export async function stageScopedMediaReply({
   return { mediaPayload, pending };
 }
 
+export async function stageScopedMediaResponse({
+  db,
+  token,
+  personaId,
+  personaVersion,
+  platform,
+  contactId,
+  contactName,
+  requestId,
+  group,
+  reply = "",
+  local = false,
+}) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staged = await stageScopedMediaReply({
+    db,
+    token,
+    personaId,
+    personaVersion,
+    platform,
+    contactId,
+    contactName,
+    requestId,
+    group,
+    createdAt: nowSec,
+  });
+  if (!staged) return null;
+
+  await db.prepare("UPDATE tokens SET last_used_at = ? WHERE token = ?")
+    .bind(nowSec, token).run();
+  return {
+    action: "send_media",
+    media: {
+      ...staged.mediaPayload,
+      asset_id: staged.pending.media_asset_id || staged.mediaPayload.asset_id,
+      group_id: staged.pending.media_group_id || staged.mediaPayload.group_id,
+    },
+    ...(reply ? { reply } : {}),
+    ...(reply ? { reply_parts: splitContractReplyParts(reply) } : {}),
+    reply_id: staged.pending.id,
+    status: "pending",
+    request_id: requestId,
+    ...(local ? { local: true } : {}),
+  };
+}
+
 const MEDIA_TEASER_LINES = [
   "你这人倒是挺直接的呀，行吧",
   "行吧 就给你看一眼",
@@ -86,6 +138,59 @@ export function mediaTeaserLine(seed) {
     hash = (hash * 31 + text.charCodeAt(index)) | 0;
   }
   return MEDIA_TEASER_LINES[Math.abs(hash) % MEDIA_TEASER_LINES.length];
+}
+
+const ASK_HIM_FIRST_LINES = [
+  "你先让我看看你|||长什么样再考虑给不给你看",
+  "连你长什么样都没见过|||先发张你的来",
+  "想看我呀|||先发张近照来",
+];
+
+const PHOTO_JUST_RECEIVED_LINES = [
+  "照片看到了|||急什么",
+  "看到了|||还想看我的呀",
+];
+
+export function photoExchangeGateReply(stage, seed) {
+  const lines = stage === "just_received"
+    ? PHOTO_JUST_RECEIVED_LINES
+    : ASK_HIM_FIRST_LINES;
+  const text = String(seed || "");
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) | 0;
+  }
+  return lines[Math.abs(hash) % lines.length];
+}
+
+export function resolvePhotoExchangeForTurn({
+  contact,
+  currentMessages,
+  historyMessages = [],
+  ruleEnabled = true,
+}) {
+  return resolvePhotoExchangeGate({
+    hisPhotoSeenBeforeThisTurn: Number(contact?.his_photo_at || 0) > 0 ||
+      heHasSentPhoto([], historyMessages),
+    hisPhotoInCurrentTurn: heHasSentPhoto(currentMessages, []),
+    herPhotoSeenBeforeThisTurn: Number(contact?.her_photo_at || 0) > 0 ||
+      sheHasSentPhoto([], historyMessages),
+    ruleEnabled,
+  });
+}
+
+export function photoExchangeBlockedResponse({
+  requestId,
+  contactId,
+  gate,
+}) {
+  return {
+    action: "send",
+    reply: photoExchangeGateReply(gate.stage, requestId + "|" + contactId),
+    reason: "photo_exchange_gate",
+    photo_gate: gate.reason,
+    request_id: requestId,
+  };
 }
 
 export function mediaDirectiveFallback(incomingText) {

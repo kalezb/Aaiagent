@@ -12,6 +12,8 @@ import {
   matchActiveDrawers,
 } from "../functions/api/_persona_drawers";
 import { loadAgentRuleState } from "../functions/api/_agent_rule_runtime";
+import { effectivePersonaDrawers } from "../functions/api/_persona_runtime";
+import { loadTurnRuleSnapshot } from "../functions/api/_turn_rule_snapshot";
 import {
   DEFAULT_PROGRAM_RULES,
   PROGRAM_RULES_KV_KEY,
@@ -102,28 +104,28 @@ describe("chat core", () => {
     const payload = JSON.parse(String(init.body));
     expect(payload.max_tokens).toBe(96);
     expect(payload.messages[0].content).toContain("【交流方式】");
-    expect(payload.messages[0].content).toContain("json");
+    expect(payload.messages[0].content).toContain("JSON");
     expect(payload.messages[0].content).toContain("{\"messages\":[\"第一条完整短句\",\"第二条完整短句\"]}");
-    expect(payload.messages[0].content).toContain("硬上限25个字");
-    expect(payload.messages[0].content).toContain("每轮最多一个问号；上一轮已经问过，这一轮就不要再问");
-    expect(payload.messages[0].content).toContain("不要连续两轮只接不推进");
-    expect(payload.messages[0].content).toContain("【真人节奏】");
-    expect(payload.messages[0].content).toContain("【语气与漏斗分离】");
-    expect(payload.messages[0].content).toContain("【事实与边界】");
+    expect(payload.messages[0].content).toContain("每条通常 3 到 10 个字");
+    expect(payload.messages[0].content).toContain("整轮最多 25 个字");
+    expect(payload.messages[0].content).toContain("多数轮不必追问");
+    expect(payload.messages[0].content).toContain("通常 1 到 2 条");
+    expect(payload.messages[0].content).toContain("【交流方式】");
+    expect(payload.messages[0].content).toContain("【事实底线】");
     expect(payload.messages[0].content).toContain("【当前平台】soul。");
-    expect(payload.messages[0].content).toContain("【当前平台账号昵称】你在soul上的账号昵称是“另一面的我”");
-    expect(payload.messages[0].content).toContain("不代表其他平台昵称");
+    expect(payload.messages[0].content).toContain("【账号昵称】你在soul上的昵称是“另一面的我”");
+    expect(payload.messages[0].content).toContain("这只是当前平台资料");
     expect(payload.messages[0].content).toContain("【人物事实｜最高优先级】");
     expect(payload.messages[0].content).toContain("现居地：重庆两江新区");
     expect(payload.messages[0].content).toContain("工作地：重庆江北区");
-    expect(payload.messages[0].content).toContain("【关系前提】你们是在 Soul 匹配或附近加上，还没见过面。");
-    expect(payload.messages[0].content).toContain("【新客节奏】");
     expect(payload.messages[0].content).not.toContain("【当前天气】");
     expect(payload.messages[0].content).toContain("你们刚在 Soul 匹配上，还没见过。当前只做认识，不要提前推进业务。");
-    expect(payload.messages[0].content).toContain("【星暮六段漏斗】认识阶段");
+    expect(payload.messages[0].content).toContain("你们还不熟，这次不要提工作、旧数码或回收");
     expect(payload.messages[0].content).toContain("【本轮接话】");
     expect(payload.messages[0].content).toContain("【对方原话事实】今天忙不忙");
     expect(payload.messages[0].content).toContain("不能把“睡醒了、还没睡”改写成“睡得香、睡着了”");
+    expect(payload.messages[0].content).not.toContain("【星暮六段漏斗】");
+    expect(payload.messages[0].content).not.toContain("你可以自己编");
     expect(payload.messages[0].content).not.toContain("最新消息优先");
     expect(payload.messages[0].content).not.toContain("话题锁定");
   });
@@ -999,10 +1001,8 @@ describe("chat core", () => {
     // No second model call: retrying a safety block with the same prompt never helps.
     expect(callCount).toBe(1);
     const body = await response.json();
-    expect(body.action).toBe("send");
-    // No timestamp on the incoming message, so the gap is unknown and the
-    // cover must be the "was away" variant, never the robotic fallback.
-    expect(String(body.reply || "")).toMatch(/走开/);
+    expect(body.action).toBe("skip");
+    expect(body.reason).toBe("model_reply_empty_or_invalid");
   });
 
   it("dynamically injects matched drawer tips into prompt when triggered", async () => {
@@ -1013,6 +1013,19 @@ describe("chat core", () => {
       temp: 25,
       updated_at: Math.floor(Date.now() / 1000),
     }));
+    await kv.put("persona:drawers:female_sutang", JSON.stringify({
+      custom: [{
+        id: "custom_drawer_injection_test",
+        name: "自定义知识卡注入测试",
+        keywords: ["睡不着"],
+        content: "夜里安静下来 心里有点空",
+        kind: "scene",
+        activation: "keyword",
+        replyMode: "guide",
+        priority: 999,
+        enabled: true,
+      }],
+    }));
     const fetchMock = mockChatSequence(["瘫在沙发上不想动呢"]);
     vi.stubGlobal("fetch", fetchMock);
     const db = new MockD1([], [{
@@ -1021,6 +1034,11 @@ describe("chat core", () => {
       system_prompt: "你是苏棠，29岁，重庆人。",
     }]);
     db.tokenPersonas.set("test-token", "female_sutang");
+    const snapshot = await loadTurnRuleSnapshot(db, kv, "female_sutang");
+    expect(snapshot.drawers.custom?.some((item) => item.id === "custom_drawer_injection_test"))
+      .toBe(true);
+    expect(matchActiveDrawers(snapshot.drawers, "今晚睡不着").join("\n"))
+      .toContain("自定义知识卡注入测试");
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -1031,7 +1049,7 @@ describe("chat core", () => {
           platform: "soul",
           contact_id: "drawer-contact",
           contact_name: "测试用户",
-          messages: [{ role: "user", content: "今晚下雨 后背酸得厉害" }],
+          messages: [{ role: "user", content: "今晚睡不着" }],
         }),
       }),
       env: {
@@ -1045,15 +1063,16 @@ describe("chat core", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const payload = JSON.parse(String(init.body));
     const systemMessage = payload.messages.find((m: { role: string }) => m.role === "system");
-    expect(systemMessage.content).toContain("【居家放松与颈背酸胀】");
+    expect(systemMessage.content).toContain("【自定义知识卡注入测试】");
+    expect(systemMessage.content).toContain("心里有点空");
   });
 
   it("only gives Sutang's default scene cards to Sutang", () => {
     const sutang = defaultDrawersForPersona("female_sutang");
     const oldStockings = sutang.topics?.find((item) => item.id === "scene_01_black_stockings");
-    const newRainyNeck = sutang.topics?.find((item) => item.id === "scene_14_rainy_neck");
-    expect(oldStockings?.enabled).toBe(false);
-    expect(newRainyNeck?.enabled).toBe(true);
+    const probeSpending = sutang.topics?.find((item) => item.id === "scene_sutang_probe_spending");
+    expect(oldStockings).toBeUndefined();
+    expect(probeSpending?.enabled).toBe(true);
     for (const personaId of ["female", "male", "male_chenyu"]) {
       const drawers = defaultDrawersForPersona(personaId);
       expect(drawers.topics || []).toEqual([]);
@@ -1129,4 +1148,43 @@ describe("chat core", () => {
     expect(male).not.toContain("你是来排解寂寞的");
     expect(male).not.toContain("星暮六段漏斗");
   });
+
+  it("never returns raw code when LLM returns truncated or broken JSON like the incident", async () => {
+    const brokenLlmOutput =
+      '{"type": "json_object", "content": "{\\"reply\\": \\"被你揣测到了 这话说得倒老实\\n\\n凌晨两点不睡 就为了跟我贫嘴？"';
+    const fetchMock = vi.fn().mockImplementation(async (url: string | URL | Request) => {
+      if (String(url).includes("qweather.com")) {
+        return new Response(JSON.stringify({ location: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: brokenLlmOutput } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const response = await onRequest({
+      request: new Request("https://example.com/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-token" },
+        body: JSON.stringify({
+          request_id: "incident-broken-json-test",
+          platform: "soul",
+          contact_id: "test-contact-incident",
+          contact_name: "测试用户",
+          messages: [{ role: "user", content: "你在干嘛", created_at: nowSec - 30 }],
+        }),
+      }),
+      env: { DB: new MockD1(), KV: new MockKV(), DEEPSEEK_API_KEY: "deepseek-key" },
+    } as never);
+
+    const data = (await response.json()) as Record<string, any>;
+    expect(data.action).toBe("skip");
+    expect(data.reason).toBe("model_reply_empty_or_invalid");
+  });
+
 });

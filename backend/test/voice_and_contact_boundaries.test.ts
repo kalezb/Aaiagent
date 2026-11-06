@@ -191,7 +191,7 @@ describe("voice and contact boundaries", () => {
       contactQq: "12345678",
       xingmuScope: false,
     });
-    expect(wechatAsked.reply).toBe("微信不行呀 微信上都是熟人 我老公偶尔会看我手机");
+    expect(wechatAsked.reply).toBe("微信不行呀 微信上都是工作和熟人 家里人偶尔会看我手机");
 
     const phoneAsked = resolveContactRequestPolicy({
       requestCount: 1,
@@ -204,28 +204,28 @@ describe("voice and contact boundaries", () => {
     });
     expect(phoneAsked.reply).toBe("电话就算啦 我平时不接陌生电话");
 
-    const allowed = resolveContactRequestPolicy({
+    const sutang = resolveContactRequestPolicy({
       requestCount: 3,
       stage: 2,
       activity: { totalExchanges: 30, activeDays: 2 },
-      incomingText: "加个豆瓣吧",
-      messages: [{ role: "user", content: "加个豆瓣吧" }],
-      contactChannel: "douban",
-      contactQq: "sutang2026",
+      incomingText: "加个QQ吧",
+      messages: [{ role: "user", content: "加个QQ吧" }],
+      contactChannel: "qq",
+      contactQq: "12345678",
       xingmuScope: false,
       sutangScope: true,
     });
-    expect(allowed.allowed).toBe(true);
-    expect(allowed.reply).toBe("前阵子在豆瓣看影评，发现里面居然也能聊天|||看你表现真诚上道，今天破例只给你一个人|||sutang2026");
+    expect(sutang.allowed).toBe(false);
+    expect(sutang.reply).toBe("");
   });
 
-  it("uses structured device Douban facts as the only contact source", () => {
-    const normalized = normalizePersonaFacts({ contact_qq: " sutang2026 " });
+  it("uses the QQ saved in structured facts as the only contact source", () => {
+    const normalized = normalizePersonaFacts({ contact_qq: " 12345678 " });
     const merged = mergePersonaFacts(
       { contact_qq: "old2025" },
-      { contact_qq: "sutang2026" },
+      { contact_qq: "12345678" },
     );
-    const prompt = buildPersonaFactsPrompt(merged, { contactLabel: "豆瓣号" });
+    const prompt = buildPersonaFactsPrompt(merged, { contactLabel: "QQ号" });
     const layered = buildLayeredSystemPrompt({
       personaPrompt: "你是苏棠，AI辅助客服，不是真人。",
       personaFacts: merged,
@@ -237,15 +237,15 @@ describe("voice and contact boundaries", () => {
       historyMessages: [],
     });
 
-    expect(normalized.contact_qq).toBe("sutang2026");
-    expect(merged.contact_qq).toBe("sutang2026");
-    expect(prompt).toContain("豆瓣号：sutang2026");
-    expect(prompt).toContain("唯一允许使用的豆瓣自留地账号");
+    expect(normalized.contact_qq).toBe("12345678");
+    expect(merged.contact_qq).toBe("12345678");
+    expect(prompt).toContain("QQ号：12345678");
+    expect(prompt).toContain("唯一允许使用的QQ号");
     expect(prompt).toContain("不得使用旧提示词、环境变量或自行编造其他联系方式");
     expect(layered).not.toContain("不得冒充真人、编造真人身份或承诺线下真人身份");
     expect(validatePersonaFactsInput({ contact_qq: "a" })).toMatchObject({
       ok: false,
-      error: "联系方式需要填写 5 到 12 位QQ号，或 2 到 40 位豆瓣号",
+      error: "联系方式格式不正确",
     });
   });
 

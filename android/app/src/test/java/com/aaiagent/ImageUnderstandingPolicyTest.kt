@@ -25,4 +25,27 @@ class ImageUnderstandingPolicyTest {
         assertTrue(facts.contains("必须以这条识别事实为准"))
         assertFalse(facts.contains("你对象"))
     }
+
+    @Test
+    fun `dynamic visual prompt asks for motion emotion and conversational meaning`() {
+        val prompt = ImageUnderstandingPolicy.visionPrompt("dynamic_visual")
+
+        assertTrue(prompt.contains("动作"))
+        assertTrue(prompt.contains("情绪"))
+        assertTrue(prompt.contains("聊天意思"))
+        assertTrue(prompt.contains("打招呼"))
+        assertTrue(prompt.contains("晚安"))
+    }
+
+    @Test
+    fun `dynamic visual facts are labeled as a dynamic expression`() {
+        val facts = ImageUnderstandingPolicy.modelFacts(
+            type = "dynamic_visual",
+            description = "黄色月亮闭着眼，旁边有星星，表达晚安和亲切问候"
+        )
+
+        assertTrue(facts.contains("动态表情"))
+        assertTrue(facts.contains("月亮"))
+        assertTrue(facts.contains("晚安"))
+    }
 }

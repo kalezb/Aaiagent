@@ -25,6 +25,9 @@ data class ConversationContext(
     /** 已经回过的对方消息身份键；同一条消息 30 分钟内不再回第二次。 */
     val repliedIncomingKeys: MutableList<String> = mutableListOf(),
     var lastTouchedAtMs: Long = System.currentTimeMillis(),
+    var staleDeliveryBatchFingerprint: String = "",
+    var staleDeliveryFailureCount: Int = 0,
+    var staleDeliveryPausedUntilMs: Long = 0L,
 ) {
     fun markStableIncomingInvalidation(nowMs: Long) {
         llmRequestId++
@@ -38,6 +41,40 @@ data class ConversationContext(
 
     fun hasPendingWork(): Boolean {
         return pendingReplyParts.isNotEmpty() || pendingReplyId.isNotBlank()
+    }
+
+    fun shouldSkipPausedStaleDelivery(
+        batchFingerprint: String,
+        nowMs: Long,
+    ): Boolean {
+        return batchFingerprint.isNotBlank() &&
+            batchFingerprint == staleDeliveryBatchFingerprint &&
+            staleDeliveryPausedUntilMs > nowMs
+    }
+
+    fun recordStaleDeliveryFailure(
+        batchFingerprint: String,
+        nowMs: Long,
+        maxFailures: Int = STALE_DELIVERY_MAX_FAILURES,
+        pauseMs: Long = STALE_DELIVERY_PAUSE_MS,
+    ): Int {
+        if (batchFingerprint.isBlank()) return staleDeliveryFailureCount
+        if (batchFingerprint != staleDeliveryBatchFingerprint) {
+            staleDeliveryBatchFingerprint = batchFingerprint
+            staleDeliveryFailureCount = 0
+            staleDeliveryPausedUntilMs = 0L
+        }
+        staleDeliveryFailureCount++
+        if (staleDeliveryFailureCount >= maxFailures.coerceAtLeast(1)) {
+            staleDeliveryPausedUntilMs = nowMs + pauseMs.coerceAtLeast(0L)
+        }
+        return staleDeliveryFailureCount
+    }
+
+    fun clearStaleDeliveryFailures() {
+        staleDeliveryBatchFingerprint = ""
+        staleDeliveryFailureCount = 0
+        staleDeliveryPausedUntilMs = 0L
     }
 
     /**
@@ -72,5 +109,7 @@ data class ConversationContext(
     companion object {
         const val MAX_TRACKED_AUTOMATED_REPLIES = 40
         const val MAX_TRACKED_INCOMING_KEYS = 30
+        const val STALE_DELIVERY_MAX_FAILURES = 3
+        const val STALE_DELIVERY_PAUSE_MS = 10L * 60L * 1000L
     }
 }

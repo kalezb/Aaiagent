@@ -38,7 +38,7 @@ describe("conversation turns and sticker state", () => {
     expect(turns[0].content).toContain("对方还发了个表情：[小害羞]");
   });
 
-  it("normalizes the whole short-answer turn before the prompt is built", () => {
+  it("keeps raw messages untouched for scene and safety checks", () => {
     const normalized = normalizeConversationTurnContext({
       historyMessages: [
         {
@@ -52,10 +52,10 @@ describe("conversation turns and sticker state", () => {
       ],
     });
 
-    expect(normalized.historyMessages).toHaveLength(0);
-    expect(normalized.currentMessages).toHaveLength(1);
-    expect(normalized.currentMessages[0].content).toContain("我问：一起玩 玩什么呀");
-    expect(normalized.currentMessages[0].content).toContain("对方回：我");
+    expect(normalized.historyMessages).toHaveLength(1);
+    expect(normalized.currentMessages).toHaveLength(2);
+    expect(normalized.currentMessages[0].content).toBe("我");
+    expect(normalized.currentMessages[1].content).toBe("[小害羞]");
   });
 
   it("uses the text as the message body and the sticker as tone", () => {
@@ -99,8 +99,32 @@ describe("conversation turns and sticker state", () => {
     expect(timeline).not.toContain("这轮要处理的就是他最新这一条");
   });
 
+  it("keeps repeated words when they have different conversation positions", () => {
+    const turns = buildConversationTurnMessages({
+      currentMessages: [
+        {
+          role: "user",
+          content: "还在躺着呢",
+          created_at: 1_000,
+          client_message_id: "soul-message-1",
+        },
+        {
+          role: "user",
+          content: "还在躺着呢",
+          created_at: 1_001,
+          client_message_id: "soul-message-2",
+        },
+      ],
+      nowSec: 1_010,
+    });
+
+    expect(turns).toHaveLength(1);
+    expect((turns[0].content.match(/还在躺着呢/g) || [])).toHaveLength(2);
+  });
+
   it("does not force high-pressure questioning in the Sutang default rule", () => {
     expect(SUTANG_ACTION_LADDER_RULE).not.toContain("高位反问制止");
-    expect(SUTANG_ACTION_LADDER_RULE).toContain("先听懂对方这轮完整意思");
+    expect(SUTANG_ACTION_LADDER_RULE).toContain("先接住对方最新一句");
+    expect(SUTANG_ACTION_LADDER_RULE).toContain("保持撒娇");
   });
 });

@@ -8,6 +8,7 @@ import { onRequest } from "../functions/api/[[route]]";
 import {
   MockD1,
   MockKV,
+  markHisPhotoSeen,
   mockChatSequence,
 } from "./chat-test-helpers";
 
@@ -94,6 +95,7 @@ describe("media semantics", () => {
     });
     const fetchMock = mockChatSequence(["BODY"]);
     vi.stubGlobal("fetch", fetchMock);
+    markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -204,6 +206,7 @@ describe("media semantics", () => {
     });
     const fetchMock = mockChatSequence(["DAILY"]);
     vi.stubGlobal("fetch", fetchMock);
+    markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -281,6 +284,7 @@ describe("media semantics", () => {
     });
     const fetchMock = mockChatSequence(["BODY"]);
     vi.stubGlobal("fetch", fetchMock);
+    markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -318,6 +322,7 @@ describe("media semantics", () => {
     });
     const fetchMock = mockChatSequence(["BODY"]);
     vi.stubGlobal("fetch", fetchMock);
+    markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {
@@ -416,6 +421,7 @@ describe("media semantics", () => {
     });
     const fetchMock = mockChatSequence(["NONE", "[[SEND_MEDIA:daily]]"]);
     vi.stubGlobal("fetch", fetchMock);
+    markHisPhotoSeen(db);
 
     const response = await onRequest({
       request: new Request("https://example.com/api/chat", {

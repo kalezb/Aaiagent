@@ -36,6 +36,7 @@ function expandSingleCharacterReply(value) {
 function normalizeReplySegment(value, options = {}) {
   let reply = String(value || "").trim();
   if (!reply) return "";
+  reply = reply.replace(/\s+([？?])/gu, "$1");
   if (/^(?:\[[^\]]+\]|评估报价，?\s*搜\s*shanhs668)$/iu.test(reply)) return reply;
 
   const visibleLength = visibleReplyLength(reply);
@@ -77,6 +78,38 @@ export function normalizeAssistantReplyPresentation(value, options = {}) {
     .join("")
     .replace(/(?:\|\|\||\r?\n)+$/u, "")
     .trim();
+}
+
+function looksLikeQuestionSegment(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /[？?]\s*$/u.test(text) ||
+    /(?:吗|嘛|么|啥|什么|怎么|咋|哪儿|哪里|哪边|多少|几岁|多大|忙不忙|是不是|有没有|要不要|能不能|行不行|对不对|你呢|在哪|做啥|干啥)[。！!…~～\s]*$/u.test(text);
+}
+
+/**
+ * 上一轮已经问过时，这一轮优先把话说完整，不再追加新的问句。
+ * 如果整条回复只有问句，则保留第一句，避免把必须确认的问题全删光。
+ */
+export function enforceFollowUpQuestionPacing(
+  value,
+  { recentAssistantReplies = [] } = {},
+) {
+  const segments = String(value || "")
+    .replace(/\|{2,3}/gu, "|||")
+    .split(/\|\|\||\r?\n/u)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (segments.length <= 1) return segments.join("|||");
+
+  const previousAsked = (Array.isArray(recentAssistantReplies) ? recentAssistantReplies : [])
+    .slice(-1)
+    .some(looksLikeQuestionSegment);
+  if (!previousAsked) return segments.join("|||");
+
+  const statements = segments.filter((segment) => !looksLikeQuestionSegment(segment));
+  if (statements.length > 0) return statements.join("|||");
+  return segments[0];
 }
 
 function splitPresentationSegments(value) {

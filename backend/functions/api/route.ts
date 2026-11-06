@@ -15,6 +15,7 @@ import { handleAdminCrudRequest } from "./_admin_crud_api";
 import { handleEntryMediaRequest } from "./_entry_media_api";
 import { handleMessageSyncRequest } from "./_message_sync_api";
 import { handleVisionConfigRequest } from "./_vision_config_api";
+import { handlePlaybookRequest, ensurePlaybookLoaded } from "./_persona_playbook";
 import { handleChatRequest } from "./_chat_api";
 
 export const onRequest = async (context) => {
@@ -129,6 +130,19 @@ export const onRequest = async (context) => {
       method,
     });
     if (messageSyncResponse) return messageSyncResponse;
+
+    const playbookResponse = await handlePlaybookRequest({
+      request,
+      env,
+      url,
+      path,
+      method,
+    });
+    if (playbookResponse) return playbookResponse;
+
+    if (path.startsWith("/api/chat")) {
+      await ensurePlaybookLoaded(env, "female_sutang");
+    }
 
     const chatResponse = await handleChatRequest({
       request,

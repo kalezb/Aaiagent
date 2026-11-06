@@ -29,4 +29,17 @@ class UnreadBadgeStateTest {
     fun `visible empty unread marker is accepted`() {
         assertTrue(UnreadBadgeState.isUnread(null, null, visible = true))
     }
+
+    @Test
+    fun `tab badge text only counts when the number is above zero`() {
+        // 底部聊天标签挂着 0 不算未读，否则程序会一直以为还有消息没回完。
+        assertFalse(UnreadBadgeState.badgeTextMeansUnread("0"))
+        assertFalse(UnreadBadgeState.badgeTextMeansUnread(" 0 "))
+        assertFalse(UnreadBadgeState.badgeTextMeansUnread(""))
+        assertFalse(UnreadBadgeState.badgeTextMeansUnread(null))
+        assertTrue(UnreadBadgeState.badgeTextMeansUnread("1"))
+        assertTrue(UnreadBadgeState.badgeTextMeansUnread("58"))
+        assertTrue(UnreadBadgeState.badgeTextMeansUnread("99+"))
+        assertTrue(UnreadBadgeState.badgeTextMeansUnread("\u672a\u8bfb"))
+    }
 }
