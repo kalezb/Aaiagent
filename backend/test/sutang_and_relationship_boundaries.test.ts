@@ -3,7 +3,6 @@ import {
   buildLayeredSystemPrompt,
   buildRelationshipBoundaryPrompt,
   businessFilterFallback,
-  EMPTY_REPLY_FALLBACK,
   isIntimateTopic,
   normalizeAssistantReplyPresentation,
   sanitizeIntimateTopicReply,
@@ -156,10 +155,6 @@ describe("Sutang and relationship boundaries", () => {
 
   it("问工作只按当前生活回答", () => {
     expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
-  });
-
-  it("always keeps one human-sounding last-resort fallback", () => {
-    expect(EMPTY_REPLY_FALLBACK).toBe("嗯 我在呢");
   });
 
   it("does not replace contextual replies with a generic fallback", () => {

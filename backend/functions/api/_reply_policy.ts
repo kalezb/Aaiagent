@@ -619,7 +619,6 @@ const BUSINESS_DRIFT_TAIL = new RegExp(`(?:[。!?！？]|\\s)(?:你|那|对了)?
 // 原来是"恩恩，好的。"，机器味太重，2026-10-05 改成下面这句。
 // 2026-10-06：原来这里是“我先忙一会，晚点聊”——那是结束语。模型偶尔回空时，
 // 发一句结束语等于把天聊死，还容易被当成不想聊。换成中性的接话句。
-export const EMPTY_REPLY_FALLBACK = "嗯 我在呢";
 export const LATE_REPLY_RULE =
   "只接对方最新一句；不主动解释、不主动道歉、不主动汇报自己在忙什么。";
 export const KNOWLEDGE_MATCH_RULE =
