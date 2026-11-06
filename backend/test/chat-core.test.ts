@@ -1140,7 +1140,7 @@ describe("chat core", () => {
     expect(xingmu).not.toContain("我老公");
     expect(xingmu).not.toContain("你是来排解寂寞的");
     expect(sutang).not.toContain("王雅慧");
-    expect(sutang).not.toContain("宝马X3");
+    expect(sutang).toContain("宝马X3");
     expect(sutang).not.toContain("星暮六段漏斗");
     expect(male).not.toContain("苏棠");
     expect(male).not.toContain("我老公");

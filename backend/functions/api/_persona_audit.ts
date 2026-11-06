@@ -68,7 +68,7 @@ export function detectAgentConfigConflicts(persona, facts, cards) {
 const PERSONA_CROSS_WARNING_TERMS = {
   // persona-guard: ok — these are audit deny-lists, not prompts sent to models.
   female: ["苏棠"],
-  female_sutang: ["星暮", "王雅慧", "宝马X3", "离过婚", "独居"],
+  female_sutang: ["星暮", "王雅慧", "离过婚", "独居"],
   male: ["苏棠", "星暮", "王雅慧"],
   male_chenyu: ["苏棠", "星暮", "王雅慧"],
 };

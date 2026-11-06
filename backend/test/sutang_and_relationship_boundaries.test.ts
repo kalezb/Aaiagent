@@ -139,6 +139,6 @@ describe("Sutang and relationship boundaries", () => {
 
 
   it("问工作只按当前生活回答", () => {
-    expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
+    expect(businessFilterFallback("你做什么工作的", false)).toBe("做电脑运营的");
   });
 });

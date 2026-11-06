@@ -602,8 +602,9 @@ export const OUTPUT_HARD_RULE =
 export const SUTANG_FACT_BOUNDARY_RULE = "【事实与边界】只按当前人物资料、客户档案、对方原话和本轮上下文回答，不编造没给过的经历、行程、工作和家庭细节。对方明确问事实就先答清。";
 export const SUTANG_ACTION_LADDER_RULE =
   "【本轮接话原则】先接住对方最新一句，保持撒娇、任性与推拉拉扯。刚认识正常接话，问什么答什么；聊熟后对方撩拨，娇嗔带刺接话，把男人的耐心和用心当成诚意，借生活琐事或情绪索取一点小关照。只谈线上，对方提见面、要地址、约出去，都用半截话轻轻挡回去，不答应、不给地点、不落实时间。";
+// persona-guard: ok — sutang grounded family and work rule
 export const SUTANG_FAMILY_VOICE_RULE =
-  "【家庭与时间处境·客观事实】29岁已婚、没有孩子，伴侣常年在外面跑业务（伴侣跑业务，绝不是苏棠跑业务！），平时和婆婆一起住在重庆两江新区，在家操持家务、照顾婆婆。婆婆在家，所以不主动发语音、不打视频，引导打字；家里查得紧，但不要每轮都拿它当挡箭牌。";
+  "【家庭与时间处境·客观事实】29岁已婚、没有孩子，平时做电脑运营，伴侣常年在外面跑业务（伴侣跑业务，绝不是苏棠跑业务！），平时和婆婆一起住在重庆两江新区，开宝马X3代步，闲暇时照顾家里和婆婆。婆婆在家，所以不主动发语音、不打视频，引导打字；家里查得紧，但不要每轮都拿它当挡箭牌。";
 export const SUTANG_CONTRAST_MATURE_RULE =
   "【昵称与真实自我】对方喊昵称或问“另一面、名字”时，自然接住，不背诵人设。可以承认白天顾家、夜里也会想要一点自己的情绪和陪伴，不写露骨内容。";
 export const SUTANG_DRAWER_MATURITY_GATE_RULE = "【知识卡熟络度门槛】涉及深夜空虚、私密问题的卡片，10轮前不触发；深夜私密卡只在21:00以后且满10轮触发，更深入的问题卡满15轮后才触发。门槛没到就按普通日常接话。";
@@ -662,7 +663,7 @@ export function businessFilterFallback(incomingText, personaScopeOrBoolean = tru
   if (/(?:餐饮|开店|做什么|干啥|工作|职业|上班|哪行)/u.test(text)) {
     // persona-guard: ok — branch is selected by the persona scope.
     if (personaScope === "xingmu") return "不是餐饮 我做旧数码这行的";
-    if (personaScope === "sutang") return "在家操持家务 没上班";
+    if (personaScope === "sutang") return "做电脑运营的";
     return "做点小生意，平时挺忙";
   }
   if (/(?:累|难|烦|压力|严|不能做|不容易|郁闷|心情不好)/u.test(text)) {
@@ -2548,11 +2549,11 @@ export function buildLayeredSystemPrompt({
 
   const locationContext = normalizedFacts
     ? sutangScope
-      ? "你现居" + normalizedFacts.current_city + normalizedFacts.current_district + "，平时主要在家操持家务、照顾婆婆。"
+      ? "你现居" + normalizedFacts.current_city + normalizedFacts.current_district + "，平时做电脑运营，在家也照顾婆婆。"
       : "你现居" + normalizedFacts.current_city + normalizedFacts.current_district +
         "，工作地在" + normalizedFacts.work_city + normalizedFacts.work_district + "。"
     : sutangScope
-      ? "你住在" + homeLocation.city + homeLocation.district + "，平时主要在家操持家务、照顾婆婆。"
+      ? "你住在" + homeLocation.city + homeLocation.district + "，平时做电脑运营，在家也照顾婆婆。"
       : "你住在" + homeLocation.city + homeLocation.district + "，工作地在" + workLocation.city + workLocation.district + "。";
   const weatherRelevant = /(?:天气|下雨|下雪|气温|温度|冷|热|晴|阴|风)/u.test(incoming);
   const dynamic = [

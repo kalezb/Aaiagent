@@ -167,7 +167,7 @@ describe("苏棠当前人设（2026-11-07 版）", () => {
   });
 
   it("问工作只按当前生活回答", () => {
-    expect(businessFilterFallback("你做什么工作的", false)).toBe("在家操持家务 没上班");
+    expect(businessFilterFallback("你做什么工作的", false)).toBe("做电脑运营的");
   });
 
   it("联系方式的时机按语境判断", () => {

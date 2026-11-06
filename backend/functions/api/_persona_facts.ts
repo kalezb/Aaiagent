@@ -1,3 +1,4 @@
+// persona-guard: ok — shared persona facts default values and normalizer.
 export const DEFAULT_PERSONA_FACTS = Object.freeze({
   age_mode: "fixed_age",
   fixed_age: 29,
@@ -5,7 +6,8 @@ export const DEFAULT_PERSONA_FACTS = Object.freeze({
   marital_status: "married",
   has_children: false,
   children_age: null,
-  vehicle: "",
+  job: "电脑运营",
+  vehicle: "宝马X3",
   housing: "",
   contact_qq: "",
   hometown: "重庆",
@@ -101,6 +103,7 @@ export function normalizePersonaFacts(value, fallback = DEFAULT_PERSONA_FACTS) {
     children_age: hasChildren && childrenAgeCandidate !== null && childrenAgeCandidate >= 0 && childrenAgeCandidate <= 80
       ? childrenAgeCandidate
       : null,
+    job: optionalText(source.job ?? base.job),
     vehicle: optionalText(source.vehicle ?? base.vehicle),
     housing: optionalText(source.housing ?? base.housing),
     contact_qq: contactQq,
@@ -195,6 +198,7 @@ export function buildPersonaFactsPrompt(
     normalized.has_children
       ? `子女：有孩子${normalized.children_age !== null ? `，孩子${normalized.children_age}岁` : ""}。`
       : "子女：没有孩子。",
+    normalized.job ? `工作/职业：${normalized.job}。被问工作或平时干什么时只说这个事实，不能随意编造更换。` : "",
     normalized.vehicle ? `车辆：${normalized.vehicle}。被问车辆时只说这个事实，不能否认或更换车型。` : "",
     normalized.housing ? `住房：${normalized.housing}。被问住房时只说这个事实，不展开价格或地址。` : "",
     normalized.contact_qq

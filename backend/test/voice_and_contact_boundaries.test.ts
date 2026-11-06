@@ -260,4 +260,23 @@ describe("voice and contact boundaries", () => {
     expect(facts.proactive_location_allowed).toBe(false);
     expect(buildPersonaFactsPrompt(facts)).toContain("孩子3岁");
   });
+
+  it("supports job and vehicle in structured facts and prompt immediately", () => {
+    const defaultFacts = normalizePersonaFacts({});
+    expect(defaultFacts.job).toBe("电脑运营");
+    expect(defaultFacts.vehicle).toBe("宝马X3");
+    const defaultPrompt = buildPersonaFactsPrompt(defaultFacts);
+    expect(defaultPrompt).toContain("工作/职业：电脑运营");
+    expect(defaultPrompt).toContain("车辆：宝马X3");
+
+    const customFacts = normalizePersonaFacts({
+      job: "平面设计",
+      vehicle: "奥迪Q5",
+    });
+    expect(customFacts.job).toBe("平面设计");
+    expect(customFacts.vehicle).toBe("奥迪Q5");
+    const customPrompt = buildPersonaFactsPrompt(customFacts);
+    expect(customPrompt).toContain("工作/职业：平面设计");
+    expect(customPrompt).toContain("车辆：奥迪Q5");
+  });
 });

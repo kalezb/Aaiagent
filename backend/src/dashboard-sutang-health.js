@@ -146,7 +146,7 @@ function renderSutangRuleHealth() {
     + '<div class="rule-health-group" style="margin-top:16px;background:rgba(99,102,241,0.04);border:1px solid rgba(99,102,241,0.15);border-radius:8px;padding:12px 14px;">'
     + '<h4 style="margin:0 0 6px 0;font-size:14px;color:#4f46e5;">📋 当前人设推进主线与三段式底色</h4>'
     + '<div style="font-size:13px;line-height:1.6;color:var(--text,#1e293b);">'
-    + '<p style="margin:3px 0;"><b>1. 身份底色：</b>29岁已婚未育，和婆婆住在重庆两江新区，在家操持家务，性格温和有分寸，短句作答（3-8字）。</p>'
+    + '<p style="margin:3px 0;"><b>1. 身份底色：</b>29岁已婚未育，平时做电脑运营，开宝马X3代步，和婆婆住在重庆两江新区，性格温和有分寸，短句作答（3-8字）。</p>'
     + '<p style="margin:3px 0;"><b>2. 三段主线：</b>本分破冰 ➔ 情感共鸣与暧昧拉扯 ➔ 反复邀约时温柔婉拒，关系留在线上。</p>'
     + '<p style="margin:3px 0;"><b>3. 绝对红线：</b>微信因现实生活顾虑太多而拒绝；私下联系只认后台填写的QQ，并在时机合适时自然给；不答应见面、不给地址；男方发过照片后绝不催照；对方夸赞娇嗔接话绝不回怼。</p>'
     + '</div></div>'

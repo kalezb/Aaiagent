@@ -106,6 +106,8 @@ function renderSharedFacts(facts, version) {
   setSharedFactValue("sharedFactsHasChildren", facts.has_children ? "true" : "false");
   setSharedFactValue("sharedFactsChildrenAge", facts.children_age ?? "");
   setSharedFactValue("sharedFactsQq", facts.contact_qq || "");
+  setSharedFactValue("sharedFactsJob", facts.job || "");
+  setSharedFactValue("sharedFactsVehicle", facts.vehicle || "");
   if ($("sharedFactsContactLabel")) $("sharedFactsContactLabel").textContent = sharedContactLabel();
   setSharedFactValue("sharedFactsHometown", facts.hometown || "");
   setSharedFactValue("sharedFactsCurrentCity", facts.current_city || "");
@@ -140,6 +142,8 @@ function sharedFactsPayload() {
     has_children: $("sharedFactsHasChildren").value === "true",
     children_age: $("sharedFactsHasChildren").value === "true" ? $("sharedFactsChildrenAge").value.trim() : "",
     contact_qq: $("sharedFactsQq").value.trim(),
+    job: $("sharedFactsJob") ? $("sharedFactsJob").value.trim() : "",
+    vehicle: $("sharedFactsVehicle") ? $("sharedFactsVehicle").value.trim() : "",
     hometown: $("sharedFactsHometown").value.trim(),
     current_city: $("sharedFactsCurrentCity").value.trim(),
     current_district: $("sharedFactsCurrentDistrict").value.trim(),
