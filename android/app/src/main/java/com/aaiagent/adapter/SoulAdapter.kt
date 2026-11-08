@@ -1502,7 +1502,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
 
         if (!canProceed()) return SendResult.STOPPED
-        hideImeIfVisible()
+        waitForVerifiedChatRoot(expectedContactName) ?: return SendResult.NOT_VERIFIED
 
         delay(SoulSendTimingPolicy.POST_FILL_SETTLE_MS)
         if (!canProceed()) return SendResult.STOPPED
@@ -1510,8 +1510,9 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         // previously found node can then point at a different control (real
         // incident: the supposed send button became main_tab_me, so the agent
         // opened the profile/membership area). Re-find the button on the
-        // current chat page and require its identity before tapping.
-        val currentChat = service.rootInActiveWindow ?: return SendResult.NOT_VERIFIED
+        // current verified chat page and require its identity before tapping.
+        val currentChat = waitForVerifiedChatRoot(expectedContactName)
+            ?: return SendResult.NOT_VERIFIED
         val freshSendButton = currentChat
             .findAccessibilityNodeInfosByViewId(prefix + "btn_send")
             .asSequence()
@@ -1531,6 +1532,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
 
         val verified = verifySent(text, canProceed)
+        hideImeIfVisible()
         if (verified == SendResult.BANNED) return SendResult.BANNED
         return verified
     }
@@ -1904,7 +1906,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         service.windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
     }.getOrDefault(false)
 
-    /** 填完字后把软键盘收掉：键盘对发送没有用，还让整段操作看起来像机器人。 */
+    /** 发完把软键盘收掉，别让键盘一直挂在聊天页上。 */
     private fun hideImeIfVisible() {
         if (!isImeWindowVisible()) return
         service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)

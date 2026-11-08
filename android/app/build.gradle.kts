@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
@@ -12,8 +12,8 @@ android {
         applicationId = "com.aaiagent"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2026110802
-        versionName = "20261108-1525"
+        versionCode = 2026110804
+        versionName = "20261108-1540"
     }
 
     buildTypes {
@@ -62,7 +62,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 
-    // LSPosed 编译期接口。运行时由框架在 Soul 进程里提供，**不会打包进 APK**。
-    // 用本地 jar（和 FishVoice 一样）而不是联网拉依赖，构建不依赖网络。
+    // LSPosed 缂栬瘧鏈熸帴鍙ｃ€傝繍琛屾椂鐢辨鏋跺湪 Soul 杩涚▼閲屾彁渚涳紝**涓嶄細鎵撳寘杩?APK**銆?
+    // 鐢ㄦ湰鍦?jar锛堝拰 FishVoice 涓€鏍凤級鑰屼笉鏄仈缃戞媺渚濊禆锛屾瀯寤轰笉渚濊禆缃戠粶銆?
     compileOnly(files("libs/XposedBridgeApi-82.jar"))
 }
+
+
