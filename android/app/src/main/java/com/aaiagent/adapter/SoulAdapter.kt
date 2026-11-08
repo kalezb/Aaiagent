@@ -17,7 +17,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
 import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 import com.aaiagent.adapter.PlatformAdapter.ConversationInfo
 import com.aaiagent.adapter.PlatformAdapter.ListSnapshot
@@ -1530,9 +1529,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             android.util.Log.w("AIA", "send button not safely clickable; keeping chat untouched")
             return SendResult.NOT_VERIFIED
         }
-        // 点完发送马上收键盘，不等确认读完；键盘对后面没有任何用处。
-        hideImeIfVisible()
-        delay(120)
 
         val verified = verifySent(text, canProceed)
         if (verified == SendResult.BANNED) return SendResult.BANNED
@@ -1902,16 +1898,6 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             }
         }
         return candidates.firstOrNull { it.isVisibleToUser }
-    }
-
-    private fun isImeWindowVisible(): Boolean = runCatching {
-        service.windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-    }.getOrDefault(false)
-
-    /** 发完把软键盘收掉，别让键盘一直挂在聊天页上。 */
-    private fun hideImeIfVisible() {
-        if (!isImeWindowVisible()) return
-        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
     }
 
     private suspend fun setTextAndVerify(text: String, canProceed: () -> Boolean): Boolean {
