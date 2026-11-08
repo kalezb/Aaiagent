@@ -1530,9 +1530,11 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             android.util.Log.w("AIA", "send button not safely clickable; keeping chat untouched")
             return SendResult.NOT_VERIFIED
         }
+        // 点完发送马上收键盘，不等确认读完；键盘对后面没有任何用处。
+        hideImeIfVisible()
+        delay(120)
 
         val verified = verifySent(text, canProceed)
-        hideImeIfVisible()
         if (verified == SendResult.BANNED) return SendResult.BANNED
         return verified
     }
