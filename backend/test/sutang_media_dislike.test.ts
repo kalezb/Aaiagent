@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MEDIA_DISLIKE_REPLIES,
+  MEDIA_DISLIKE_STERN_REPLIES,
   localMediaDislikeReply,
 } from "../functions/api/_reply_media_boundary";
 
@@ -24,6 +25,18 @@ describe("media dislike boundary", () => {
     expect(localMediaDislikeReply([
       { role: "user", type: "text", content: "在干嘛" },
     ])).toBe("");
+  });
+
+  it("uses a stern line the second time", () => {
+    const first = localMediaDislikeReply([
+      { role: "user", type: "voice", content: "[语音]" },
+    ]);
+    expect(MEDIA_DISLIKE_REPLIES).toContain(first);
+    const second = localMediaDislikeReply(
+      [{ role: "user", type: "voice", content: "[语音]" }],
+      [{ role: "assistant", content: first }],
+    );
+    expect(MEDIA_DISLIKE_STERN_REPLIES).toContain(second);
   });
 
   it("only looks at messages after her last reply", () => {

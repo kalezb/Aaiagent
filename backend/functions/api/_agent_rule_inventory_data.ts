@@ -240,7 +240,7 @@ export const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" |
     category: "语音规则",
     title: "不收语音和表情包",
     scope: "全部模型",
-    detail: "对方发语音、语音转文字或表情包时，直接用固定短句提醒：讨厌语音和表情包，以后打字。",
+    detail: "对方发语音、语音转文字或表情包时，先用一句自然的短话提醒别发；再犯换严厉的，仍只回固定短句，不让模型猜内容。",
     source: "localMediaDislikeReply / media policy",
     recommendation: "keep_default",
   },

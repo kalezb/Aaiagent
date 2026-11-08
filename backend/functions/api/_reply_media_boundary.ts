@@ -57,9 +57,14 @@ export function localVoiceReply(messages, historyMessages = []) {
 }
 
 export const MEDIA_DISLIKE_REPLIES = [
-  "别发语音和表情包，我讨厌这个，打字",
-  "语音和表情包我看不明白，以后打字",
-  "我不喜欢语音和表情包，打字说就行",
+  "别发语音，表情包也少来，打字",
+  "语音不方便，表情包也别发，打字",
+  "有啥事打字说，别发语音表情包",
+];
+export const MEDIA_DISLIKE_STERN_REPLIES = [
+  "说了别发语音表情包，再发我不回了",
+  "怎么还发？语音表情包都别发，打字",
+  "再发语音表情包我就不理了，打字",
 ];
 
 function isDislikedMedia(message) {
@@ -68,13 +73,24 @@ function isDislikedMedia(message) {
   return isStickerStateContent(message?.content);
 }
 
-/** 对方发了语音或表情包：直接回一句固定短句，不让模型去猜内容。 */
+function hasDislikedMediaReminder(historyMessages) {
+  const lines = [...MEDIA_DISLIKE_REPLIES, ...MEDIA_DISLIKE_STERN_REPLIES];
+  return (Array.isArray(historyMessages) ? historyMessages : []).some((message) => {
+    if (message?.role !== "assistant") return false;
+    const content = String(message?.content || "");
+    return lines.some((line) => content.includes(line));
+  });
+}
+
+/** 对方发了语音或表情包：直接回一句固定短句，不让模型去猜内容；再犯就换严厉的。 */
 export function localMediaDislikeReply(messages, historyMessages = []) {
   const list = Array.isArray(messages) ? messages : [];
   const lastAssistant = list.map((message) => message?.role).lastIndexOf("assistant");
   const batch = list.slice(lastAssistant + 1).filter((message) => message?.role === "user");
   if (!batch.some(isDislikedMedia)) return "";
-  return pickUnusedDecline(MEDIA_DISLIKE_REPLIES, historyMessages, "media_dislike");
+  const repeated = hasDislikedMediaReminder(historyMessages);
+  const pool = repeated ? MEDIA_DISLIKE_STERN_REPLIES : MEDIA_DISLIKE_REPLIES;
+  return pickUnusedDecline(pool, historyMessages, "media_dislike");
 }
 
 export function isVideoCallRequest(value) {
