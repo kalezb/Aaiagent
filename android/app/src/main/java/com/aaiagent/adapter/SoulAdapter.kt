@@ -17,6 +17,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.aaiagent.adapter.PlatformAdapter.ChatMessage
 import com.aaiagent.adapter.PlatformAdapter.ConversationInfo
 import com.aaiagent.adapter.PlatformAdapter.ListSnapshot
@@ -1501,7 +1502,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         }
 
         if (!canProceed()) return SendResult.STOPPED
-        waitForVerifiedChatRoot(expectedContactName) ?: return SendResult.NOT_VERIFIED
+        hideImeIfVisible()
 
         delay(SoulSendTimingPolicy.POST_FILL_SETTLE_MS)
         if (!canProceed()) return SendResult.STOPPED
@@ -1509,9 +1510,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         // previously found node can then point at a different control (real
         // incident: the supposed send button became main_tab_me, so the agent
         // opened the profile/membership area). Re-find the button on the
-        // current verified chat page and require its identity before tapping.
-        val currentChat = waitForVerifiedChatRoot(expectedContactName)
-            ?: return SendResult.NOT_VERIFIED
+        // current chat page and require its identity before tapping.
+        val currentChat = service.rootInActiveWindow ?: return SendResult.NOT_VERIFIED
         val freshSendButton = currentChat
             .findAccessibilityNodeInfosByViewId(prefix + "btn_send")
             .asSequence()
@@ -1898,6 +1898,16 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             }
         }
         return candidates.firstOrNull { it.isVisibleToUser }
+    }
+
+    private fun isImeWindowVisible(): Boolean = runCatching {
+        service.windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+    }.getOrDefault(false)
+
+    /** 填完字后把软键盘收掉：键盘对发送没有用，还让整段操作看起来像机器人。 */
+    private fun hideImeIfVisible() {
+        if (!isImeWindowVisible()) return
+        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
     }
 
     private suspend fun setTextAndVerify(text: String, canProceed: () -> Boolean): Boolean {
