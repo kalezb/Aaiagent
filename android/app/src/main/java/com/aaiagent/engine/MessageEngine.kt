@@ -2317,7 +2317,11 @@ class MessageEngine(
                         relationshipOrigin = context.relationshipOrigin.name.lowercase(),
                         selfNickname = selfNickname,
                         location = location
-                    )
+                    ),
+                    shouldAbort = {
+                        synchronized(context) { context.pendingReplyStale } ||
+                            !canContinue(leaseToken, interactionEpoch)
+                    },
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -2333,6 +2337,13 @@ class MessageEngine(
                 RuntimeJournal.recovery("调用回复接口失败: ${error.message}")
                 delay(900)
                 return@repeat
+            }
+            if (chatCall == null) {
+                android.util.Log.d(
+                    "AIA",
+                    "chat request aborted for newer incoming requestId=$requestId contact=${context.contactName}",
+                )
+                return null
             }
             val response = chatCall.response
             val chatResponse = response
@@ -2861,6 +2872,7 @@ class MessageEngine(
         var replyConfirmed = true
         var stoppedByUser = false
         var droppedCount = 0
+        var verifiedWindowId = -1
         val deliveryStartedAt = System.currentTimeMillis()
         for ((index, part) in parts.withIndex()) {
             if (!canContinue(leaseToken, interactionEpoch)) {
@@ -2877,7 +2889,17 @@ class MessageEngine(
                 clearInputField(); saveConversationRecovery(context)
                 return ReplyDeliveryResult(ReplyDeliveryStatus.STOPPED, sentCount, plannedTotal)
             }
-            val incomingChanged = !replyDeliveryVerifier.incomingStillCurrent(adapter, context, expectedIncomingFingerprint)
+            val currentWindow = service?.rootInActiveWindow
+            val staleFlag = synchronized(context) { context.pendingReplyStale }
+            // 同一条回复的第 2、3 条气泡：人还在同一个聊天窗口、也没来新消息，
+            // 就不用再整页读一遍、再验一次身份。实测每遍要 1 秒左右。
+            val canReuseVerifiedWindow = index > 0 && currentWindow != null &&
+                currentWindow.windowId == verifiedWindowId && !staleFlag
+            val incomingChanged = if (canReuseVerifiedWindow) {
+                false
+            } else {
+                !replyDeliveryVerifier.incomingStillCurrent(adapter, context, expectedIncomingFingerprint)
+            }
             val staleRequested = synchronized(context) { context.pendingReplyStale }
             val decision = ReplyDeliveryPolicy.nextPartDecision(sentParts = sentCount, incomingChanged = incomingChanged, staleRequested = staleRequested)
             if (decision == NextPartDecision.CANCEL_STALE) {
@@ -2888,7 +2910,7 @@ class MessageEngine(
             if (incomingChanged || staleRequested) {
                 android.util.Log.d("AIA", "finishing reply delivery before handling newer incoming part=${sentCount + 1} sent=$sentCount")
             }
-            if (!replyDeliveryVerifier.verifyCurrentChatWithRetry(adapter, context.contactName)) {
+            if (!canReuseVerifiedWindow && !replyDeliveryVerifier.verifyCurrentChatWithRetry(adapter, context.contactName)) {
                 RuntimeJournal.messageSent(false, "发送前聊天身份未确认")
                 clearInputField()
                 if (!reopenConversationForDelivery(adapter, context, leaseToken) ||
@@ -2990,6 +3012,7 @@ class MessageEngine(
                 break
             }
             sentCount++
+            verifiedWindowId = root.windowId
             recentOutgoingSends.remember(part, context.contactId)
             val visibleAfterSend = replyDeliveryVerifier.verifyOutgoingPartVisible(
                 adapter = adapter,

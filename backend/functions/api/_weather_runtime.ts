@@ -2,7 +2,7 @@ export async function getWeather(city, kv, apiKey) {
   try {
     const cached = await kv.get("weather:cache", "json");
     const now = Math.floor(Date.now() / 1000);
-    if (cached && cached.city === city && cached.updated_at && now - cached.updated_at < 1800) {
+    if (cached && cached.city === city && cached.updated_at && now - cached.updated_at < 10800) {
       return { condition: cached.condition || "晴", temp: cached.temp || 20 };
     }
     const geoUrl = "https://geoapi.qweather.com/v2/city/lookup?location=" +

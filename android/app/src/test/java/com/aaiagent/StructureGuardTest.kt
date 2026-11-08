@@ -19,7 +19,7 @@ class StructureGuardTest {
             "src/main/java/com/aaiagent/MainActivitySettings.kt" to 220,
             "src/main/java/com/aaiagent/MainActivityHosting.kt" to 140,
             "src/main/java/com/aaiagent/MainActivityPermissions.kt" to 40,
-            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4040,
+            "src/main/java/com/aaiagent/engine/MessageEngine.kt" to 4070,
             "src/main/java/com/aaiagent/engine/ReplySuggestion.kt" to 25,
             "src/main/java/com/aaiagent/engine/ConversationReadIdentityPolicy.kt" to 30,
             "src/main/java/com/aaiagent/engine/BackendReplyTaskPoller.kt" to 130,

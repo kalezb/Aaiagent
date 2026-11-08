@@ -19,7 +19,7 @@ object ReplyFreshnessPolicy {
     const val BURST_MERGE_DELAY_MS = 2_500L
     const val BURST_MERGE_MAX_WAIT_MS = 10_000L
     /** 消息已经放了这么久（安静窗口 + 余量），就不用再等对方"不连着发"。 */
-    const val SETTLE_GRACE_MS = 4_000L
+    const val SETTLE_GRACE_MS = 2_000L
 
     /**
      * A turn is not sent to the model from the first page read.

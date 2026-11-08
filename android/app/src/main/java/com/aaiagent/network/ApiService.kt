@@ -2,6 +2,10 @@ package com.aaiagent.network
 
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.EventListener
@@ -163,7 +167,10 @@ class ApiService internal constructor(
     }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    suspend fun chat(request: ChatRequest): ChatCallResult = withContext(Dispatchers.IO) {
+    suspend fun chat(
+        request: ChatRequest,
+        shouldAbort: () -> Boolean = { false },
+    ): ChatCallResult? = withContext(Dispatchers.IO) {
         val json = gson.toJson(request)
         val body = json.toRequestBody(jsonMediaType)
         val req = Request.Builder()
@@ -172,18 +179,31 @@ class ApiService internal constructor(
             .post(body)
             .build()
         val timingListener = NetworkTimingEventListener()
-        val timingClient = modelClient.newBuilder()
-            .eventListener(timingListener)
-            .build()
-        val chatResponse = timingClient.newCall(req).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            val parsed = gson.fromJson(responseBody, ChatResponse::class.java)
-            if (!response.isSuccessful && parsed?.error.isNullOrBlank()) {
-                throw ApiHttpException(response.code, responseBody)
+        val timingClient = modelClient.newBuilder().eventListener(timingListener).build()
+        val call = timingClient.newCall(req)
+        coroutineScope {
+            val watchdog = launch(Dispatchers.Default) {
+                while (isActive) {
+                    if (shouldAbort()) { call.cancel(); break }
+                    delay(80)
+                }
             }
-            parsed ?: throw IllegalStateException("deepseek_empty_response")
+            try {
+                val chatResponse = call.execute().use { response ->
+                    val responseBody = response.body?.string().orEmpty()
+                    val parsed = gson.fromJson(responseBody, ChatResponse::class.java)
+                    if (!response.isSuccessful && parsed?.error.isNullOrBlank()) {
+                        throw ApiHttpException(response.code, responseBody)
+                    }
+                    parsed ?: throw IllegalStateException("deepseek_empty_response")
+                }
+                ChatCallResult(chatResponse, timingListener.snapshot())
+            } catch (error: IOException) {
+                if (shouldAbort()) null else throw error
+            } finally {
+                watchdog.cancel()
+            }
         }
-        ChatCallResult(chatResponse, timingListener.snapshot())
     }
 
     suspend fun selectExchangeMedia(request: ExchangeMediaRequest): ChatResponse = withContext(Dispatchers.IO) {

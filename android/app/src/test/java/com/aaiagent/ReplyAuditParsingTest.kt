@@ -47,7 +47,7 @@ class ReplyAuditParsingTest {
                     contactName = "甲",
                     messages = emptyList(),
                 )
-            ).response
+            )!!.response
 
             assertNotNull(response.replyAudit)
             assertEquals("model", response.replyAudit?.source)

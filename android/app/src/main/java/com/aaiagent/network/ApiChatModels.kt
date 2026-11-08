@@ -59,6 +59,10 @@ data class ReplyAuditOverride(
 data class ChatTiming(
     @SerializedName("persona_ms") val personaMs: Long? = null,
     @SerializedName("context_ms") val contextMs: Long? = null,
+    @SerializedName("setup_ms") val setupMs: Long? = null,
+    @SerializedName("pipeline_ms") val pipelineMs: Long? = null,
+    @SerializedName("persist_ms") val persistMs: Long? = null,
+    @SerializedName("postllm_ms") val postllmMs: Long? = null,
     @SerializedName("llm_ms") val llmMs: Long? = null,
     @SerializedName("main_llm_ms") val mainLlmMs: Long? = null,
     @SerializedName("repair_ms") val repairMs: Long? = null,

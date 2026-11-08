@@ -50,6 +50,10 @@ internal fun modelTimingLog(
         "network_total_ms=${timingValue(networkTiming.totalMs)} " +
         "server_persona_ms=${timingValue(serverTiming?.personaMs)} " +
         "server_context_ms=${timingValue(serverTiming?.contextMs)} " +
+        "server_setup_ms=${timingValue(serverTiming?.setupMs)} " +
+        "server_pipeline_ms=${timingValue(serverTiming?.pipelineMs)} " +
+        "server_persist_ms=${timingValue(serverTiming?.persistMs)} " +
+        "server_postllm_ms=${timingValue(serverTiming?.postllmMs)} " +
         "server_llm_ms=${timingValue(serverTiming?.llmMs)} " +
         "server_main_llm_ms=${timingValue(serverTiming?.mainLlmMs)} " +
         "server_repair_ms=${timingValue(serverTiming?.repairMs)} " +

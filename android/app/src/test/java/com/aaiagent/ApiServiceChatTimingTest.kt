@@ -53,7 +53,7 @@ class ApiServiceChatTimingTest {
                     conversationStage = "first_contact",
                     relationshipOrigin = "match",
                 )
-            )
+            )!!
 
             assertEquals("request-1", result.response.requestId)
             assertEquals(3L, result.response.timing?.llmMs)
@@ -98,7 +98,7 @@ class ApiServiceChatTimingTest {
             server.start()
 
             val service = ApiService(server.url("/").toString().trimEnd('/'))
-            val result = service.chat(chatRequest("server-timeout-request"))
+            val result = service.chat(chatRequest("server-timeout-request"))!!
 
             assertEquals("llm_timeout", result.response.code)
             assertEquals("request-timeout", result.response.requestId)
