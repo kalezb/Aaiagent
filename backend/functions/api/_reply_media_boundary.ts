@@ -58,7 +58,6 @@ export function localVoiceReply(messages, historyMessages = []) {
 
 export const MEDIA_DISLIKE_REPLIES = [
   "别发语音，表情包也少来，打字",
-  "语音不方便，表情包也别发，打字",
   "有啥事打字说，别发语音表情包",
 ];
 export const MEDIA_DISLIKE_STERN_REPLIES = [
