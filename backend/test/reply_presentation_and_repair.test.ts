@@ -24,6 +24,7 @@ describe("reply presentation and repair", () => {
     // 苏棠这种软语气人设：句尾的“呢”是语气词，不是问句
     expect(normalizeAssistantReplyPresentation("刚在收拾娃的玩具呢", { softParticles: true })).toBe("刚在收拾娃的玩具呢");
     expect(normalizeAssistantReplyPresentation("刚在收拾娃的玩具呢？", { softParticles: true })).toBe("刚在收拾娃的玩具呢？");
+    expect(normalizeAssistantReplyPresentation("刚洗完澡瘫床上呢。", { softParticles: true })).toBe("刚洗完澡瘫床上呢");
     // 2026-10-06：苏棠不再自动补“？”（真人打字不句句带标点，工整感是“像 AI”的来源之一）
     expect(normalizeAssistantReplyPresentation("你多大了呢", { softParticles: true })).toBe("你多大了呢");
     expect(normalizeAssistantReplyPresentation("你在干嘛", { softParticles: true })).toBe("你在干嘛");

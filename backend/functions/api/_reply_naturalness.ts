@@ -41,6 +41,10 @@ function normalizeReplySegment(value, options = {}) {
 
   const visibleLength = visibleReplyLength(reply);
   if (visibleLength <= 1) reply = expandSingleCharacterReply(reply);
+  if (options.softParticles) {
+    // 苏棠软语气人设句末全角句号去掉，更贴近真人微信随手打字
+    reply = reply.replace(/。+$/u, "");
+  }
   if (/[。！？!?…~～]$/u.test(reply)) return reply;
   // 2026-10-06：真人打字很少句句带标点。软语气人设（苏棠）保留模型原本的写法，
   // 不再自动补“？”——补出来的工整感正是“像 AI”的来源之一。星暮维持原样。

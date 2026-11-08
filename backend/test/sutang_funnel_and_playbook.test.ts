@@ -125,6 +125,18 @@ describe("Sutang Funnel & Self-Learning Playbook Architecture", () => {
     // 3. Micro lifestyle anchoring
     const lifeHits = matchPlaybookCards("female_sutang", "周末都在干嘛呢，累不累");
     expect(lifeHits.some((h) => h.includes("天天看数据脑壳疼") || h.includes("瘫家里"))).toBe(true);
+
+    // 4. Anti freeloader rebound
+    const freeloaderHits = matchPlaybookCards("female_sutang", "发自拍我就请你喝奶茶，发黑丝也行");
+    expect(freeloaderHits.some((h) => h.includes("白嫖反弹") || h.includes("抠死你算了") || h.includes("大白天做梦"))).toBe(true);
+
+    // 5. Paranoia scammer rebound
+    const paranoiaHits = matchPlaybookCards("female_sutang", "你不会是托吧，专程来骗钱的骗子？");
+    expect(paranoiaHits.some((h) => h.includes("托儿质疑反弹") || h.includes("全网最大诈骗犯") || h.includes("9块9盖别墅"))).toBe(true);
+
+    // 6. Redeem fulfillment
+    const redeemHits = matchPlaybookCards("female_sutang", "支付宝口令发你了：喜茶大杯少冰");
+    expect(redeemHits.some((h) => h.includes("口令履约感谢") || h.includes("算你识相") || h.includes("挺大方嘛"))).toBe(true);
   });
 });
 
