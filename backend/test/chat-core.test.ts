@@ -300,7 +300,7 @@ describe("chat core", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("sends editable sticker meanings to the model", async () => {
+  it("replies locally when the other side sends a sticker", async () => {
     const kv = new MockKV();
     await kv.put(PROGRAM_RULES_KV_KEY, JSON.stringify({
       ...DEFAULT_PROGRAM_RULES,
@@ -339,16 +339,12 @@ describe("chat core", () => {
       env: { DB: new MockD1(), KV: kv, DEEPSEEK_API_KEY: "deepseek-key" },
     } as never);
 
-    await expect(response.json()).resolves.toMatchObject({
-      action: "send",
-      reply: "月亮都替你想我了",
-    });
-    const chatCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/chat/completions")) as [string, RequestInit];
-    const [, init] = chatCall;
-    const payload = JSON.parse(String(init.body));
-    const incoming = payload.messages.find((message: Record<string, string>) => message.role === "user");
-    expect(incoming.content).toContain("[表情包：月亮（想找你聊天）]");
-    expect(payload.messages[0].content).toContain("表情只按程序给出的意思理解。");
+    const body = await response.json();
+    expect(body.action).toBe("send");
+    expect(body.reply).toContain("打字");
+    expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).includes("/chat/completions")
+    )).toBe(false);
   });
 
   it("uses an edited safety boundary on the next chat request", async () => {

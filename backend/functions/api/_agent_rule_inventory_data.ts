@@ -236,6 +236,15 @@ export const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" |
     recommendation: "keep_default",
   },
   {
+    id: "media_dislike_boundary",
+    category: "语音规则",
+    title: "不收语音和表情包",
+    scope: "全部模型",
+    detail: "对方发语音、语音转文字或表情包时，直接用固定短句提醒：讨厌语音和表情包，以后打字。",
+    source: "localMediaDislikeReply / media policy",
+    recommendation: "keep_default",
+  },
+  {
     id: "voice_transcript_memory",
     category: "语音规则",
     title: "语音转写单独保存",
@@ -360,6 +369,7 @@ export const LEGACY_RULE_CLASSIFICATION: Record<string, Pick<LegacyAgentRule, "g
   her_photo_memory: { gate: "input", priority: 80, persona_id: "" },
   media_group_selection: { gate: "execution", priority: 90, persona_id: "" },
   voice_call_boundary: { gate: "execution", priority: 100, persona_id: "" },
+  media_dislike_boundary: { gate: "execution", priority: 100, persona_id: "" },
   voice_transcript_memory: { gate: "input", priority: 80, persona_id: "" },
   sticker_not_real: { gate: "input", priority: 70, persona_id: "" },
   platform_not_user: { gate: "input", priority: 90, persona_id: "" },

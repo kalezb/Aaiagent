@@ -7,6 +7,7 @@ import {
 } from "./_reply_policy";
 import { createImmediateReplyDecision } from "./_reply_decision";
 import { respondWithImmediateReply } from "./_chat_delivery";
+import { localMediaDislikeReply } from "./_reply_media_boundary";
 
 export async function respondWithLocalChatReply({
   env,
@@ -48,6 +49,31 @@ export async function respondWithLocalChatReply({
   contractFields: Record<string, unknown>;
 }): Promise<Response | null> {
   const incomingText = latestIncomingText(messages);
+  const localMediaDislike = agentRuleState.isEnabled("media_dislike_boundary", true)
+    ? localMediaDislikeReply(messages, recentAssistantReplies)
+    : "";
+  if (localMediaDislike) {
+    return respondWithImmediateReply({
+      env,
+      tokenRow,
+      requestId,
+      platform,
+      contactId,
+      contactName,
+      contractFields,
+      personaId: activePersonaId,
+      personaVersion,
+      personaScope: activePersonaScope,
+      incomingText,
+      skipLengthCap: true,
+      skipPresentation: true,
+      decision: createImmediateReplyDecision(
+        "local_media_dislike",
+        "voice_or_sticker_sent",
+        localMediaDislike,
+      ),
+    });
+  }
   const localVoice = agentRuleState.isEnabled("voice_call_boundary", true)
     ? localVoiceReply(messages, recentAssistantReplies)
     : "";

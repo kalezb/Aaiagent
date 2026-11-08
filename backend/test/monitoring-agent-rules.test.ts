@@ -19,7 +19,7 @@ import { readDashboardScript } from "./dashboard-source";
 
 describe("dashboard rules, incidents, and replay", () => {
   it("seeds and edits the unified Agent rule catalog used by chat", async () => {
-    expect(LEGACY_AGENT_RULES).toHaveLength(35);
+    expect(LEGACY_AGENT_RULES).toHaveLength(36);
     expect(DEFAULT_AGENT_RULES.length).toBeGreaterThan(LEGACY_AGENT_RULES.length);
     expect(new Set(LEGACY_AGENT_RULES.map((rule) => rule.gate))).toEqual(
       new Set(["input", "prompt", "output", "execution"]),

@@ -7,7 +7,7 @@ describe("structure size guard", () => {
       ["../functions/api/_reply_policy.ts", 2900],
       ["../functions/api/_reply_length.ts", 220],
       ["../functions/api/_chat_api.ts", 1820],
-      ["../functions/api/_chat_local_replies.ts", 160],
+      ["../functions/api/_chat_local_replies.ts", 175],
       ["../functions/api/_lean_conversation_prompt.ts", 260],
       ["../functions/api/_conversation_memory.ts", 420],
       ["../functions/api/_memory_cards.ts", 200],

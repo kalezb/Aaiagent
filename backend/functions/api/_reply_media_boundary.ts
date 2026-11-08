@@ -1,4 +1,4 @@
-import { compactQuestionText, latestIncomingText } from "./_message_text";
+import { compactQuestionText, isStickerStateContent, latestIncomingText } from "./_message_text";
 import { hashText, semanticReplySimilarity } from "./_reply_naturalness";
 
 export function isVoiceCallRequest(value) {
@@ -54,6 +54,27 @@ export function localVoiceReply(messages, historyMessages = []) {
   const incoming = latestIncomingText(messages);
   if (!isVoiceCallRequest(incoming)) return "";
   return pickUnusedDecline(VOICE_CHAT_DECLINES, historyMessages, incoming);
+}
+
+export const MEDIA_DISLIKE_REPLIES = [
+  "别发语音和表情包，我讨厌这个，打字",
+  "语音和表情包我看不明白，以后打字",
+  "我不喜欢语音和表情包，打字说就行",
+];
+
+function isDislikedMedia(message) {
+  const type = String(message?.type || message?.kind || "").toLowerCase();
+  if (type === "voice" || type === "sticker") return true;
+  return isStickerStateContent(message?.content);
+}
+
+/** 对方发了语音或表情包：直接回一句固定短句，不让模型去猜内容。 */
+export function localMediaDislikeReply(messages, historyMessages = []) {
+  const list = Array.isArray(messages) ? messages : [];
+  const lastAssistant = list.map((message) => message?.role).lastIndexOf("assistant");
+  const batch = list.slice(lastAssistant + 1).filter((message) => message?.role === "user");
+  if (!batch.some(isDislikedMedia)) return "";
+  return pickUnusedDecline(MEDIA_DISLIKE_REPLIES, historyMessages, "media_dislike");
 }
 
 export function isVideoCallRequest(value) {
