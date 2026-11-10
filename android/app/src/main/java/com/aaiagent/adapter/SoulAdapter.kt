@@ -2443,6 +2443,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
     }
 
     private fun activeMessageListRootOrNull(): AccessibilityNodeInfo? {
+        // 弹窗、悬浮按钮、输入法都可能是“当前窗口”；只在 Soul 的窗口里找真正显示消息列表的那一层。
+        service.windows
+            .asSequence()
+            .filter { window -> window.root?.packageName?.toString() == packageName }
+            .sortedByDescending { window -> window.layer }
+            .mapNotNull { window -> window.root }
+            .firstOrNull { root -> isInMessageList(root) }
+            ?.let { return it }
         val activeRoot = service.rootInActiveWindow ?: return null
         if (activeRoot.packageName?.toString() != packageName) return null
         return activeRoot.takeIf(::isInMessageList)
