@@ -2895,7 +2895,8 @@ class MessageEngine(
             // 就不用再整页读一遍、再验一次身份。实测每遍要 1 秒左右。
             val canReuseVerifiedWindow = index > 0 && currentWindow != null &&
                 currentWindow.windowId == verifiedWindowId && !staleFlag
-            val incomingChanged = if (canReuseVerifiedWindow) {
+            // 只有真的来了新消息才重新读整页、才撤销；页面刷新、扫描下一轮都不算。
+            val incomingChanged = if (canReuseVerifiedWindow || !staleFlag) {
                 false
             } else {
                 !replyDeliveryVerifier.incomingStillCurrent(adapter, context, expectedIncomingFingerprint)
