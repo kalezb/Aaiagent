@@ -25,8 +25,9 @@ object SoulPageClassifier {
         val markerCount = { name: String ->
             id(name).count { node -> profileWindow || isVisibleMarker(node) }
         }
-        val input = id("et_sendmessage").isNotEmpty()
-        val chatTitle = id("tv_title").firstOrNull()?.text?.toString().orEmpty()
+        val input = id("et_sendmessage").any(::isVisibleMarker)
+        val visibleTitle = id("tv_title").firstOrNull(::isVisibleMarker)
+        val chatTitle = visibleTitle?.text?.toString().orEmpty()
         val profileMarkers = markerCount("user_match") +
             markerCount("user_match_text") +
             markerCount("collect_level_text") +
