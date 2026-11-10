@@ -191,7 +191,14 @@ class ApiService internal constructor(
             try {
                 val chatResponse = call.execute().use { response ->
                     val responseBody = response.body?.string().orEmpty()
-                    val parsed = gson.fromJson(responseBody, ChatResponse::class.java)
+                    val parsed = try {
+                        gson.fromJson(responseBody, ChatResponse::class.java)
+                    } catch (error: Exception) {
+                        throw IllegalStateException(
+                            "chat_bad_response code=${response.code} body=${responseBody.take(300)}",
+                            error,
+                        )
+                    }
                     if (!response.isSuccessful && parsed?.error.isNullOrBlank()) {
                         throw ApiHttpException(response.code, responseBody)
                     }
