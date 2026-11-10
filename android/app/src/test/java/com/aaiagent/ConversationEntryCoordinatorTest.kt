@@ -249,8 +249,11 @@ class ConversationEntryCoordinatorTest {
         override fun readLatestMessages(): ConversationReadResult =
             ConversationReadResult(read = false, reason = "入口不读")
 
-        override suspend fun sendText(text: String, operationId: String): ConversationSendResult =
-            ConversationSendResult(sent = true, verified = true)
+        override suspend fun sendText(
+            text: String,
+            operationId: String,
+            expectedContactName: String,
+        ): ConversationSendResult = ConversationSendResult(sent = true, verified = true)
 
         override suspend fun returnToMessageList(): Boolean = true
     }
@@ -309,6 +312,7 @@ class ConversationEntryCoordinatorTest {
         override suspend fun sendText(
             text: String,
             operationId: String,
+            expectedContactName: String,
         ): ConversationSendResult {
             sendCalls += 1
             return ConversationSendResult(sent = true, verified = true)

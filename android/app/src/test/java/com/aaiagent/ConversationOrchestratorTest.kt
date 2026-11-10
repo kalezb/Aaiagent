@@ -152,6 +152,7 @@ class ConversationOrchestratorTest {
         override suspend fun sendText(
             text: String,
             operationId: String,
+            expectedContactName: String,
         ): ConversationSendResult {
             sendCalls += 1
             sentTexts += text

@@ -134,15 +134,19 @@ class SoulConversationUiContract(
     override suspend fun sendText(
         text: String,
         operationId: String,
+        expectedContactName: String,
     ): ConversationSendResult {
         @Suppress("UNUSED_VARIABLE")
         val operation = operationId
         val root = currentRoot() ?: return ConversationSendResult(false, false, "当前没有页面")
+        val expected = expectedContactName.ifBlank {
+            adapter.readChatTitle(root).orEmpty()
+        }
         return when (adapter.fillAndSend(
             service = service,
             root = root,
             text = text,
-            expectedContactName = null,
+            expectedContactName = expected.ifBlank { null },
         )) {
             PlatformAdapter.SendResult.SUCCESS ->
                 ConversationSendResult(sent = true, verified = true, reason = "发送已验证")

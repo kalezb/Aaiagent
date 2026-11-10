@@ -211,7 +211,7 @@ class ConversationOrchestrator(
         tasks[item.identity.key] = item
         parts.forEachIndexed { index, part ->
             val operationId = "${item.identity.key}:${item.discoveredAtMs}:${index + 1}"
-            val sendResult = ui.sendText(part, operationId)
+            val sendResult = ui.sendText(part, operationId, item.identity.displayName)
             if (!sendResult.sent || !sendResult.verified) {
                 return blocked(
                     item,

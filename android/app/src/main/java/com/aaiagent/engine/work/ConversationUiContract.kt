@@ -73,6 +73,7 @@ interface ConversationUiContract {
     suspend fun sendText(
         text: String,
         operationId: String,
+        expectedContactName: String = "",
     ): ConversationSendResult
 
     suspend fun returnToMessageList(): Boolean
