@@ -438,7 +438,7 @@ describe("chat history and reply", () => {
         { role: "user", content: "换个照片看看" },
       ],
     });
-    expect(justReceived).toContain("他刚发来照片，本轮先接住这张照片");
+    expect(justReceived).toContain("先接住他刚发的照片");
 
     const alreadyProbed = buildLayeredSystemPrompt({
       ...photoBase,

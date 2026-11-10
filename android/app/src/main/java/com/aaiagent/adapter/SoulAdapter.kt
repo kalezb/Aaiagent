@@ -1550,6 +1550,8 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         val mediaUri = withContext(Dispatchers.IO) {
             persistOutgoingImage(imageBytes, fileName, contentType)
         } ?: return SendResult.TIMEOUT
+        // 等相册索引到刚保存的图，避免打开相册时选到上一张旧图。
+        delay(700)
 
         var sent = false
         return try {
@@ -1799,7 +1801,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             val root = service.rootInActiveWindow ?: return@repeat
             if (detectBanned(root)) return SendResult.BANNED
             if (!isInChat(root)) return@repeat
-            if (outgoingImageCount(readMessages(root)) > beforeImageCount) return SendResult.SUCCESS
+            val after = readMessages(root)
+            val newest = after.lastOrNull { message -> message.sender == "self" }
+            val newestSelfIsImage = newest?.type == "image" ||
+                newest?.content?.contains("[图片]") == true ||
+                newest?.content?.contains("[闪照]") == true
+            if (outgoingImageCount(after) > beforeImageCount && newestSelfIsImage) {
+                return SendResult.SUCCESS
+            }
         }
         return SendResult.NOT_VERIFIED
     }

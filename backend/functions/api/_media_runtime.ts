@@ -146,15 +146,8 @@ const ASK_HIM_FIRST_LINES = [
   "想看我呀|||先发张近照来",
 ];
 
-const PHOTO_JUST_RECEIVED_LINES = [
-  "照片看到了|||急什么",
-  "看到了|||还想看我的呀",
-];
-
-export function photoExchangeGateReply(stage, seed) {
-  const lines = stage === "just_received"
-    ? PHOTO_JUST_RECEIVED_LINES
-    : ASK_HIM_FIRST_LINES;
+export function photoExchangeGateReply(seed) {
+  const lines = ASK_HIM_FIRST_LINES;
   const text = String(seed || "");
   let hash = 0;
   for (let index = 0; index < text.length; index += 1) {
@@ -186,7 +179,7 @@ export function photoExchangeBlockedResponse({
 }) {
   return {
     action: "send",
-    reply: photoExchangeGateReply(gate.stage, requestId + "|" + contactId),
+    reply: photoExchangeGateReply(requestId + "|" + contactId),
     reason: "photo_exchange_gate",
     photo_gate: gate.reason,
     request_id: requestId,

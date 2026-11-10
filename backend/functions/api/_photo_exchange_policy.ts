@@ -1,6 +1,5 @@
 export type PhotoExchangeStage =
   | "ask_him_first"
-  | "just_received"
   | "ready"
   | "already_shared"
   | "rule_disabled";
@@ -29,14 +28,12 @@ export function resolvePhotoExchangeGate({
   if (!ruleEnabled) {
     return { canSend: true, stage: "rule_disabled", reason: "photo_exchange_rule_disabled" };
   }
-  if (hisPhotoInCurrentTurn) {
-    return { canSend: false, stage: "just_received", reason: "his_photo_arrived_this_turn" };
-  }
   if (herPhotoSeenBeforeThisTurn) {
     return { canSend: true, stage: "already_shared", reason: "her_photo_already_shared" };
   }
-  if (hisPhotoSeenBeforeThisTurn) {
-    return { canSend: true, stage: "ready", reason: "his_photo_seen_before_this_turn" };
+  // 他已经发过照片，或者这一轮刚发来，只要他明确要，就可以发；不再故意拖一轮。
+  if (hisPhotoInCurrentTurn || hisPhotoSeenBeforeThisTurn) {
+    return { canSend: true, stage: "ready", reason: "his_photo_seen" };
   }
   return { canSend: false, stage: "ask_him_first", reason: "his_photo_not_seen" };
 }

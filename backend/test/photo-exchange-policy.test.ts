@@ -12,8 +12,8 @@ describe("photo exchange policy", () => {
     expect(resolvePhotoExchangeGate({
       hisPhotoInCurrentTurn: true,
     })).toMatchObject({
-      canSend: false,
-      stage: "just_received",
+      canSend: true,
+      stage: "ready",
     });
     expect(resolvePhotoExchangeGate({
       hisPhotoSeenBeforeThisTurn: true,
@@ -70,7 +70,7 @@ describe("photo exchange policy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not send a photo in the same turn his photo arrives", async () => {
+  it("sends a photo when he asks after sending his", async () => {
     const db = new MockD1().withOptions({
       mediaGroups: [{ id: "daily", name: "日常照", trigger_keywords: "换个照片", is_active: 1 }],
       mediaAssets: [{ id: "daily_01", group_id: "daily", file_name: "daily_01.jpg" }],
@@ -98,13 +98,8 @@ describe("photo exchange policy", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      action: "send",
-      reason: "photo_exchange_gate",
-      photo_gate: "his_photo_arrived_this_turn",
-    });
-    expect(body.media).toBeUndefined();
-    expect(body.reply).toContain("看到了");
+    expect(body.action).toBe("send_media");
+    expect(body.media.group_id).toBe("daily");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

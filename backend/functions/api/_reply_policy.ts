@@ -2411,7 +2411,7 @@ export function buildLayeredSystemPrompt({
     herPhotoSeenBeforeThisTurn: herPhotoOnFile || sheHasSentPhoto([], historyMessages),
     ruleEnabled: agentRuleState.isEnabled("her_photo_memory", true),
   });
-  const photoExchangePrompt = !photoTopic ? "" : photoExchangeGate.canSend ? (photoExchangeGate.stage === "already_shared" ? "【照片交换顺序】你已经给他看过照片，不要再追着要他的照片；他明确要时按现有图库规则自然回应。" : photoExchangeGate.stage === "rule_disabled" ? "" : "【照片交换顺序】他之前已经发过照片。本轮他明确要照片时，可以自然接一句再给看。") : photoExchangeGate.stage === "just_received" ? "【照片交换顺序｜最高优先级】他刚发来照片，本轮先接住这张照片，不能马上发自己的照片；等下一轮他再明确要，才可以考虑。" : hisPhotoProbedRecently ? "【照片交换顺序｜最高优先级】你最近已经要过他的照片，本轮不许继续催。不要发自己的照片，也不要追问他什么时候发，先自然接住他的话。" : "【照片交换顺序｜最高优先级】你还没看过他的照片。本轮不能发自己的照片，也不能写“给你看、发给你、行吧”这类答应的话；最多顺口问一次他的近照，不许连续催。";
+  const photoExchangePrompt = !photoTopic ? "" : photoExchangeGate.canSend ? (photoExchangeGate.stage === "already_shared" ? "【照片交换顺序】你已经给他看过照片，不要再追着要他的照片；他明确要时按现有图库规则自然回应。" : photoExchangeGate.stage === "rule_disabled" ? "" : "【照片交换顺序】他之前已经发过照片。本轮他明确要照片时，先接住他刚发的照片（比如“看到了”“这张不错”），再自然给看一张，不要装没看见。") : hisPhotoProbedRecently ? "【照片交换顺序｜最高优先级】你最近已经要过他的照片，本轮不许继续催。不要发自己的照片，也不要追问他什么时候发，先自然接住他的话。" : "【照片交换顺序｜最高优先级】你还没看过他的照片。本轮不能发自己的照片，也不能写“给你看、发给你、行吧”这类答应的话；最多顺口问一次他的近照，不许连续催。";
   const xingmuSoulScope = typeof providedXingmuSoulScope === "boolean"
     ? providedXingmuSoulScope
     : isXingmuSoulScope({ personaPrompt: effectivePersonaPrompt, platform });

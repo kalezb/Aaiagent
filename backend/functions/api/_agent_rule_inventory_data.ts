@@ -213,7 +213,7 @@ export const RAW_LEGACY_AGENT_RULES: Omit<LegacyAgentRule, "gate" | "priority" |
     category: "图片规则",
     title: "没看过他的照片就不发",
     scope: "全部模型",
-    detail: "她没给他看过照片时，他反过来要，就先让他发；他刚发照片那一轮也不发，下一轮再要才可发；已经给他看过照片后，不要再追着要他的照片。",
+    detail: "他发过照片后，他再要就发一张；收到他的照片先接住，不许装没看见，也不许嘴上答应却不发。",
     source: "photo exchange gate / contacts.his_photo_at / contacts.her_photo_at",
     recommendation: "keep_default",
   },

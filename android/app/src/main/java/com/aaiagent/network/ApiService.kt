@@ -191,17 +191,9 @@ class ApiService internal constructor(
             try {
                 val chatResponse = call.execute().use { response ->
                     val responseBody = response.body?.string().orEmpty()
-                    val parsed = try {
-                        gson.fromJson(responseBody, ChatResponse::class.java)
-                    } catch (error: Exception) {
-                        throw IllegalStateException(
-                            "chat_bad_response code=${response.code} body=${responseBody.take(300)}",
-                            error,
-                        )
-                    }
-                    if (!response.isSuccessful && parsed?.error.isNullOrBlank()) {
-                        throw ApiHttpException(response.code, responseBody)
-                    }
+                    val parsed = runCatching { gson.fromJson(responseBody, ChatResponse::class.java) }
+                        .getOrElse { throw IllegalStateException("chat_bad_response code=${response.code} body=${responseBody.take(300)}", it) }
+                    if (!response.isSuccessful && parsed?.error.isNullOrBlank()) throw ApiHttpException(response.code, responseBody)
                     parsed ?: throw IllegalStateException("deepseek_empty_response")
                 }
                 ChatCallResult(chatResponse, timingListener.snapshot())
