@@ -2953,8 +2953,12 @@ class MessageEngine(
                 reason = "contact=${context.contactName} part=${index + 1}",
                 transactionId = sendTransactionId,
             )
-            val visibleBeforeSend = runCatching { adapter.readMessages(root) }
-                .getOrDefault(emptyList())
+            // 第一条发之前读一遍防重复；第二条复用不上，就不再为它整页重读。
+            val visibleBeforeSend = if (index == 0) {
+                runCatching { adapter.readMessages(root) }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
             val alreadyVisible = OutgoingEchoPolicy.shouldSkipSend(part, visibleBeforeSend)
             val result = if (alreadyVisible) {
                 android.util.Log.w(

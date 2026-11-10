@@ -186,7 +186,6 @@ internal class ConversationSnapshotRecorder(
         if (reconciliation.snapshot.ambiguous) return reconciliation.snapshot
         if (reconciliation.inserted > 0) {
             messageSyncOutbox.schedule(force = true)
-            messageSyncOutbox.awaitFlush()
         }
         return reconciliation.snapshot
     }

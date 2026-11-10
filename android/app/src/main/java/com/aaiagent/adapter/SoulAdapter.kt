@@ -2009,6 +2009,21 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
         return node.takeIf { it.isVisibleToUser }
     }
 
+    private fun currentSoulRoot(): AccessibilityNodeInfo? {
+        return service.windows
+            .asSequence()
+            .filter { window -> window.root?.packageName?.toString() == packageName }
+            .sortedByDescending { window -> window.layer }
+            .mapNotNull { window -> window.root }
+            .firstOrNull()
+    }
+
+    /** 只读气泡上的纯文字，用来确认刚发出去的那句，不再整页解析时间、表情和语音。 */
+    private fun lastVisibleMessageTexts(root: AccessibilityNodeInfo): List<String> {
+        return root.findAccessibilityNodeInfosByViewId(prefix + "message")
+            .mapNotNull { node -> node.text?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+    }
+
     private suspend fun verifySent(
         text: String,
         canProceed: () -> Boolean
@@ -2020,12 +2035,14 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
                 else SoulSendTimingPolicy.RETRY_VERIFY_DELAY_MS
             )
             if (!canProceed()) return SendResult.STOPPED
-            val root = service.rootInActiveWindow ?: return@repeat
+            val root = currentSoulRoot() ?: return@repeat
             if (detectBanned(root)) return SendResult.BANNED
 
-            val visibleMessages = readMessages(root)
+            val visibleTexts = lastVisibleMessageTexts(root).ifEmpty {
+                readMessages(root).map { message -> message.content }
+            }
             val expected = compact(text)
-            val matched = visibleMessages.takeLast(8).any { compact(it.content) == expected }
+            val matched = visibleTexts.takeLast(8).any { compact(it) == expected }
             val sendButtonVisible = isSendButtonVisible(root)
             val inputCleared = SoulInputState.isCleared(
                 inChat = isInChat(root),
@@ -2038,7 +2055,7 @@ class SoulAdapter(private val service: AccessibilityService) : PlatformAdapter {
             )
             android.util.Log.d(
                 "AIA",
-                "send verify attempt=${attempt + 1} matched=$matched inputCleared=$inputCleared sendButtonVisible=$sendButtonVisible last=${visibleMessages.lastOrNull()?.content}"
+                "send verify attempt=${attempt + 1} matched=$matched inputCleared=$inputCleared sendButtonVisible=$sendButtonVisible last=${visibleTexts.lastOrNull()}"
             )
             if (confirmed) return SendResult.SUCCESS
         }

@@ -1,4 +1,4 @@
-package com.aaiagent.engine
+﻿package com.aaiagent.engine
 
 import com.aaiagent.data.db.entity.MessageSyncOutboxEntity
 import com.aaiagent.data.repository.AppRepository
@@ -11,7 +11,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 internal class MessageSyncOutboxQueue(
     private val scope: CoroutineScope,
@@ -59,23 +58,6 @@ internal class MessageSyncOutboxQueue(
         lastFlushAt = now
         flushJob = scope.launch(Dispatchers.IO) {
             flushSerially()
-        }
-    }
-
-    suspend fun awaitFlush() {
-        withContext(Dispatchers.IO) {
-            val completed = withTimeoutOrNull(SYNC_BEFORE_CHAT_WAIT_MS) {
-                flushSerially()
-                true
-            } ?: false
-            if (!completed) {
-                runCatching {
-                    android.util.Log.w(
-                        "AIA",
-                        "sync outbox wait timed out before chat wait_ms=$SYNC_BEFORE_CHAT_WAIT_MS",
-                    )
-                }
-            }
         }
     }
 
@@ -129,6 +111,6 @@ internal class MessageSyncOutboxQueue(
 
     private companion object {
         const val SYNC_FLUSH_INTERVAL_MS = 45_000L
-        const val SYNC_BEFORE_CHAT_WAIT_MS = 8_000L
     }
 }
+
