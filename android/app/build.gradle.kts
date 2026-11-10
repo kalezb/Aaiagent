@@ -12,8 +12,8 @@ android {
         applicationId = "com.aaiagent"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2026110905
-        versionName = "20261110-2045"
+        versionCode = 2026110906
+        versionName = "20261110-2050"
     }
 
     buildTypes {
@@ -66,6 +66,7 @@ dependencies {
     // 鐢ㄦ湰鍦?jar锛堝拰 FishVoice 涓€鏍凤級鑰屼笉鏄仈缃戞媺渚濊禆锛屾瀯寤轰笉渚濊禆缃戠粶銆?
     compileOnly(files("libs/XposedBridgeApi-82.jar"))
 }
+
 
 
 

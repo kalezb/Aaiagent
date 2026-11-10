@@ -121,4 +121,36 @@ class PageObservationPolicyTest {
 
         assertEquals(AutomationPageKind.VERIFIED_CHAT, chat.kind)
     }
+
+    @Test
+    fun `chat title wins even when the list node is still in the tree`() {
+        val page = PageObservationPolicy.classify(
+            PageObservationSignals(
+                inChat = true,
+                inMessageList = true,
+                hasChatInput = true,
+                hasChatTitle = true,
+                profileMarkerCount = 0,
+                chatTitle = "联系人A",
+            )
+        )
+
+        assertEquals(AutomationPageKind.VERIFIED_CHAT, page.kind)
+        assertEquals("联系人A", page.contactName)
+    }
+
+    @Test
+    fun `list with no chat controls is a conversation list even if inChat is stale`() {
+        val page = PageObservationPolicy.classify(
+            PageObservationSignals(
+                inChat = true,
+                inMessageList = true,
+                hasChatInput = false,
+                hasChatTitle = false,
+                profileMarkerCount = 0,
+            )
+        )
+
+        assertEquals(AutomationPageKind.CONVERSATION_LIST, page.kind)
+    }
 }

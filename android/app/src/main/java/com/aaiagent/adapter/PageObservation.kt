@@ -38,6 +38,13 @@ object PageObservationPolicy {
                 reason = "profile markers=${signals.profileMarkerCount} window=${signals.windowClassName}",
             )
         }
+        if (signals.hasChatInput || signals.hasChatTitle) {
+            return PageObservation(
+                kind = AutomationPageKind.VERIFIED_CHAT,
+                contactName = signals.chatTitle,
+                reason = "chat surface",
+            )
+        }
         if (signals.inMessageList) {
             return PageObservation(
                 kind = AutomationPageKind.CONVERSATION_LIST,
